@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import '../main.dart';
 import '../models/route.dart' as model;
 import '../models/trip_leg.dart';
 import '../providers/route_provider.dart';
@@ -22,10 +23,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       ref.read(settingsProvider.notifier).load();
       ref.read(routeProvider.notifier).load();
       ref.read(tripProvider.notifier).load();
+
+      final backgroundService = ref.read(backgroundServiceProvider);
+      final tripNotifier = ref.read(tripProvider.notifier);
+
+      await backgroundService.initialize();
+
+      backgroundService.onArrived = () {
+        final activeLeg = ref.read(tripProvider).activeLeg;
+        if (activeLeg != null) {
+          final expectedOdometer =
+              activeLeg.startOdometer + activeLeg.kmDriven.toInt();
+          showOdometerDialog(
+            context: context,
+            title: 'Olen perillä',
+            subtitle: 'Kohde: ${activeLeg.endLocation ?? activeLeg.routeDescription}',
+            label: 'Matkamittari perillä (km)',
+            actionLabel: 'Lopeta ajo',
+            expectedHint: expectedOdometer,
+            onConfirm: (endOdometer, _) async {
+              if (context.mounted) {
+                Navigator.of(context).pop();
+                await tripNotifier.stopDriving(endOdometer);
+                await backgroundService.onDrivingStopped();
+              }
+            },
+          );
+        }
+      };
+
+      backgroundService.onStillDriving = () {
+        backgroundService.onStillDrivingPressed();
+      };
     });
   }
 
@@ -97,7 +130,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _buildActiveTripCard(TripLeg leg, BuildContext context) {
-    final tripNotifier = ref.read(tripProvider.notifier);
     final colorScheme = Theme.of(context).colorScheme;
     final startTime = DateFormat('HH:mm').format(leg.startTime);
     final duration = DateTime.now().difference(leg.startTime);
@@ -155,6 +187,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             width: double.infinity,
             child: FilledButton.icon(
               onPressed: () async {
+                final tripNotifier = ref.read(tripProvider.notifier);
+                final backgroundService = ref.read(backgroundServiceProvider);
                 await showOdometerDialog(
                   context: context,
                   title: 'Olen perillä',
@@ -167,6 +201,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     if (context.mounted) {
                       Navigator.of(context).pop();
                       await tripNotifier.stopDriving(endOdometer);
+                      await backgroundService.onDrivingStopped();
                     }
                   },
                 );
@@ -258,12 +293,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       onConfirm: (startOdometer, purpose) async {
         if (context.mounted) {
           Navigator.of(context).pop();
-          await tripNotifier.startDriving(
+          final backgroundService = ref.read(backgroundServiceProvider);
+          backgroundService.updateSettings(settings);
+          final leg = await tripNotifier.startDriving(
             route: route,
             startOdometer: startOdometer,
             purpose: purpose ?? '',
             driver: settings.driverName,
           );
+          await backgroundService.onDrivingStarted(leg);
           if (route.id != null && purpose != null && purpose.isNotEmpty) {
             await routeNotifier.savePurpose(route.id!, purpose);
           }

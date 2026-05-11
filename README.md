@@ -160,20 +160,83 @@ Työaika per leggi = seuraavan legin aloitusaika − tämän legin lopetusaika
 
 ### Vaatimukset
 - Flutter SDK 3.11+
-- Android Studio / VS Code
-- Android-laite tai emulaattori
+- Android Studio (SDK ja build-työkalut)
+- Java JDK 17+
 
-### Asennus
+### Paikallinen kehitys
 ```bash
-git clone <repo-url>
-cd kilometrikorvaus
+git clone https://github.com/lpalokan/mileage-tracker.git
+cd mileage-tracker
 flutter pub get
-flutter run
+flutter run          # Vaatii puhelimen kytkettynä USB:llä (developeri-tila)
 ```
 
-### Google API -konfigurointi
-1. Luo projekti [Google Cloud Consolessa](https://console.cloud.google.com)
-2. Ota käyttöön Google Sheets API ja Google Sign-In
-3. Lisää OAuth 2.0 Client ID (Android)
-4. Lisää SHA-1-sormenjälki (`keytool -list -v -keystore ~/.android/debug.keystore`)
-5. Määritä `google-services.json` android/app-kansioon
+## Asennus puhelimeen (ilman developeri-tilaa)
+
+Puhelinta ei tarvitse laittaa developeri-tilaan. APK-tiedoston voi asentaa suoraan.
+
+### Kertaluontoinen valmistelu tietokoneella
+
+```bash
+# 1. Rakenna release-APK
+flutter build apk --release
+
+# APK-tiedosto syntyy tänne:
+# build/app/outputs/flutter-apk/app-release.apk
+```
+
+### Asennus puhelimeen
+
+1. **Siirrä APK puhelimeen** – esimerkiksi sähköpostilla, Google Drive -linkillä, USB-kaapelilla (tiedostonsiirto-tilassa) tai Bluetoothilla.
+
+2. **Salli asennus tuntemattomista lähteistä** – Avaa puhelimessa APK-tiedosto (esim. Tiedostot-sovelluksesta). Android kysyy lupaa asentaa tuntemattomista lähteistä. Salli se kyseiselle sovellukselle (esim. Tiedostot tai Chrome).
+
+3. **Asenna** – Jatka asennus loppuun. Sovellus ilmestyy puhelimen sovellusvalikkoon.
+
+> **Huom:** Google Play Protect saattaa varoittaa tuntemattomasta sovelluksesta. Tämä on normaalia itse käännetylle APK:lle. Voit ohittaa varoituksen.
+
+### Päivitys uuteen versioon
+
+Rakenna uusi APK ja asenna se samalla tavalla. Vanha versio korvautuu. Tiedot säilyvät, koska ne on tallennettu puhelimen omaan tietokantaan.
+
+### Kehittäjävaihtoehto (nopeampi)
+
+Jos käytät developeri-tilaa ja USB-kaapelia:
+```bash
+flutter install   # Asentaa suoraan kytkettyyn puhelimeen
+```
+
+## Google API -konfigurointi
+
+Sovellus tarvitsee Google Cloud -projektin toimiakseen Google Sheetsin kanssa.
+
+1. **Luo projekti** [Google Cloud Consolessa](https://console.cloud.google.com)
+2. **Ota Sheets API käyttöön** – APIs & Services → Library → hae "Google Sheets API" → Enable
+3. **Määritä OAuth consent screen** – APIs & Services → OAuth consent screen
+   - User Type: **External**
+   - App name: Kilometrikorvaus
+   - User support email: oma sähköpostisi
+   - Developer contact: oma sähköpostisi
+   - Scopes: `.../auth/spreadsheets` (lisätään automaattisesti)
+   - Test users: lisää oma sähköpostisi
+4. **Luo OAuth Client ID** – APIs & Services → Credentials → Create Credentials → OAuth Client ID
+   - Application type: **Android**
+   - Name: Kilometrikorvaus
+   - Package name: `fi.lpalokan.kilometrikorvaus`
+   - SHA-1 certificate fingerprint: hae komennolla (ks. alla)
+
+### SHA-1-sormenjäljen haku
+
+```bash
+# Debug-avain (kehitys)
+keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android 2>/dev/null | grep SHA1
+
+# Release-avain (julkaisu)
+keytool -list -v -keystore oma-avain.jks -alias avaimen-nimi 2>/dev/null | grep SHA1
+```
+
+### Release APK -konfigurointi
+Release-versio tarvitsee oman OAuth Client ID:n (eri SHA-1 kuin debug):
+1. Luo **toinen** OAuth Client ID -tunnus Android-tyypillä release-SHA-1:llä
+2. Lisää molemmat Client ID:t OAuth consent screenin testikäyttäjiin tarvittaessa
+

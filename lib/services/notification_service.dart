@@ -10,19 +10,14 @@ class NotificationService {
   static const _stillDrivingActionId = 'still_driving';
 
   final FlutterLocalNotificationsPlugin _plugin;
-  Function? _onArrived;
-  Function? _onStillDriving;
+  void Function()? onArrived;
+  void Function()? onStillDriving;
 
   NotificationService()
       : _plugin = FlutterLocalNotificationsPlugin();
 
-  Future<void> initialize({
-    Function? onArrived,
-    Function? onStillDriving,
-  }) async {
+  Future<void> initialize() async {
     tz.initializeTimeZones();
-    _onArrived = onArrived;
-    _onStillDriving = onStillDriving;
 
     const androidSettings =
         AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -40,9 +35,9 @@ class NotificationService {
 
   void _onNotificationResponse(NotificationResponse response) {
     if (response.actionId == _arrivedActionId) {
-      _onArrived?.call();
+      onArrived?.call();
     } else if (response.actionId == _stillDrivingActionId) {
-      _onStillDriving?.call();
+      onStillDriving?.call();
     }
   }
 
