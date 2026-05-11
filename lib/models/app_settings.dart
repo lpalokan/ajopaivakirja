@@ -68,5 +68,5 @@ class AppSettings {
 
   @override
   String toString() =>
-      'AppSettings(km: ${kmRate}€, 6h: ${allowance6h}€, 10h: ${allowance10h}€, driver: $driverName)';
+      'AppSettings(km: $kmRate€, 6h: $allowance6h€, 10h: $allowance10h€, driver: $driverName)';
 }

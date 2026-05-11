@@ -68,6 +68,9 @@ class TripNotifier extends StateNotifier<TripState> {
       if (last == routeEnd) {
         return (start: route.endLocation, end: route.startLocation);
       }
+      if (last == routeStart) {
+        return (start: route.startLocation, end: route.endLocation);
+      }
     }
 
     return (start: route.startLocation, end: route.endLocation);

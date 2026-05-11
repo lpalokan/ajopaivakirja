@@ -58,7 +58,6 @@ class LocationService {
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,
         distanceFilter: 100,
-        intervalDuration: Duration(seconds: 15),
       ),
     ).listen((position) {
       _currentPosition = position;

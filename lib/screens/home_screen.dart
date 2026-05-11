@@ -7,6 +7,9 @@ import '../providers/route_provider.dart';
 import '../providers/trip_provider.dart';
 import '../providers/settings_provider.dart';
 import '../widgets/odometer_dialog.dart';
+import 'settings_screen.dart';
+import 'route_management_screen.dart';
+import 'trip_history_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -42,7 +45,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             icon: const Icon(Icons.settings),
             onPressed: () {
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const _PlaceholderScreen(title: 'Asetukset')),
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
               );
             },
           ),
@@ -63,8 +66,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                      builder: (_) => const _PlaceholderScreen(
-                          title: 'Reitit')),
+                      builder: (_) => const RouteManagementScreen()),
                 );
               },
               icon: const Icon(Icons.more_horiz),
@@ -83,7 +85,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               Navigator.of(context).push(
                 MaterialPageRoute(
                     builder: (_) =>
-                        const _PlaceholderScreen(title: 'Historia')),
+                        const TripHistoryScreen()),
               );
             },
             icon: const Icon(Icons.history),
@@ -109,7 +111,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       color: colorScheme.primaryContainer,
       child: Padding(
         padding: const EdgeInsets.all(16),
-        children: [
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           Row(
             children: [
               Icon(Icons.directions_car, color: colorScheme.onPrimaryContainer),
@@ -173,7 +177,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
-    );
+    ));
   }
 
   Widget _buildRecentRoutes(
@@ -254,7 +258,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       onConfirm: (startOdometer, purpose) async {
         if (context.mounted) {
           Navigator.of(context).pop();
-          final leg = await tripNotifier.startDriving(
+          await tripNotifier.startDriving(
             route: route,
             startOdometer: startOdometer,
             purpose: purpose ?? '',
@@ -337,20 +341,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// Temporary placeholder screen used until real screens are implemented.
-class _PlaceholderScreen extends StatelessWidget {
-  final String title;
-  const _PlaceholderScreen({required this.title});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(title)),
-      body: Center(child: Text('$title - tulossa pian')),
     );
   }
 }

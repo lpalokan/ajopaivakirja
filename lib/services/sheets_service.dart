@@ -9,7 +9,7 @@ class SheetsService {
   final GoogleSignIn _googleSignIn;
   final AppSettings _settings;
   sheets.SheetsApi? _sheetsApi;
-  AutoRefreshingAuthClient? _authClient;
+  http.Client? _authClient;
 
   SheetsService(this._settings)
       : _googleSignIn = GoogleSignIn(
