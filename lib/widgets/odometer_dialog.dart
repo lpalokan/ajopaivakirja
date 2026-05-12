@@ -31,6 +31,7 @@ class _OdometerDialogState extends State<OdometerDialog> {
   final _odometerController = TextEditingController();
   final _purposeController = TextEditingController();
   bool _hasRelatedField = false;
+  String? _errorText;
 
   @override
   void initState() {
@@ -87,6 +88,7 @@ class _OdometerDialogState extends State<OdometerDialog> {
                 hintText: widget.expectedHint != null
                     ? 'Arvioitu: ${widget.expectedHint} km'
                     : 'Esim. 123456',
+                errorText: _errorText,
               ),
               autofocus: true,
             ),
@@ -108,11 +110,18 @@ class _OdometerDialogState extends State<OdometerDialog> {
 
   void _confirm() {
     final odometerText = _odometerController.text.trim();
-    if (odometerText.isEmpty) return;
+    if (odometerText.isEmpty) {
+      setState(() => _errorText = 'Syötä mittarilukema');
+      return;
+    }
 
     final value = int.tryParse(odometerText);
-    if (value == null) return;
+    if (value == null) {
+      setState(() => _errorText = 'Virheellinen lukema');
+      return;
+    }
 
+    setState(() => _errorText = null);
     final purpose = _hasRelatedField
         ? _purposeController.text.trim()
         : null;
