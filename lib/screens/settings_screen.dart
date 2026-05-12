@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../main.dart';
 import '../providers/settings_provider.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -21,6 +22,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _driverController = TextEditingController();
 
   bool _saving = false;
+  bool _signingIn = false;
+  bool _signedIn = false;
 
   @override
   void initState() {
@@ -33,6 +36,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _sheetIdController.text = settings.sheetId;
     _sheetTabController.text = settings.sheetTab;
     _driverController.text = settings.driverName;
+    _checkSignIn();
+  }
+
+  Future<void> _checkSignIn() async {
+    final sheets = ref.read(sheetsServiceProvider);
+    _signedIn = await sheets.isSignedIn;
+    if (mounted) setState(() {});
   }
 
   @override
@@ -136,6 +146,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 border: OutlineInputBorder(),
               ),
             ),
+            const SizedBox(height: 16),
+            _buildSheetsAuthButton(),
             const SizedBox(height: 24),
             FilledButton.icon(
               onPressed: _saving ? null : _save,
@@ -164,6 +176,70 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
       ),
     );
+  }
+
+  Widget _buildSheetsAuthButton() {
+    final sheetId = _sheetIdController.text.trim();
+    if (sheetId.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 4),
+        child: Text(
+          'Google Sheets -integrointi on valinnainen.\n'
+          'Lisää Sheets-tunnus yllä ja kirjaudu sisään,\n'
+          'jos haluat viedä rivit automaattisesti.',
+          style: TextStyle(fontSize: 13),
+        ),
+      );
+    }
+    if (_signedIn) {
+      return Row(
+        children: [
+          const Icon(Icons.check_circle, color: Colors.green, size: 20),
+          const SizedBox(width: 8),
+          const Text('Kirjautunut Googleen'),
+          const Spacer(),
+          TextButton(
+            onPressed: _signOut,
+            child: const Text('Kirjaudu ulos'),
+          ),
+        ],
+      );
+    }
+    return OutlinedButton.icon(
+      onPressed: _signingIn ? null : _signIn,
+      icon: _signingIn
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.login),
+      label: Text(_signingIn ? 'Kirjaudutaan...' : 'Kirjaudu Googleen'),
+    );
+  }
+
+  Future<void> _signIn() async {
+    setState(() => _signingIn = true);
+    try {
+      final sheets = ref.read(sheetsServiceProvider);
+      await sheets.signIn();
+      _signedIn = true;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Kirjautuminen epäonnistui: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _signingIn = false);
+    }
+  }
+
+  Future<void> _signOut() async {
+    final sheets = ref.read(sheetsServiceProvider);
+    await sheets.signOut();
+    _signedIn = false;
+    if (mounted) setState(() {});
   }
 
   Future<void> _save() async {

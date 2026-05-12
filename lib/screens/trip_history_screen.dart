@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import '../main.dart';
 import '../models/trip_leg.dart';
+import '../providers/settings_provider.dart';
 import '../services/database_service.dart';
 
 class TripHistoryScreen extends ConsumerStatefulWidget {
@@ -16,11 +18,19 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
   List<String> _dates = [];
   Map<String, List<TripLeg>> _legsByDate = {};
   bool _loading = true;
+  bool _syncing = false;
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  bool get _hasUnsynced {
+    for (final legs in _legsByDate.values) {
+      if (legs.any((l) => !l.synced)) return true;
+    }
+    return false;
   }
 
   Future<void> _load() async {
@@ -39,10 +49,72 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     }
   }
 
+  Future<void> _syncAll() async {
+    final settings = ref.read(settingsProvider);
+    if (settings.sheetId.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sheets-tunnusta ei ole määritetty')),
+        );
+      }
+      return;
+    }
+
+    setState(() => _syncing = true);
+    try {
+      final sheets = ref.read(sheetsServiceProvider);
+      final unsynced = await DatabaseService.getUnsyncedLegs();
+      if (unsynced.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Kaikki rivit on jo synkronoitu')),
+          );
+        }
+        return;
+      }
+      await sheets.appendLegs(
+        unsynced,
+        sheetId: settings.sheetId,
+        sheetTab: settings.sheetTab,
+        onSynced: (legId) => DatabaseService.markLegSynced(legId),
+      );
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Synkronoitu ${unsynced.length} riviä')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Synkronointi epäonnistui: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Historia')),
+      appBar: AppBar(
+        title: const Text('Historia'),
+        actions: [
+          if (_hasUnsynced)
+            IconButton(
+              onPressed: _syncing ? null : _syncAll,
+              icon: _syncing
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.cloud_upload),
+              tooltip: 'Synkronoi Sheetsiin',
+            ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _dates.isEmpty

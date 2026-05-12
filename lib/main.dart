@@ -5,6 +5,7 @@ import 'screens/home_screen.dart';
 import 'services/notification_service.dart';
 import 'services/location_service.dart';
 import 'services/background_service.dart';
+import 'services/sheets_service.dart';
 
 final notificationServiceProvider = Provider<NotificationService>((ref) {
   return NotificationService();
@@ -21,6 +22,10 @@ final backgroundServiceProvider = Provider<BackgroundService>((ref) {
     notificationService: ns,
     locationService: ls,
   );
+});
+
+final sheetsServiceProvider = Provider<SheetsService>((ref) {
+  return SheetsService();
 });
 
 void main() {

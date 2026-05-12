@@ -3,20 +3,18 @@ import 'package:googleapis/sheets/v4.dart' as sheets;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis_auth/auth_io.dart';
 import '../models/trip_leg.dart';
-import '../models/app_settings.dart';
 
 class SheetsService {
   final GoogleSignIn _googleSignIn;
-  final AppSettings _settings;
   sheets.SheetsApi? _sheetsApi;
   http.Client? _authClient;
 
-  SheetsService(this._settings)
+  SheetsService()
       : _googleSignIn = GoogleSignIn(
           scopes: [sheets.SheetsApi.spreadsheetsScope],
         );
 
-  bool get isConfigured => _settings.sheetId.isNotEmpty;
+  bool isConfigured(String sheetId) => sheetId.isNotEmpty;
 
   Future<bool> get isSignedIn => _googleSignIn.isSignedIn();
 
@@ -48,15 +46,15 @@ class SheetsService {
   }
 
   /// Append a single trip leg as a row in Google Sheets.
-  Future<void> appendLeg(TripLeg leg) async {
+  Future<void> appendLeg(TripLeg leg, {required String sheetId, required String sheetTab}) async {
     if (_sheetsApi == null) {
       throw Exception('Ei kirjauduttu Googleen. Kirjaudu asetuksista.');
     }
-    if (!isConfigured) {
+    if (sheetId.isEmpty) {
       throw Exception('Google Sheets -tunnusta ei ole määritetty asetuksissa.');
     }
 
-    final range = '${_settings.sheetTab}!A1:P1';
+    final range = '$sheetTab!A1:P1';
 
     final row = _legToRow(leg);
 
@@ -66,7 +64,7 @@ class SheetsService {
 
     await _sheetsApi!.spreadsheets.values.append(
       valueRange,
-      _settings.sheetId,
+      sheetId,
       range,
       valueInputOption: 'USER_ENTERED',
       insertDataOption: 'INSERT_ROWS',
@@ -76,12 +74,14 @@ class SheetsService {
   /// Append multiple legs, optionally marking them as synced.
   Future<int> appendLegs(
     List<TripLeg> legs, {
+    required String sheetId,
+    required String sheetTab,
     Future<void> Function(int legId)? onSynced,
   }) async {
     var synced = 0;
     for (final leg in legs) {
       try {
-        await appendLeg(leg);
+        await appendLeg(leg, sheetId: sheetId, sheetTab: sheetTab);
         await onSynced?.call(leg.id!);
         synced++;
       } catch (e) {

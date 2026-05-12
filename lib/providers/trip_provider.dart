@@ -5,6 +5,7 @@ import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
 import '../services/database_service.dart';
 import '../services/trip_calculator.dart';
+import '../main.dart';
 import 'settings_provider.dart';
 
 class TripState {
@@ -132,6 +133,7 @@ class TripNotifier extends StateNotifier<TripState> {
     if (isReturnHome) {
       final dayLegs = await DatabaseService.getLegsForDate(_today);
       await _calculator.finalizeDay(dayLegs);
+      _syncToSheets(dayLegs);
     }
 
     final todayLegs = await DatabaseService.getLegsForDate(_today);
@@ -146,9 +148,25 @@ class TripNotifier extends StateNotifier<TripState> {
   }
 
   Future<void> extendReminder() async {
-    // Keeps driving, resets the reminder timer.
-    // The notification service will handle re-scheduling.
     await load();
+  }
+
+  Future<void> _syncToSheets(List<TripLeg> legs) async {
+    final settings = _ref.read(settingsProvider);
+    if (settings.sheetId.isEmpty) return;
+
+    try {
+      final sheets = _ref.read(sheetsServiceProvider);
+      await sheets.appendLegs(
+        legs,
+        sheetId: settings.sheetId,
+        sheetTab: settings.sheetTab,
+        onSynced: (legId) => DatabaseService.markLegSynced(legId),
+      );
+    } catch (_) {
+      // Sheets sync failed silently — app continues working locally.
+      // User can retry later via manual sync.
+    }
   }
 
   Future<void> finalizeDay() async {
