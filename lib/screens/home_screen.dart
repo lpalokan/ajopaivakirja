@@ -184,22 +184,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
-            child: FilledButton.icon(
+              child: FilledButton.icon(
               onPressed: () async {
                 final tripNotifier = ref.read(tripProvider.notifier);
                 final backgroundService = ref.read(backgroundServiceProvider);
-                final result = await showOdometerDialog(
+                final controller = TextEditingController(text: expectedOdometer.toString());
+                final endOdometer = await showDialog<int>(
                   context: context,
-                  title: 'Olen perillä',
-                  subtitle:
-                      'Kohde: ${leg.endLocation ?? leg.routeDescription}',
-                  label: 'Matkamittari perillä (km)',
-                  actionLabel: 'Lopeta ajo',
-                  initialValue: expectedOdometer,
-                  expectedHint: expectedOdometer,
+                  barrierDismissible: false,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Olen perillä'),
+                    content: TextField(
+                      controller: controller,
+                      keyboardType: TextInputType.number,
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        labelText: 'Matkamittari perillä (km)',
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('Peruuta'),
+                      ),
+                      FilledButton(
+                        onPressed: () {
+                          final v = int.tryParse(controller.text.trim());
+                          Navigator.pop(ctx, v);
+                        },
+                        child: const Text('Lopeta ajo'),
+                      ),
+                    ],
+                  ),
                 );
-                if (result != null) {
-                  await tripNotifier.stopDriving(result.odometer);
+                if (endOdometer != null) {
+                  await tripNotifier.stopDriving(endOdometer);
                   await backgroundService.onDrivingStopped();
                 }
               },
