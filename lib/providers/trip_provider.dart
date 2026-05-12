@@ -8,26 +8,30 @@ import '../services/trip_calculator.dart';
 import '../main.dart';
 import 'settings_provider.dart';
 
+class _Sentinel {
+  const _Sentinel();
+}
+
 class TripState {
   final TripLeg? activeLeg;
   final List<TripLeg> todayLegs;
-  final String? lastArrivalLocation;
 
   const TripState({
     this.activeLeg,
     this.todayLegs = const [],
-    this.lastArrivalLocation,
   });
 
+  static const _unset = _Sentinel();
+
   TripState copyWith({
-    TripLeg? activeLeg,
+    Object? activeLeg = _unset,
     List<TripLeg>? todayLegs,
-    String? lastArrivalLocation,
   }) {
     return TripState(
-      activeLeg: activeLeg ?? this.activeLeg,
+      activeLeg: identical(activeLeg, _unset)
+          ? this.activeLeg
+          : activeLeg as TripLeg?,
       todayLegs: todayLegs ?? this.todayLegs,
-      lastArrivalLocation: lastArrivalLocation ?? this.lastArrivalLocation,
     );
   }
 }
@@ -48,33 +52,11 @@ class TripNotifier extends StateNotifier<TripState> {
   Future<void> load() async {
     final legs = await DatabaseService.getLegsForDate(_today);
     final activeLeg = await DatabaseService.getActiveLeg();
-    final lastLeg = await DatabaseService.getLastLeg();
 
     state = TripState(
       activeLeg: activeLeg,
       todayLegs: legs,
-      lastArrivalLocation: lastLeg?.endLocation,
     );
-  }
-
-  /// Determine direction (start → end or end → start) based on last arrival.
-  ({String start, String end}) _determineDirection(model.Route route) {
-    final lastArrival = state.lastArrivalLocation;
-
-    if (lastArrival != null) {
-      final last = lastArrival.trim().toLowerCase();
-      final routeStart = route.startLocation.trim().toLowerCase();
-      final routeEnd = route.endLocation.trim().toLowerCase();
-
-      if (last == routeEnd) {
-        return (start: route.endLocation, end: route.startLocation);
-      }
-      if (last == routeStart) {
-        return (start: route.startLocation, end: route.endLocation);
-      }
-    }
-
-    return (start: route.startLocation, end: route.endLocation);
   }
 
   Future<TripLeg> startDriving({
@@ -83,7 +65,6 @@ class TripNotifier extends StateNotifier<TripState> {
     required String purpose,
     String? driver,
   }) async {
-    final dir = _determineDirection(route);
     final driverName = driver ?? _settings.driverName;
     final now = DateTime.now();
     final legOrder = await DatabaseService.getNextLegOrder(_today);
@@ -94,8 +75,8 @@ class TripNotifier extends StateNotifier<TripState> {
       routeId: route.id,
       startTime: now,
       startOdometer: startOdometer,
-      startLocation: dir.start,
-      endLocation: dir.end,
+      startLocation: route.startLocation,
+      endLocation: route.endLocation,
       kmDriven: route.distanceKm,
       routeDescription: route.name,
       purpose: purpose,
@@ -128,11 +109,7 @@ class TripNotifier extends StateNotifier<TripState> {
     leg = _calculator.calculateLeg(leg);
     await DatabaseService.updateTripLeg(leg);
 
-    final isReturnHome = leg.isReturnHome;
-
-    String? lastArrival = leg.endLocation;
-
-    if (isReturnHome) {
+    if (leg.isReturnHome) {
       final dayLegs = await DatabaseService.getLegsForDate(_today);
       await _calculator.finalizeDay(dayLegs);
       _syncToSheets(dayLegs);
@@ -143,7 +120,6 @@ class TripNotifier extends StateNotifier<TripState> {
     state = state.copyWith(
       activeLeg: null,
       todayLegs: todayLegs,
-      lastArrivalLocation: lastArrival,
     );
 
     return leg;

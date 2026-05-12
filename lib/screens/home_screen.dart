@@ -188,8 +188,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               onPressed: () async {
                 final tripNotifier = ref.read(tripProvider.notifier);
                 final backgroundService = ref.read(backgroundServiceProvider);
-                await tripNotifier.stopDriving(expectedOdometer);
-                await backgroundService.onDrivingStopped();
+                final result = await showOdometerDialog(
+                  context: context,
+                  title: 'Olen perillä',
+                  subtitle:
+                      'Kohde: ${leg.endLocation ?? leg.routeDescription}',
+                  label: 'Matkamittari perillä (km)',
+                  actionLabel: 'Lopeta ajo',
+                  initialValue: expectedOdometer,
+                  expectedHint: expectedOdometer,
+                );
+                if (result != null) {
+                  await tripNotifier.stopDriving(result.odometer);
+                  await backgroundService.onDrivingStopped();
+                }
               },
               icon: const Icon(Icons.flag),
               label: const Text('Olen perillä'),

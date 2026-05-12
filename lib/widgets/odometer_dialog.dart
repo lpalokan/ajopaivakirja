@@ -122,7 +122,7 @@ class _OdometerInputState extends State<_OdometerInput> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Future.microtask(() => Navigator.pop(context)),
+          onPressed: () => Navigator.pop(context),
           child: const Text('Peruuta'),
         ),
         FilledButton(
@@ -150,9 +150,6 @@ class _OdometerInputState extends State<_OdometerInput> {
     final purpose =
         _hasRelatedField ? _purposeController.text.trim() : null;
 
-    // Use Future.microtask to ensure pop happens outside current build frame
-    Future.microtask(() {
-      Navigator.pop(context, (odometer: value, purpose: purpose));
-    });
+    Navigator.pop(context, (odometer: value, purpose: purpose));
   }
 }
