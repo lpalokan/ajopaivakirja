@@ -26,6 +26,7 @@ class TripCalculator {
       kmAllowance: double.parse(kmAllowance.toStringAsFixed(2)),
       legDurationHours: double.parse(legDurationHours.toStringAsFixed(2)),
       isReturnHome: isReturnHome,
+      dailyAllowance: 0,
     );
   }
 
@@ -111,8 +112,8 @@ class TripCalculator {
       allowance = calculateDailyAllowance(updated).allowance;
     }
 
-    // Apply daily allowance to the last leg (returning home)
-    if (last.isReturnHome) {
+    // Apply daily allowance to the last leg if returning home or override is set
+    if (last.isReturnHome || last.dailyAllowanceType != null) {
       updated[updated.length - 1] = last.copyWith(
         dailyAllowance: allowance,
       );
