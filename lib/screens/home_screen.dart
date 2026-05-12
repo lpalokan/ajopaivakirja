@@ -93,7 +93,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ],
           _buildRecentRoutes(
               recentRoutes, settings, tripNotifier, context),
-          if (routes.length > 2) ...[
+          if (routes.isNotEmpty) ...[
             const SizedBox(height: 8),
             TextButton.icon(
               onPressed: () {
@@ -376,6 +376,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             style: TextStyle(
                 color: Theme.of(context).colorScheme.onSurfaceVariant),
             textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                    builder: (_) => const RouteManagementScreen()),
+              );
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('Lisää reitti'),
           ),
         ],
       ),
