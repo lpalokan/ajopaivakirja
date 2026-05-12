@@ -95,6 +95,8 @@ class TripNotifier extends StateNotifier<TripState> {
       startTime: now,
       startOdometer: startOdometer,
       startLocation: dir.start,
+      endLocation: dir.end,
+      kmDriven: route.distanceKm,
       routeDescription: route.name,
       purpose: purpose,
       driver: driverName,

@@ -196,6 +196,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       'Kohde: ${leg.endLocation ?? leg.routeDescription}',
                   label: 'Matkamittari perillä (km)',
                   actionLabel: 'Lopeta ajo',
+                  initialValue: expectedOdometer,
                   expectedHint: expectedOdometer,
                   onConfirm: (endOdometer, _) async {
                     if (context.mounted) {
