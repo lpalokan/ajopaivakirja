@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -189,35 +190,46 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 final tripNotifier = ref.read(tripProvider.notifier);
                 final backgroundService = ref.read(backgroundServiceProvider);
                 final controller = TextEditingController(text: expectedOdometer.toString());
-                final endOdometer = await showDialog<int>(
+                final completer = Completer<int?>();
+                showDialog(
                   context: context,
                   barrierDismissible: false,
-                  builder: (ctx) => AlertDialog(
-                    title: const Text('Olen perillä'),
-                    content: TextField(
-                      controller: controller,
-                      keyboardType: TextInputType.number,
-                      autofocus: true,
-                      decoration: InputDecoration(
-                        labelText: 'Matkamittari perillä (km)',
-                        border: const OutlineInputBorder(),
+                  builder: (ctx) => PopScope(
+                    canPop: false,
+                    child: AlertDialog(
+                      title: const Text('Olen perillä'),
+                      content: TextField(
+                        controller: controller,
+                        keyboardType: TextInputType.number,
+                        autofocus: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Matkamittari perillä (km)',
+                          border: OutlineInputBorder(),
+                        ),
                       ),
+                      actions: [
+                        TextButton(
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            completer.complete(null);
+                          },
+                          child: const Text('Peruuta'),
+                        ),
+                        FilledButton(
+                          onPressed: () {
+                            final v = int.tryParse(controller.text.trim());
+                            if (v != null) {
+                              Navigator.pop(ctx);
+                              completer.complete(v);
+                            }
+                          },
+                          child: const Text('Lopeta ajo'),
+                        ),
+                      ],
                     ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        child: const Text('Peruuta'),
-                      ),
-                      FilledButton(
-                        onPressed: () {
-                          final v = int.tryParse(controller.text.trim());
-                          Navigator.pop(ctx, v);
-                        },
-                        child: const Text('Lopeta ajo'),
-                      ),
-                    ],
                   ),
                 );
+                final endOdometer = await completer.future;
                 if (endOdometer != null) {
                   await tripNotifier.stopDriving(endOdometer);
                   await backgroundService.onDrivingStopped();
