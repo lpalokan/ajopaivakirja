@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../main.dart';
 import '../models/trip_leg.dart';
 import '../providers/settings_provider.dart';
 import '../services/database_service.dart';
+import '../services/trip_calculator.dart';
 
 class TripHistoryScreen extends ConsumerStatefulWidget {
   const TripHistoryScreen({super.key});
@@ -95,6 +97,146 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     }
   }
 
+  Future<void> _showEditDialog(TripLeg leg) async {
+    final settings = ref.read(settingsProvider);
+    final calc = TripCalculator(settings);
+
+    final startOdoCtrl = TextEditingController(text: leg.startOdometer.toString());
+    final endOdoCtrl = TextEditingController(text: leg.endOdometer?.toString() ?? '');
+    final startLocCtrl = TextEditingController(text: leg.startLocation);
+    final endLocCtrl = TextEditingController(text: leg.endLocation ?? '');
+    final purposeCtrl = TextEditingController(text: leg.purpose ?? '');
+    final driverCtrl = TextEditingController(text: leg.driver);
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Muokkaa merkintää'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: startLocCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Lähtöpaikka',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: endLocCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Määränpää',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: startOdoCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: const InputDecoration(
+                  labelText: 'Mittari alussa (km)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: endOdoCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: const InputDecoration(
+                  labelText: 'Mittari lopussa (km)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: purposeCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Tarkoitus',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: driverCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Kuljettaja',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Peruuta'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Tallenna'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != true) return;
+
+    final startOdo = int.tryParse(startOdoCtrl.text.trim()) ?? leg.startOdometer;
+    final endOdoText = endOdoCtrl.text.trim();
+    final endOdo = endOdoText.isNotEmpty ? int.tryParse(endOdoText) : leg.endOdometer;
+
+    var updated = leg.copyWith(
+      startLocation: startLocCtrl.text.trim(),
+      endLocation: endLocCtrl.text.trim(),
+      startOdometer: startOdo,
+      endOdometer: endOdo,
+      purpose: purposeCtrl.text.trim(),
+      driver: driverCtrl.text.trim(),
+    );
+
+    updated = calc.calculateLeg(updated);
+    await DatabaseService.updateTripLeg(updated);
+    await _load();
+  }
+
+  Future<void> _deleteLeg(TripLeg leg) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Poista merkintä'),
+        content: Text(
+          'Poistetaanko matka: ${leg.routeDescription ?? "${leg.startLocation} → ${leg.endLocation ?? "?"}"}?\n'
+          '${leg.kmDriven.toStringAsFixed(1)} km · €${leg.totalAllowance.toStringAsFixed(2)}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Peruuta'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+            child: const Text('Poista'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || leg.id == null) return;
+
+    await DatabaseService.deleteTripLeg(leg.id!);
+    await _load();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Merkintä poistettu')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -178,6 +320,19 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                           size: 16,
                           color: Theme.of(context).colorScheme.outline),
                     ),
+                  PopupMenuButton<String>(
+                    onSelected: (action) {
+                      if (action == 'edit') {
+                        _showEditDialog(leg);
+                      } else if (action == 'delete') {
+                        _deleteLeg(leg);
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(value: 'edit', child: Text('Muokkaa')),
+                      const PopupMenuItem(value: 'delete', child: Text('Poista')),
+                    ],
+                  ),
                 ],
               ),
             ),
