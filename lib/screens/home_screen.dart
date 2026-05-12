@@ -47,7 +47,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             expectedHint: expectedOdometer,
             onConfirm: (endOdometer, _) async {
               if (context.mounted) {
-                Navigator.of(context).pop();
                 await tripNotifier.stopDriving(endOdometer);
                 await backgroundService.onDrivingStopped();
               }
@@ -199,11 +198,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   initialValue: expectedOdometer,
                   expectedHint: expectedOdometer,
                   onConfirm: (endOdometer, _) async {
-                    if (context.mounted) {
-                      Navigator.of(context).pop();
-                      await tripNotifier.stopDriving(endOdometer);
-                      await backgroundService.onDrivingStopped();
-                    }
+                    await tripNotifier.stopDriving(endOdometer);
+                    await backgroundService.onDrivingStopped();
                   },
                 );
               },
@@ -293,7 +289,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       initialValue: null,
       onConfirm: (startOdometer, purpose) async {
         if (context.mounted) {
-          Navigator.of(context).pop();
           final backgroundService = ref.read(backgroundServiceProvider);
           backgroundService.updateSettings(settings);
           final leg = await tripNotifier.startDriving(

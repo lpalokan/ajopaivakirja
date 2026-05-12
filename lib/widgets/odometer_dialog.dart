@@ -125,6 +125,7 @@ class _OdometerDialogState extends State<OdometerDialog> {
     final purpose = _hasRelatedField
         ? _purposeController.text.trim()
         : null;
+    Navigator.of(context).pop();
     widget.onConfirm(value, purpose);
   }
 }
