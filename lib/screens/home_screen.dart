@@ -44,14 +44,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             subtitle: 'Kohde: ${activeLeg.endLocation ?? activeLeg.routeDescription}',
             label: 'Matkamittari perillä (km)',
             actionLabel: 'Lopeta ajo',
+            initialValue: expectedOdometer,
             expectedHint: expectedOdometer,
-            onConfirm: (endOdometer, _) async {
-              if (context.mounted) {
-                await tripNotifier.stopDriving(endOdometer);
-                await backgroundService.onDrivingStopped();
-              }
-            },
-          );
+          ).then((result) {
+            if (result != null && context.mounted) {
+              tripNotifier.stopDriving(result.odometer);
+              backgroundService.onDrivingStopped();
+            }
+          });
         }
       };
 
@@ -188,7 +188,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               onPressed: () async {
                 final tripNotifier = ref.read(tripProvider.notifier);
                 final backgroundService = ref.read(backgroundServiceProvider);
-                await showOdometerDialog(
+                final result = await showOdometerDialog(
                   context: context,
                   title: 'Olen perillä',
                   subtitle:
@@ -197,11 +197,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   actionLabel: 'Lopeta ajo',
                   initialValue: expectedOdometer,
                   expectedHint: expectedOdometer,
-                  onConfirm: (endOdometer, _) async {
-                    await tripNotifier.stopDriving(endOdometer);
-                    await backgroundService.onDrivingStopped();
-                  },
                 );
+                if (result != null) {
+                  await tripNotifier.stopDriving(result.odometer);
+                  await backgroundService.onDrivingStopped();
+                }
               },
               icon: const Icon(Icons.flag),
               label: const Text('Olen perillä'),
@@ -277,7 +277,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final routeNotifier = ref.read(routeProvider.notifier);
     final settings = ref.read(settingsProvider);
 
-    await showOdometerDialog(
+    final result = await showOdometerDialog(
       context: context,
       title: 'Aloita ajo',
       subtitle: 'Reitti: ${route.name}\n'
@@ -286,25 +286,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       label: 'Matkamittari (km)',
       actionLabel: 'Aloita ajo',
       relatedField: 'Tarkoitus',
-      initialValue: null,
-      onConfirm: (startOdometer, purpose) async {
-        if (context.mounted) {
-          final backgroundService = ref.read(backgroundServiceProvider);
-          backgroundService.updateSettings(settings);
-          final leg = await tripNotifier.startDriving(
-            route: route,
-            startOdometer: startOdometer,
-            purpose: purpose ?? '',
-            driver: settings.driverName,
-          );
-          await backgroundService.onDrivingStarted(leg);
-          if (route.id != null && purpose != null && purpose.isNotEmpty) {
-            await routeNotifier.savePurpose(route.id!, purpose);
-          }
-          await routeNotifier.markUsed(route.id!);
-        }
-      },
     );
+
+    if (result != null) {
+      final backgroundService = ref.read(backgroundServiceProvider);
+      backgroundService.updateSettings(settings);
+      final leg = await tripNotifier.startDriving(
+        route: route,
+        startOdometer: result.odometer,
+        purpose: result.purpose ?? '',
+        driver: settings.driverName,
+      );
+      await backgroundService.onDrivingStarted(leg);
+      if (route.id != null &&
+          result.purpose != null &&
+          result.purpose!.isNotEmpty) {
+        await routeNotifier.savePurpose(route.id!, result.purpose!);
+      }
+      await routeNotifier.markUsed(route.id!);
+    }
   }
 
   Widget _buildTodaySummary(List<TripLeg> legs, BuildContext context) {
