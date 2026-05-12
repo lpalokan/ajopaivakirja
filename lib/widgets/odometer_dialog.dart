@@ -122,7 +122,7 @@ class _OdometerInputState extends State<_OdometerInput> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
           child: const Text('Peruuta'),
         ),
         FilledButton(
@@ -149,6 +149,6 @@ class _OdometerInputState extends State<_OdometerInput> {
     final purpose =
         _hasRelatedField ? _purposeController.text.trim() : null;
 
-    Navigator.pop(context, (odometer: value, purpose: purpose));
+    Navigator.of(context, rootNavigator: true).pop((odometer: value, purpose: purpose));
   }
 }
