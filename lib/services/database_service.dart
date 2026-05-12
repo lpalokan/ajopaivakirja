@@ -19,8 +19,9 @@ class DatabaseService {
 
     return openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
   }
 
@@ -58,6 +59,7 @@ class DatabaseService {
         driver TEXT NOT NULL,
         km_allowance REAL NOT NULL DEFAULT 0,
         daily_allowance REAL NOT NULL DEFAULT 0,
+        daily_allowance_type INTEGER,
         is_return_home INTEGER NOT NULL DEFAULT 0,
         synced INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (route_id) REFERENCES routes(id) ON DELETE SET NULL
@@ -70,6 +72,14 @@ class DatabaseService {
         value TEXT NOT NULL
       )
     ''');
+  }
+
+  static Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('''
+        ALTER TABLE trip_legs ADD COLUMN daily_allowance_type INTEGER
+      ''');
+    }
   }
 
   // ── Routes ──

@@ -98,14 +98,23 @@ class TripCalculator {
     // Calculate and apply working times
     updated = calculateWorkingTimes(updated);
 
-    // Calculate daily allowance
-    final daily = calculateDailyAllowance(updated);
+    // Determine daily allowance: honor manual override if set
+    final last = updated.last;
+    final double allowance;
+    if (last.dailyAllowanceType != null) {
+      allowance = switch (last.dailyAllowanceType) {
+        1 => allowance6h,
+        2 => allowance10h,
+        _ => 0,
+      };
+    } else {
+      allowance = calculateDailyAllowance(updated).allowance;
+    }
 
     // Apply daily allowance to the last leg (returning home)
-    final last = updated.last;
     if (last.isReturnHome) {
       updated[updated.length - 1] = last.copyWith(
-        dailyAllowance: daily.allowance,
+        dailyAllowance: allowance,
       );
     }
 

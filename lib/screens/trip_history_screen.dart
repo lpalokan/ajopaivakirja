@@ -110,6 +110,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
 
     var pickedStartTime = leg.startTime;
     var pickedEndTime = leg.endTime;
+    var pickedType = leg.dailyAllowanceType;
     final timeFmt = DateFormat('HH:mm');
 
     final result = await showDialog<bool>(
@@ -221,6 +222,37 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                     border: OutlineInputBorder(),
                   ),
                 ),
+                const SizedBox(height: 16),
+                Text('Päiväraha',
+                    style: Theme.of(ctx).textTheme.titleSmall),
+                RadioGroup<int?>(
+                  groupValue: pickedType,
+                  onChanged: (v) => setDialogState(() => pickedType = v),
+                  child: Column(
+                    children: [
+                      RadioListTile<int?>(
+                        value: null,
+                        title: const Text('Automaattinen'),
+                        dense: true,
+                      ),
+                      RadioListTile<int?>(
+                        value: 0,
+                        title: const Text('Ei päivärahaa'),
+                        dense: true,
+                      ),
+                      RadioListTile<int?>(
+                        value: 1,
+                        title: const Text('Puolipäivä (>6h)'),
+                        dense: true,
+                      ),
+                      RadioListTile<int?>(
+                        value: 2,
+                        title: const Text('Kokopäivä (>10h)'),
+                        dense: true,
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -253,10 +285,16 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
       endOdometer: endOdo,
       purpose: purposeCtrl.text.trim(),
       driver: driverCtrl.text.trim(),
+      dailyAllowanceType: pickedType,
     );
 
     updated = calc.calculateLeg(updated);
     await DatabaseService.updateTripLeg(updated);
+
+    // Recalculate daily allowance for the full day
+    final dayLegs = await DatabaseService.getLegsForDate(leg.date);
+    await calc.finalizeDay(dayLegs);
+
     await _load();
   }
 
