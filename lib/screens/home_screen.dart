@@ -7,6 +7,7 @@ import '../models/trip_leg.dart';
 import '../providers/route_provider.dart';
 import '../providers/trip_provider.dart';
 import '../providers/settings_provider.dart';
+import '../services/database_service.dart';
 import '../widgets/odometer_dialog.dart';
 import 'settings_screen.dart';
 import 'route_management_screen.dart';
@@ -277,6 +278,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final routeNotifier = ref.read(routeProvider.notifier);
     final settings = ref.read(settingsProvider);
 
+    final lastLeg = await DatabaseService.getLastLeg();
+    final initialOdometer = lastLeg?.endOdometer;
+
     final result = await showOdometerDialog(
       context: context,
       title: 'Aloita ajo',
@@ -286,6 +290,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       label: 'Matkamittari (km)',
       actionLabel: 'Aloita ajo',
       relatedField: 'Tarkoitus',
+      initialValue: initialOdometer,
     );
 
     if (result != null) {

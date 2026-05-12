@@ -108,78 +108,133 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     final purposeCtrl = TextEditingController(text: leg.purpose ?? '');
     final driverCtrl = TextEditingController(text: leg.driver);
 
+    var pickedStartTime = leg.startTime;
+    var pickedEndTime = leg.endTime;
+    final timeFmt = DateFormat('HH:mm');
+
     final result = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Muokkaa merkintää'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: startLocCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Lähtöpaikka',
-                  border: OutlineInputBorder(),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Muokkaa merkintää'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                InkWell(
+                  onTap: () async {
+                    final t = await showTimePicker(
+                      context: ctx,
+                      initialTime: TimeOfDay.fromDateTime(pickedStartTime),
+                    );
+                    if (t != null) {
+                      final d = pickedStartTime;
+                      setDialogState(() {
+                        pickedStartTime = DateTime(d.year, d.month, d.day, t.hour, t.minute);
+                      });
+                    }
+                  },
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Alkamisaika',
+                      border: OutlineInputBorder(),
+                      suffixIcon: Icon(Icons.access_time),
+                    ),
+                    child: Text(timeFmt.format(pickedStartTime)),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: endLocCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Määränpää',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 12),
+                if (leg.endTime != null)
+                  InkWell(
+                    onTap: () async {
+                      final t = await showTimePicker(
+                        context: ctx,
+                        initialTime: TimeOfDay.fromDateTime(pickedEndTime!),
+                      );
+                      if (t != null) {
+                        setDialogState(() {
+                          pickedEndTime = DateTime(
+                            pickedEndTime!.year, pickedEndTime!.month, pickedEndTime!.day,
+                            t.hour, t.minute,
+                          );
+                        });
+                      }
+                    },
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Päättymisaika',
+                        border: OutlineInputBorder(),
+                        suffixIcon: Icon(Icons.access_time),
+                      ),
+                      child: Text(timeFmt.format(pickedEndTime!)),
+                    ),
+                  ),
+                if (leg.endTime != null) const SizedBox(height: 12),
+                TextField(
+                  controller: startLocCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Lähtöpaikka',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: startOdoCtrl,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: const InputDecoration(
-                  labelText: 'Mittari alussa (km)',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: endLocCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Määränpää',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: endOdoCtrl,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: const InputDecoration(
-                  labelText: 'Mittari lopussa (km)',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: startOdoCtrl,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: const InputDecoration(
+                    labelText: 'Mittari alussa (km)',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: purposeCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Tarkoitus',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: endOdoCtrl,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: const InputDecoration(
+                    labelText: 'Mittari lopussa (km)',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: driverCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Kuljettaja',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: purposeCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Tarkoitus',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 12),
+                TextField(
+                  controller: driverCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Kuljettaja',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Peruuta'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Tallenna'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Peruuta'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Tallenna'),
-          ),
-        ],
       ),
     );
 
@@ -190,6 +245,8 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     final endOdo = endOdoText.isNotEmpty ? int.tryParse(endOdoText) : leg.endOdometer;
 
     var updated = leg.copyWith(
+      startTime: pickedStartTime,
+      endTime: pickedEndTime,
       startLocation: startLocCtrl.text.trim(),
       endLocation: endLocCtrl.text.trim(),
       startOdometer: startOdo,
