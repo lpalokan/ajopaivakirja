@@ -3,6 +3,7 @@ import 'package:path/path.dart' as p;
 import '../models/route.dart';
 import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
+import 'log_service.dart';
 
 class DatabaseService {
   static Database? _db;
@@ -19,8 +20,9 @@ class DatabaseService {
 
     return openDatabase(
       path,
-      version: 1,
+      version: 3,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
   }
 
@@ -58,6 +60,7 @@ class DatabaseService {
         driver TEXT NOT NULL,
         km_allowance REAL NOT NULL DEFAULT 0,
         daily_allowance REAL NOT NULL DEFAULT 0,
+        daily_allowance_type INTEGER,
         is_return_home INTEGER NOT NULL DEFAULT 0,
         synced INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (route_id) REFERENCES routes(id) ON DELETE SET NULL
@@ -70,6 +73,29 @@ class DatabaseService {
         value TEXT NOT NULL
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE deleted_leg_ids (
+        id INTEGER PRIMARY KEY,
+        deleted_at TEXT NOT NULL
+      )
+    ''');
+  }
+
+  static Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('''
+        ALTER TABLE trip_legs ADD COLUMN daily_allowance_type INTEGER
+      ''');
+    }
+    if (oldVersion < 3) {
+      await db.execute('''
+        CREATE TABLE deleted_leg_ids (
+          id INTEGER PRIMARY KEY,
+          deleted_at TEXT NOT NULL
+        )
+      ''');
+    }
   }
 
   // ── Routes ──
@@ -119,6 +145,15 @@ class DatabaseService {
     return maps.map((m) => Route.fromMap(m)).toList();
   }
 
+  static Future<List<String>> getUniqueLocations() async {
+    final db = await database;
+    final result = await db.rawQuery(
+      'SELECT DISTINCT start_location as loc FROM routes '
+      'UNION SELECT DISTINCT end_location as loc FROM routes ORDER BY loc',
+    );
+    return result.map((r) => r['loc'] as String).toList();
+  }
+
   static Future<void> updateRouteLastPurpose(int routeId, String purpose) async {
     final db = await database;
     final now = DateTime.now().toIso8601String();
@@ -145,6 +180,7 @@ class DatabaseService {
   static Future<TripLeg> insertTripLeg(TripLeg leg) async {
     final db = await database;
     final id = await db.insert('trip_legs', leg.toMap());
+    LogService().info('DB: inserted leg $id (${leg.startLocation} -> ${leg.endLocation})');
     return leg.copyWith(id: id);
   }
 
@@ -156,12 +192,31 @@ class DatabaseService {
       where: 'id = ?',
       whereArgs: [leg.id],
     );
+    LogService().info('DB: updated leg ${leg.id}');
     return leg;
   }
 
   static Future<void> deleteTripLeg(int id) async {
     final db = await database;
     await db.delete('trip_legs', where: 'id = ?', whereArgs: [id]);
+    await db.insert('deleted_leg_ids', {
+      'id': id,
+      'deleted_at': DateTime.now().toIso8601String(),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    LogService().info('DB: deleted leg $id');
+  }
+
+  static Future<List<int>> getDeletedLegIds() async {
+    final db = await database;
+    final result = await db.query('deleted_leg_ids');
+    return result.map((r) => r['id'] as int).toList();
+  }
+
+  static Future<void> clearDeletedLegIds(List<int> ids) async {
+    final db = await database;
+    for (final id in ids) {
+      await db.delete('deleted_leg_ids', where: 'id = ?', whereArgs: [id]);
+    }
   }
 
   static Future<List<TripLeg>> getLegsForDate(String date) async {
@@ -212,6 +267,17 @@ class DatabaseService {
     );
   }
 
+  static Future<void> markLegUnsynced(int id) async {
+    final db = await database;
+    await db.update(
+      'trip_legs',
+      {'synced': 0},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    LogService().info('DB: leg $id marked unsynced');
+  }
+
   static Future<int> getNextLegOrder(String date) async {
     final db = await database;
     final result = await db.rawQuery(
@@ -255,8 +321,8 @@ class DatabaseService {
         'settings',
         {'key': entry.key, 'value': entry.value},
         conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-    }
+    );
+  }
     await batch.commit(noResult: true);
   }
 

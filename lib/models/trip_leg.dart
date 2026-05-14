@@ -17,6 +17,7 @@ class TripLeg {
   final String driver;
   final double kmAllowance;
   final double dailyAllowance;
+  final int? dailyAllowanceType;
   final bool isReturnHome;
   final bool synced;
 
@@ -39,6 +40,7 @@ class TripLeg {
     required this.driver,
     this.kmAllowance = 0,
     this.dailyAllowance = 0,
+    this.dailyAllowanceType,
     this.isReturnHome = false,
     this.synced = false,
   });
@@ -61,7 +63,8 @@ class TripLeg {
     String? purpose,
     String? driver,
     double? kmAllowance,
-    double? dailyAllowance,
+  double? dailyAllowance,
+    int? dailyAllowanceType = _allowanceTypeSentinel,
     bool? isReturnHome,
     bool? synced,
   }) {
@@ -84,10 +87,13 @@ class TripLeg {
       driver: driver ?? this.driver,
       kmAllowance: kmAllowance ?? this.kmAllowance,
       dailyAllowance: dailyAllowance ?? this.dailyAllowance,
+      dailyAllowanceType: identical(dailyAllowanceType, _allowanceTypeSentinel) ? this.dailyAllowanceType : dailyAllowanceType,
       isReturnHome: isReturnHome ?? this.isReturnHome,
       synced: synced ?? this.synced,
     );
   }
+
+  static const _allowanceTypeSentinel = -999;
 
   Map<String, dynamic> toMap() {
     return {
@@ -109,6 +115,7 @@ class TripLeg {
       'driver': driver,
       'km_allowance': kmAllowance,
       'daily_allowance': dailyAllowance,
+      'daily_allowance_type': dailyAllowanceType,
       'is_return_home': isReturnHome ? 1 : 0,
       'synced': synced ? 1 : 0,
     };
@@ -138,6 +145,7 @@ class TripLeg {
       driver: map['driver'] as String,
       kmAllowance: (map['km_allowance'] as num?)?.toDouble() ?? 0,
       dailyAllowance: (map['daily_allowance'] as num?)?.toDouble() ?? 0,
+      dailyAllowanceType: map['daily_allowance_type'] as int?,
       isReturnHome: (map['is_return_home'] as int?) == 1,
       synced: (map['synced'] as int?) == 1,
     );

@@ -1,6 +1,7 @@
 import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
 import 'database_service.dart';
+import 'log_service.dart';
 
 class TripCalculator {
   final AppSettings _settings;
@@ -16,16 +17,14 @@ class TripCalculator {
   TripLeg calculateLeg(TripLeg leg) {
     final kmDriven = (leg.endOdometer ?? leg.startOdometer) - leg.startOdometer;
     final kmAllowance = kmDriven * kmRate;
-    final legDurationHours = leg.endTime != null
-        ? leg.endTime!.difference(leg.startTime).inMinutes / 60.0
-        : 0.0;
     final isReturnHome = _isReturningHome(leg.endLocation);
 
     return leg.copyWith(
       kmDriven: kmDriven.toDouble(),
       kmAllowance: double.parse(kmAllowance.toStringAsFixed(2)),
-      legDurationHours: double.parse(legDurationHours.toStringAsFixed(2)),
+      legDurationHours: 0,
       isReturnHome: isReturnHome,
+      dailyAllowance: 0,
     );
   }
 
@@ -62,9 +61,11 @@ class TripCalculator {
 
   /// Calculate working time for each leg.
   /// Working time = gap between this leg's end_time and next leg's start_time.
-  /// If destination is home, working time = 0.
+  /// Total working time is stored on the last leg, others get 0.
   List<TripLeg> calculateWorkingTimes(List<TripLeg> legs) {
     final updated = <TripLeg>[];
+    double totalWorkingTime = 0;
+
     for (var i = 0; i < legs.length; i++) {
       final leg = legs[i];
       double workingTime = 0;
@@ -82,8 +83,18 @@ class TripCalculator {
       }
 
       workingTime = double.parse(workingTime.toStringAsFixed(2));
-      updated.add(leg.copyWith(workingTimeHours: workingTime));
+      totalWorkingTime += workingTime;
+      updated.add(leg.copyWith(workingTimeHours: 0));
     }
+
+    // Put total working time on the last leg
+    if (updated.isNotEmpty) {
+      final last = updated.last;
+      updated[updated.length - 1] = last.copyWith(
+        workingTimeHours: double.parse(totalWorkingTime.toStringAsFixed(2)),
+      );
+    }
+
     return updated;
   }
 
@@ -98,14 +109,38 @@ class TripCalculator {
     // Calculate and apply working times
     updated = calculateWorkingTimes(updated);
 
-    // Calculate daily allowance
-    final daily = calculateDailyAllowance(updated);
-
-    // Apply daily allowance to the last leg (returning home)
+    // Determine daily allowance: honor manual override if set
     final last = updated.last;
-    if (last.isReturnHome) {
+    final double allowance;
+    final String mode;
+    if (last.dailyAllowanceType != null) {
+      allowance = switch (last.dailyAllowanceType) {
+        1 => allowance6h,
+        2 => allowance10h,
+        _ => 0,
+      };
+      mode = 'manual(type: ${last.dailyAllowanceType})';
+    } else {
+      final daily = calculateDailyAllowance(updated);
+      allowance = daily.allowance;
+      mode = 'auto(hours: ${daily.totalHours})';
+    }
+    LogService().info('Calc: finalizeDay ${updated.length} legs, allowance=$allowance€ ($mode)');
+
+    // Apply daily allowance to the last leg if returning home or override is set
+    if (last.isReturnHome || last.dailyAllowanceType != null) {
       updated[updated.length - 1] = last.copyWith(
-        dailyAllowance: daily.allowance,
+        dailyAllowance: allowance,
+      );
+    }
+
+    // Calculate total day hours and place on last leg
+    if (last.endTime != null) {
+      final totalHours = last.endTime!
+          .difference(updated.first.startTime)
+          .inMinutes / 60.0;
+      updated[updated.length - 1] = updated.last.copyWith(
+        legDurationHours: double.parse(totalHours.toStringAsFixed(2)),
       );
     }
 

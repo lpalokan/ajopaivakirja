@@ -5,28 +5,34 @@ import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
 import '../services/database_service.dart';
 import '../services/trip_calculator.dart';
+import '../services/log_service.dart';
+import '../main.dart';
 import 'settings_provider.dart';
+
+class _Sentinel {
+  const _Sentinel();
+}
 
 class TripState {
   final TripLeg? activeLeg;
   final List<TripLeg> todayLegs;
-  final String? lastArrivalLocation;
 
   const TripState({
     this.activeLeg,
     this.todayLegs = const [],
-    this.lastArrivalLocation,
   });
 
+  static const _unset = _Sentinel();
+
   TripState copyWith({
-    TripLeg? activeLeg,
+    Object? activeLeg = _unset,
     List<TripLeg>? todayLegs,
-    String? lastArrivalLocation,
   }) {
     return TripState(
-      activeLeg: activeLeg ?? this.activeLeg,
+      activeLeg: identical(activeLeg, _unset)
+          ? this.activeLeg
+          : activeLeg as TripLeg?,
       todayLegs: todayLegs ?? this.todayLegs,
-      lastArrivalLocation: lastArrivalLocation ?? this.lastArrivalLocation,
     );
   }
 }
@@ -47,33 +53,11 @@ class TripNotifier extends StateNotifier<TripState> {
   Future<void> load() async {
     final legs = await DatabaseService.getLegsForDate(_today);
     final activeLeg = await DatabaseService.getActiveLeg();
-    final lastLeg = await DatabaseService.getLastLeg();
 
     state = TripState(
       activeLeg: activeLeg,
       todayLegs: legs,
-      lastArrivalLocation: lastLeg?.endLocation,
     );
-  }
-
-  /// Determine direction (start → end or end → start) based on last arrival.
-  ({String start, String end}) _determineDirection(model.Route route) {
-    final lastArrival = state.lastArrivalLocation;
-
-    if (lastArrival != null) {
-      final last = lastArrival.trim().toLowerCase();
-      final routeStart = route.startLocation.trim().toLowerCase();
-      final routeEnd = route.endLocation.trim().toLowerCase();
-
-      if (last == routeEnd) {
-        return (start: route.endLocation, end: route.startLocation);
-      }
-      if (last == routeStart) {
-        return (start: route.startLocation, end: route.endLocation);
-      }
-    }
-
-    return (start: route.startLocation, end: route.endLocation);
   }
 
   Future<TripLeg> startDriving({
@@ -81,25 +65,28 @@ class TripNotifier extends StateNotifier<TripState> {
     required int startOdometer,
     required String purpose,
     String? driver,
+    DateTime? startTime,
   }) async {
-    final dir = _determineDirection(route);
     final driverName = driver ?? _settings.driverName;
-    final now = DateTime.now();
+    final time = startTime ?? DateTime.now();
     final legOrder = await DatabaseService.getNextLegOrder(_today);
 
     final leg = TripLeg(
       date: _today,
       legOrder: legOrder,
       routeId: route.id,
-      startTime: now,
+      startTime: time,
       startOdometer: startOdometer,
-      startLocation: dir.start,
+      startLocation: route.startLocation,
+      endLocation: route.endLocation,
+      kmDriven: route.distanceKm,
       routeDescription: route.name,
       purpose: purpose,
       driver: driverName,
     );
 
     final saved = await DatabaseService.insertTripLeg(leg);
+    LogService().info('Trip: started ${route.name} (odo: $startOdometer, leg #$legOrder)');
     await DatabaseService.updateRouteTimestamp(route.id!);
 
     final todayLegs = await DatabaseService.getLegsForDate(_today);
@@ -112,26 +99,25 @@ class TripNotifier extends StateNotifier<TripState> {
     return saved;
   }
 
-  Future<TripLeg> stopDriving(int endOdometer) async {
+  Future<TripLeg> stopDriving(int endOdometer, {DateTime? endTime}) async {
     final active = state.activeLeg;
     if (active == null) throw Exception('Ei aktiivista ajoa');
 
-    final now = DateTime.now();
+    final time = endTime ?? DateTime.now();
     var leg = active.copyWith(
-      endTime: now,
+      endTime: time,
       endOdometer: endOdometer,
     );
 
     leg = _calculator.calculateLeg(leg);
+    LogService().info('Trip: stopped (odo: $endOdometer, km: ${leg.kmDriven}, returnHome: ${leg.isReturnHome})');
     await DatabaseService.updateTripLeg(leg);
 
-    final isReturnHome = leg.isReturnHome;
-
-    String? lastArrival = leg.endLocation;
-
-    if (isReturnHome) {
+    if (leg.isReturnHome) {
       final dayLegs = await DatabaseService.getLegsForDate(_today);
+      LogService().info('Trip: finalizing day with ${dayLegs.length} legs');
       await _calculator.finalizeDay(dayLegs);
+      _syncToSheets(dayLegs);
     }
 
     final todayLegs = await DatabaseService.getLegsForDate(_today);
@@ -139,16 +125,37 @@ class TripNotifier extends StateNotifier<TripState> {
     state = state.copyWith(
       activeLeg: null,
       todayLegs: todayLegs,
-      lastArrivalLocation: lastArrival,
     );
 
     return leg;
   }
 
   Future<void> extendReminder() async {
-    // Keeps driving, resets the reminder timer.
-    // The notification service will handle re-scheduling.
     await load();
+  }
+
+  Future<void> _syncToSheets(List<TripLeg> legs) async {
+    final settings = _ref.read(settingsProvider);
+    if (settings.sheetId.isEmpty) return;
+
+    try {
+      final sheets = _ref.read(sheetsServiceProvider);
+      final deletedIds = await DatabaseService.getDeletedLegIds();
+      LogService().info('Sheets: syncing ${legs.length} legs to ${settings.sheetTab} (+ ${deletedIds.length} deletes)');
+      await sheets.appendLegs(
+        legs,
+        sheetId: settings.sheetId,
+        sheetTab: settings.sheetTab,
+        deletedLegIds: deletedIds,
+        onSynced: (legId) => DatabaseService.markLegSynced(legId),
+      );
+      if (deletedIds.isNotEmpty) {
+        await DatabaseService.clearDeletedLegIds(deletedIds);
+      }
+      LogService().info('Sheets: sync complete (${legs.length} legs)');
+    } catch (e, st) {
+      LogService().error('Sheets: sync failed', e, st);
+    }
   }
 
   Future<void> finalizeDay() async {

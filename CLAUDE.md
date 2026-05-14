@@ -5,6 +5,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 ## GitHub Workflow
 
 - **Never merge pull requests.** Only create PRs. The user will review, merge, and close them.
+- **Never add commits to a branch after its PR has been merged.** Once merged, create a new branch from `main` for any remaining work.
 - Create a separate feature branch per task from the task breakdown in GitHub Issues.
 - Branch naming: `feature/N-short-description`
 - Push the branch and create a PR targeting `main`.

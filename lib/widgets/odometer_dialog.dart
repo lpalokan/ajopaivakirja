@@ -1,7 +1,41 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 
-class OdometerDialog extends StatefulWidget {
+typedef OdometerResult = ({int odometer, String? purpose, DateTime? time});
+
+Future<OdometerResult?> showOdometerDialog({
+  required BuildContext context,
+  required String title,
+  String? subtitle,
+  String? label,
+  required String actionLabel,
+  String? relatedField,
+  int? initialValue,
+  int? expectedHint,
+  bool showTime = false,
+  DateTime? initialTime,
+  String? timeLabel,
+}) {
+  return showDialog<OdometerResult>(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => _OdometerInput(
+      title: title,
+      subtitle: subtitle,
+      label: label,
+      actionLabel: actionLabel,
+      relatedField: relatedField,
+      initialValue: initialValue,
+      expectedHint: expectedHint,
+      showTime: showTime,
+      initialTime: initialTime,
+      timeLabel: timeLabel,
+    ),
+  );
+}
+
+class _OdometerInput extends StatefulWidget {
   final String title;
   final String? subtitle;
   final String? label;
@@ -9,10 +43,11 @@ class OdometerDialog extends StatefulWidget {
   final String? relatedField;
   final int? initialValue;
   final int? expectedHint;
-  final Future<void> Function(int value, String? purpose) onConfirm;
+  final bool showTime;
+  final DateTime? initialTime;
+  final String? timeLabel;
 
-  const OdometerDialog({
-    super.key,
+  const _OdometerInput({
     required this.title,
     this.subtitle,
     this.label,
@@ -20,17 +55,21 @@ class OdometerDialog extends StatefulWidget {
     this.relatedField,
     this.initialValue,
     this.expectedHint,
-    required this.onConfirm,
+    this.showTime = false,
+    this.initialTime,
+    this.timeLabel,
   });
 
   @override
-  State<OdometerDialog> createState() => _OdometerDialogState();
+  State<_OdometerInput> createState() => _OdometerInputState();
 }
 
-class _OdometerDialogState extends State<OdometerDialog> {
+class _OdometerInputState extends State<_OdometerInput> {
   final _odometerController = TextEditingController();
   final _purposeController = TextEditingController();
+  late DateTime _pickedTime;
   bool _hasRelatedField = false;
+  String? _errorText;
 
   @override
   void initState() {
@@ -39,6 +78,7 @@ class _OdometerDialogState extends State<OdometerDialog> {
     if (widget.initialValue != null) {
       _odometerController.text = widget.initialValue.toString();
     }
+    _pickedTime = widget.initialTime ?? DateTime.now();
   }
 
   @override
@@ -51,6 +91,7 @@ class _OdometerDialogState extends State<OdometerDialog> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final timeFmt = DateFormat('HH:mm');
 
     return AlertDialog(
       title: Text(widget.title),
@@ -64,14 +105,45 @@ class _OdometerDialogState extends State<OdometerDialog> {
                   style: TextStyle(color: colorScheme.onSurfaceVariant)),
               const SizedBox(height: 16),
             ],
+            if (widget.showTime) ...[
+              InkWell(
+                onTap: () async {
+                  final t = await showTimePicker(
+                    context: context,
+                    initialTime: TimeOfDay.fromDateTime(_pickedTime),
+                  );
+                  if (t != null) {
+                    setState(() {
+                      _pickedTime = DateTime(
+                        _pickedTime.year,
+                        _pickedTime.month,
+                        _pickedTime.day,
+                        t.hour,
+                        t.minute,
+                      );
+                    });
+                  }
+                },
+                child: InputDecorator(
+                  decoration: InputDecoration(
+                    labelText: widget.timeLabel ?? 'Aika',
+                    border: const OutlineInputBorder(),
+                    suffixIcon: const Icon(Icons.access_time),
+                  ),
+                  child: Text(timeFmt.format(_pickedTime)),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
             if (_hasRelatedField) ...[
               TextField(
                 controller: _purposeController,
                 decoration: InputDecoration(
                   labelText: widget.relatedField,
                   border: const OutlineInputBorder(),
-                  hintText:
-                      widget.relatedField == 'Tarkoitus' ? 'Esim. asiakastapaaminen' : null,
+                  hintText: widget.relatedField == 'Tarkoitus'
+                      ? 'Esim. asiakastapaaminen'
+                      : null,
                 ),
                 textCapitalization: TextCapitalization.sentences,
               ),
@@ -87,6 +159,7 @@ class _OdometerDialogState extends State<OdometerDialog> {
                 hintText: widget.expectedHint != null
                     ? 'Arvioitu: ${widget.expectedHint} km'
                     : 'Esim. 123456',
+                errorText: _errorText,
               ),
               autofocus: true,
             ),
@@ -95,7 +168,7 @@ class _OdometerDialogState extends State<OdometerDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () => Navigator.pop(context),
           child: const Text('Peruuta'),
         ),
         FilledButton(
@@ -108,41 +181,22 @@ class _OdometerDialogState extends State<OdometerDialog> {
 
   void _confirm() {
     final odometerText = _odometerController.text.trim();
-    if (odometerText.isEmpty) return;
+    if (odometerText.isEmpty) {
+      setState(() => _errorText = 'Syötä mittarilukema');
+      return;
+    }
 
     final value = int.tryParse(odometerText);
-    if (value == null) return;
+    if (value == null) {
+      setState(() => _errorText = 'Virheellinen lukema');
+      return;
+    }
 
-    final purpose = _hasRelatedField
-        ? _purposeController.text.trim()
-        : null;
-    widget.onConfirm(value, purpose);
+    setState(() => _errorText = null);
+    final purpose =
+        _hasRelatedField ? _purposeController.text.trim() : null;
+    final time = widget.showTime ? _pickedTime : null;
+
+    Navigator.pop(context, (odometer: value, purpose: purpose, time: time));
   }
-}
-
-Future<T?> showOdometerDialog<T>({
-  required BuildContext context,
-  required String title,
-  String? subtitle,
-  String? label,
-  required String actionLabel,
-  String? relatedField,
-  int? initialValue,
-  int? expectedHint,
-  required Future<void> Function(int value, String? purpose) onConfirm,
-}) {
-  return showDialog<T>(
-    context: context,
-    barrierDismissible: false,
-    builder: (context) => OdometerDialog(
-      title: title,
-      subtitle: subtitle,
-      label: label,
-      actionLabel: actionLabel,
-      relatedField: relatedField,
-      initialValue: initialValue,
-      expectedHint: expectedHint,
-      onConfirm: onConfirm,
-    ),
-  );
 }

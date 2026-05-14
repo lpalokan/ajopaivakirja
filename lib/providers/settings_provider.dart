@@ -47,6 +47,9 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     if (fields.containsKey('driver_name') && fields['driver_name'] != null) {
       s = s.copyWith(driverName: fields['driver_name']!);
     }
+    if (fields.containsKey('debug_logging') && fields['debug_logging'] != null) {
+      s = s.copyWith(debugLogging: fields['debug_logging'] == '1');
+    }
     await save(s);
   }
 }

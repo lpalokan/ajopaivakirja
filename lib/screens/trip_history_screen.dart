@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import '../main.dart';
 import '../models/trip_leg.dart';
+import '../providers/settings_provider.dart';
 import '../services/database_service.dart';
+import '../services/trip_calculator.dart';
 
 class TripHistoryScreen extends ConsumerStatefulWidget {
   const TripHistoryScreen({super.key});
@@ -16,11 +20,19 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
   List<String> _dates = [];
   Map<String, List<TripLeg>> _legsByDate = {};
   bool _loading = true;
+  bool _syncing = false;
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  bool get _hasUnsynced {
+    for (final legs in _legsByDate.values) {
+      if (legs.any((l) => !l.synced)) return true;
+    }
+    return false;
   }
 
   Future<void> _load() async {
@@ -39,10 +51,377 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     }
   }
 
+  Future<void> _syncAll() async {
+    final settings = ref.read(settingsProvider);
+    if (settings.sheetId.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sheets-tunnusta ei ole määritetty')),
+        );
+      }
+      return;
+    }
+
+    if (!_hasUnsynced) {
+      final deletedIds = await DatabaseService.getDeletedLegIds();
+      if (deletedIds.isEmpty) {
+        final confirm = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Ei muutoksia'),
+            content: const Text('Ei muutoksia synkronoitavana. Haluatko silti päivittää?'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Peruuta')),
+              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Synkronoi')),
+            ],
+          ),
+        );
+        if (confirm != true) return;
+      }
+    }
+
+    setState(() => _syncing = true);
+    try {
+      final sheets = ref.read(sheetsServiceProvider);
+      final unsynced = await DatabaseService.getUnsyncedLegs();
+      final deletedIds = await DatabaseService.getDeletedLegIds();
+      if (unsynced.isEmpty && deletedIds.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Kaikki rivit on jo synkronoitu')),
+          );
+        }
+        return;
+      }
+      await sheets.appendLegs(
+        unsynced,
+        sheetId: settings.sheetId,
+        sheetTab: settings.sheetTab,
+        deletedLegIds: deletedIds,
+        onSynced: (legId) => DatabaseService.markLegSynced(legId),
+      );
+      if (deletedIds.isNotEmpty) {
+        await DatabaseService.clearDeletedLegIds(deletedIds);
+      }
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Synkronoitu: ${unsynced.length} riviä${deletedIds.isNotEmpty ? ', poistettu ${deletedIds.length}' : ''}')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Synkronointi epäonnistui: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+  }
+
+  Future<void> _showEditDialog(TripLeg leg) async {
+    final settings = ref.read(settingsProvider);
+    final calc = TripCalculator(settings);
+
+    final startOdoCtrl = TextEditingController(text: leg.startOdometer.toString());
+    final endOdoCtrl = TextEditingController(text: leg.endOdometer?.toString() ?? '');
+    final startLocCtrl = TextEditingController(text: leg.startLocation);
+    final endLocCtrl = TextEditingController(text: leg.endLocation ?? '');
+    final purposeCtrl = TextEditingController(text: leg.purpose ?? '');
+    final driverCtrl = TextEditingController(text: leg.driver);
+
+    var pickedStartTime = leg.startTime;
+    var pickedEndTime = leg.endTime;
+    var pickedType = leg.dailyAllowanceType;
+    var pickedDate = DateTime.parse(leg.date);
+    final timeFmt = DateFormat('HH:mm');
+    final dateFmt = DateFormat('d.M.yyyy');
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: null,
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Muokkaa merkintää', style: Theme.of(ctx).textTheme.titleLarge),
+                const SizedBox(height: 16),
+                InkWell(
+                  onTap: () async {
+                    final d = await showDatePicker(
+                      context: ctx,
+                      initialDate: pickedDate,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime(2030),
+                    );
+                    if (d != null) setDialogState(() => pickedDate = d);
+                  },
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Päivämäärä',
+                      border: OutlineInputBorder(),
+                      suffixIcon: Icon(Icons.calendar_today),
+                    ),
+                    child: Text(dateFmt.format(pickedDate)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                InkWell(
+                  onTap: () async {
+                    final t = await showTimePicker(
+                      context: ctx,
+                      initialTime: TimeOfDay.fromDateTime(pickedStartTime),
+                    );
+                    if (t != null) {
+                      final d = pickedStartTime;
+                      setDialogState(() {
+                        pickedStartTime = DateTime(d.year, d.month, d.day, t.hour, t.minute);
+                      });
+                    }
+                  },
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Alkamisaika',
+                      border: OutlineInputBorder(),
+                      suffixIcon: Icon(Icons.access_time),
+                    ),
+                    child: Text(timeFmt.format(pickedStartTime)),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (leg.endTime != null)
+                  InkWell(
+                    onTap: () async {
+                      final t = await showTimePicker(
+                        context: ctx,
+                        initialTime: TimeOfDay.fromDateTime(pickedEndTime!),
+                      );
+                      if (t != null) {
+                        setDialogState(() {
+                          pickedEndTime = DateTime(
+                            pickedEndTime!.year, pickedEndTime!.month, pickedEndTime!.day,
+                            t.hour, t.minute,
+                          );
+                        });
+                      }
+                    },
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Päättymisaika',
+                        border: OutlineInputBorder(),
+                        suffixIcon: Icon(Icons.access_time),
+                      ),
+                      child: Text(timeFmt.format(pickedEndTime!)),
+                    ),
+                  ),
+                if (leg.endTime != null) const SizedBox(height: 12),
+                TextField(
+                  controller: startLocCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Lähtöpaikka',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: endLocCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Määränpää',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: startOdoCtrl,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: const InputDecoration(
+                    labelText: 'Mittari alussa (km)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: endOdoCtrl,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: const InputDecoration(
+                    labelText: 'Mittari lopussa (km)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: purposeCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Tarkoitus',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: driverCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Kuljettaja',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text('Päiväraha',
+                    style: Theme.of(ctx).textTheme.titleSmall),
+                RadioGroup<int?>(
+                  groupValue: pickedType,
+                  onChanged: (v) => setDialogState(() => pickedType = v),
+                  child: Column(
+                    children: [
+                      RadioListTile<int?>(
+                        value: null,
+                        title: const Text('Automaattinen'),
+                        dense: true,
+                      ),
+                      RadioListTile<int?>(
+                        value: 0,
+                        title: const Text('Ei päivärahaa'),
+                        dense: true,
+                      ),
+                      RadioListTile<int?>(
+                        value: 1,
+                        title: const Text('Puolipäivä (>6h)'),
+                        dense: true,
+                      ),
+                      RadioListTile<int?>(
+                        value: 2,
+                        title: const Text('Kokopäivä (>10h)'),
+                        dense: true,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Peruuta'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Tallenna'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result != true) return;
+
+    final startOdo = int.tryParse(startOdoCtrl.text.trim()) ?? leg.startOdometer;
+    final endOdoText = endOdoCtrl.text.trim();
+    final endOdo = endOdoText.isNotEmpty ? int.tryParse(endOdoText) : leg.endOdometer;
+
+    var updated = leg.copyWith(
+      date: DateFormat('yyyy-MM-dd').format(pickedDate),
+      startTime: pickedStartTime,
+      endTime: pickedEndTime,
+      startLocation: startLocCtrl.text.trim(),
+      endLocation: endLocCtrl.text.trim(),
+      startOdometer: startOdo,
+      endOdometer: endOdo,
+      purpose: purposeCtrl.text.trim(),
+      driver: driverCtrl.text.trim(),
+      dailyAllowanceType: pickedType,
+    );
+
+    updated = calc.calculateLeg(updated);
+    await DatabaseService.updateTripLeg(updated);
+    if (updated.id != null) {
+      await DatabaseService.markLegUnsynced(updated.id!);
+    }
+
+    // Recalculate daily allowance for both old and new dates
+    final oldDateLegs = await DatabaseService.getLegsForDate(leg.date);
+    if (oldDateLegs.isNotEmpty) {
+      await calc.finalizeDay(oldDateLegs);
+      for (final l in oldDateLegs) {
+        if (l.id != null) await DatabaseService.markLegUnsynced(l.id!);
+      }
+    }
+    final newDate = DateFormat('yyyy-MM-dd').format(pickedDate);
+    if (newDate != leg.date) {
+      final newDateLegs = await DatabaseService.getLegsForDate(newDate);
+      if (newDateLegs.isNotEmpty) {
+        await calc.finalizeDay(newDateLegs);
+        for (final l in newDateLegs) {
+          if (l.id != null) await DatabaseService.markLegUnsynced(l.id!);
+        }
+      }
+    }
+
+    await _load();
+  }
+
+  Future<bool> _deleteLeg(TripLeg leg) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Poista merkintä'),
+        content: Text(
+          'Poistetaanko matka: ${leg.routeDescription ?? "${leg.startLocation} → ${leg.endLocation ?? "?"}"}?\n'
+          '${leg.kmDriven.toStringAsFixed(1)} km · €${leg.totalAllowance.toStringAsFixed(2)}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Peruuta'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+            child: const Text('Poista'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || leg.id == null) return false;
+
+    await DatabaseService.deleteTripLeg(leg.id!);
+    await _load();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Merkintä poistettu')),
+      );
+    }
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Historia')),
+      appBar: AppBar(
+        title: const Text('Historia'),
+        actions: [
+          IconButton(
+            onPressed: _syncing ? null : _syncAll,
+            icon: _syncing
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(Icons.cloud_upload,
+                    color: _hasUnsynced
+                        ? null
+                        : Theme.of(context).colorScheme.outline),
+            tooltip: 'Synkronoi Sheetsiin',
+          ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _dates.isEmpty
@@ -87,26 +466,41 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
             ),
           ),
           for (final leg in legs)
-            ListTile(
-              dense: true,
-              title: Text(
-                  leg.routeDescription ?? '${leg.startLocation} → ${leg.endLocation ?? "-"}'),
-              subtitle: Text(
-                '${_formatTime(leg.startTime)}–${leg.endTime != null ? _formatTime(leg.endTime!) : "..."} · '
-                '${leg.kmDriven.toStringAsFixed(1)} km',
+            Dismissible(
+              key: Key('leg_${leg.id}'),
+              direction: DismissDirection.endToStart,
+              confirmDismiss: (_) async {
+                return await _deleteLeg(leg);
+              },
+              background: Container(
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.only(right: 20),
+                color: Theme.of(context).colorScheme.error,
+                child: const Icon(Icons.delete, color: Colors.white),
               ),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('€${leg.totalAllowance.toStringAsFixed(2)}'),
-                  if (!leg.synced)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 8),
-                      child: Icon(Icons.cloud_off,
-                          size: 16,
-                          color: Theme.of(context).colorScheme.outline),
-                    ),
-                ],
+              child: ListTile(
+                dense: true,
+                onTap: () => _showEditDialog(leg),
+                title: Text(
+                    leg.routeDescription ?? '${leg.startLocation} → ${leg.endLocation ?? "-"}'),
+                subtitle: Text(
+                  '${_formatTime(leg.startTime)}–${leg.endTime != null ? _formatTime(leg.endTime!) : "..."} · '
+                  '${leg.kmDriven.toStringAsFixed(1)} km',
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('€${leg.totalAllowance.toStringAsFixed(2)}'),
+                    if (!leg.synced)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: Icon(Icons.cloud_off,
+                            size: 16,
+                            color: Theme.of(context).colorScheme.outline),
+                      ),
+                    const Icon(Icons.chevron_right, size: 18),
+                  ],
+                ),
               ),
             ),
         ],

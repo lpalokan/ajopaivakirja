@@ -1,11 +1,16 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import '../main.dart';
 import '../models/route.dart' as model;
 import '../models/trip_leg.dart';
 import '../providers/route_provider.dart';
 import '../providers/trip_provider.dart';
 import '../providers/settings_provider.dart';
+import '../services/database_service.dart';
+import '../services/log_service.dart';
 import '../widgets/odometer_dialog.dart';
 import 'settings_screen.dart';
 import 'route_management_screen.dart';
@@ -22,10 +27,76 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(settingsProvider.notifier).load();
-      ref.read(routeProvider.notifier).load();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await ref.read(settingsProvider.notifier).load();
+      await ref.read(routeProvider.notifier).load();
       ref.read(tripProvider.notifier).load();
+
+      final settings = ref.read(settingsProvider);
+      await LogService().init(enabled: settings.debugLogging);
+
+      // Seed debug routes
+      if (kDebugMode) {
+        final routes = ref.read(routeProvider);
+        if (routes.isEmpty) {
+          final routeNotifier = ref.read(routeProvider.notifier);
+          final now = DateTime.now();
+          await routeNotifier.add(model.Route(
+            name: 'Töihin',
+            startLocation: 'Koti',
+            endLocation: 'Työ',
+            distanceKm: 54,
+            createdAt: now,
+            updatedAt: now,
+          ));
+          await routeNotifier.add(model.Route(
+            name: 'Kotiin',
+            startLocation: 'Työ',
+            endLocation: 'Koti',
+            distanceKm: 54,
+            createdAt: now,
+            updatedAt: now,
+          ));
+          LogService().info('App: seeded debug routes (Töihin, Kotiin)');
+        }
+      }
+
+      final backgroundService = ref.read(backgroundServiceProvider);
+      final tripNotifier = ref.read(tripProvider.notifier);
+
+      await backgroundService.initialize();
+
+      final notificationService = ref.read(notificationServiceProvider);
+      await notificationService.requestPermission();
+
+      backgroundService.onArrived = () {
+        final activeLeg = ref.read(tripProvider).activeLeg;
+        if (activeLeg != null) {
+          final expectedOdometer =
+              activeLeg.startOdometer + activeLeg.kmDriven.toInt();
+          showOdometerDialog(
+            context: context,
+            title: 'Olen perillä',
+            subtitle: 'Kohde: ${activeLeg.endLocation ?? activeLeg.routeDescription}',
+            label: 'Matkamittari perillä (km)',
+            actionLabel: 'Lopeta ajo',
+            initialValue: expectedOdometer,
+            expectedHint: expectedOdometer,
+            showTime: true,
+            initialTime: DateTime.now(),
+            timeLabel: 'Päättymisaika',
+          ).then((result) {
+            if (result != null && context.mounted) {
+              tripNotifier.stopDriving(result.odometer, endTime: result.time);
+              backgroundService.onDrivingStopped();
+            }
+          });
+        }
+      };
+
+      backgroundService.onStillDriving = () {
+        backgroundService.onStillDrivingPressed();
+      };
     });
   }
 
@@ -39,7 +110,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Kilometrikorvaus'),
+        title: const Text('Ajopäiväkirja'),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
@@ -60,7 +131,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ],
           _buildRecentRoutes(
               recentRoutes, settings, tripNotifier, context),
-          if (routes.length > 2) ...[
+          if (routes.isNotEmpty) ...[
             const SizedBox(height: 8),
             TextButton.icon(
               onPressed: () {
@@ -97,7 +168,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _buildActiveTripCard(TripLeg leg, BuildContext context) {
-    final tripNotifier = ref.read(tripProvider.notifier);
     final colorScheme = Theme.of(context).colorScheme;
     final startTime = DateFormat('HH:mm').format(leg.startTime);
     final duration = DateTime.now().difference(leg.startTime);
@@ -153,23 +223,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
-            child: FilledButton.icon(
+              child: FilledButton.icon(
               onPressed: () async {
-                await showOdometerDialog(
+                final tripNotifier = ref.read(tripProvider.notifier);
+                final backgroundService = ref.read(backgroundServiceProvider);
+                final result = await showOdometerDialog(
                   context: context,
                   title: 'Olen perillä',
                   subtitle:
                       'Kohde: ${leg.endLocation ?? leg.routeDescription}',
                   label: 'Matkamittari perillä (km)',
                   actionLabel: 'Lopeta ajo',
+                  initialValue: expectedOdometer,
                   expectedHint: expectedOdometer,
-                  onConfirm: (endOdometer, _) async {
-                    if (context.mounted) {
-                      Navigator.of(context).pop();
-                      await tripNotifier.stopDriving(endOdometer);
-                    }
-                  },
+                  showTime: true,
+                  initialTime: DateTime.now(),
+                  timeLabel: 'Päättymisaika',
                 );
+                if (result != null) {
+                  await tripNotifier.stopDriving(result.odometer, endTime: result.time);
+                  await backgroundService.onDrivingStopped();
+                }
               },
               icon: const Icon(Icons.flag),
               label: const Text('Olen perillä'),
@@ -207,34 +281,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     BuildContext context,
   ) {
     final colorScheme = Theme.of(context).colorScheme;
+    final disabled = tripNotifier.isDriving;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(route.name,
-                      style: Theme.of(context).textTheme.titleSmall),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${route.startLocation} → ${route.endLocation} · ${route.distanceKm.toStringAsFixed(1)} km',
-                    style: TextStyle(color: colorScheme.onSurfaceVariant),
-                  ),
-                ],
+    return InkWell(
+      onTap: disabled ? null : () => _startDriving(route, context),
+      borderRadius: BorderRadius.circular(12),
+      child: Card(
+        margin: const EdgeInsets.only(bottom: 8),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(route.name,
+                        style: Theme.of(context).textTheme.titleSmall),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${route.startLocation} → ${route.endLocation} · ${route.distanceKm.toStringAsFixed(1)} km',
+                      style: TextStyle(color: colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            FilledButton(
-              onPressed: tripNotifier.isDriving
-                  ? null
-                  : () => _startDriving(route, context),
-              child: const Text('Aloita'),
-            ),
-          ],
+              FilledButton(
+                onPressed: disabled ? null : () => _startDriving(route, context),
+                child: const Text('Aloita'),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -245,7 +322,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final routeNotifier = ref.read(routeProvider.notifier);
     final settings = ref.read(settingsProvider);
 
-    await showOdometerDialog(
+    final lastLeg = await DatabaseService.getLastLeg();
+    final initialOdometer = lastLeg?.endOdometer;
+
+    final result = await showOdometerDialog(
       context: context,
       title: 'Aloita ajo',
       subtitle: 'Reitti: ${route.name}\n'
@@ -254,70 +334,85 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       label: 'Matkamittari (km)',
       actionLabel: 'Aloita ajo',
       relatedField: 'Tarkoitus',
-      initialValue: null,
-      onConfirm: (startOdometer, purpose) async {
-        if (context.mounted) {
-          Navigator.of(context).pop();
-          await tripNotifier.startDriving(
-            route: route,
-            startOdometer: startOdometer,
-            purpose: purpose ?? '',
-            driver: settings.driverName,
-          );
-          if (route.id != null && purpose != null && purpose.isNotEmpty) {
-            await routeNotifier.savePurpose(route.id!, purpose);
-          }
-          await routeNotifier.markUsed(route.id!);
-        }
-      },
+      initialValue: initialOdometer,
+      showTime: true,
+      initialTime: DateTime.now(),
+      timeLabel: 'Alkamisaika',
     );
+
+    if (result != null) {
+      final backgroundService = ref.read(backgroundServiceProvider);
+      backgroundService.updateSettings(settings);
+      final leg = await tripNotifier.startDriving(
+        route: route,
+        startOdometer: result.odometer,
+        purpose: result.purpose ?? '',
+        driver: settings.driverName,
+        startTime: result.time,
+      );
+      await backgroundService.onDrivingStarted(leg);
+      if (route.id != null &&
+          result.purpose != null &&
+          result.purpose!.isNotEmpty) {
+        await routeNotifier.savePurpose(route.id!, result.purpose!);
+      }
+      await routeNotifier.markUsed(route.id!);
+    }
   }
 
   Widget _buildTodaySummary(List<TripLeg> legs, BuildContext context) {
     final tripNotifier = ref.read(tripProvider.notifier);
     final summary = tripNotifier.daySummary;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Tänään (${legs.first.date})',
-                style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 8),
-            ...legs.map((leg) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.circle, size: 8),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${leg.startLocation} → ${leg.endLocation ?? '...'}  ',
-                      ),
-                      Text(
-                        '${leg.kmDriven.toStringAsFixed(1)} km',
-                        style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary),
-                      ),
-                      if (leg.dailyAllowance > 0)
+    return InkWell(
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const TripHistoryScreen()),
+        );
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Tänään (${legs.first.date})',
+                  style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 8),
+              ...legs.map((leg) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.circle, size: 8),
+                        const SizedBox(width: 8),
                         Text(
-                          '  (€${leg.dailyAllowance.toStringAsFixed(2)} pvr)',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                          '${leg.startLocation} → ${leg.endLocation ?? '...'}  ',
                         ),
-                    ],
-                  ),
-                )),
-            const Divider(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Yht: ${summary.totalKm.toStringAsFixed(1)} km'),
-                Text(
-                    '€${summary.grandTotal.toStringAsFixed(2)}'),
-              ],
-            ),
-          ],
+                        Text(
+                          '${leg.kmDriven.toStringAsFixed(1)} km',
+                          style: TextStyle(
+                              color: Theme.of(context).colorScheme.primary),
+                        ),
+                        if (leg.dailyAllowance > 0)
+                          Text(
+                            '  (€${leg.dailyAllowance.toStringAsFixed(2)} pvr)',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                      ],
+                    ),
+                  )),
+              const Divider(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Yht: ${summary.totalKm.toStringAsFixed(1)} km'),
+                  Text(
+                      '€${summary.grandTotal.toStringAsFixed(2)}'),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -338,6 +433,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             style: TextStyle(
                 color: Theme.of(context).colorScheme.onSurfaceVariant),
             textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                    builder: (_) => const RouteManagementScreen()),
+              );
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('Lisää reitti'),
           ),
         ],
       ),

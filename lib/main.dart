@@ -1,6 +1,32 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'screens/home_screen.dart';
+import 'services/notification_service.dart';
+import 'services/location_service.dart';
+import 'services/background_service.dart';
+import 'services/sheets_service.dart';
+
+final notificationServiceProvider = Provider<NotificationService>((ref) {
+  return NotificationService();
+});
+
+final locationServiceProvider = Provider<LocationService>((ref) {
+  return LocationService();
+});
+
+final backgroundServiceProvider = Provider<BackgroundService>((ref) {
+  final ns = ref.watch(notificationServiceProvider);
+  final ls = ref.watch(locationServiceProvider);
+  return BackgroundService(
+    notificationService: ns,
+    locationService: ls,
+  );
+});
+
+final sheetsServiceProvider = Provider<SheetsService>((ref) {
+  return SheetsService();
+});
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -13,8 +39,15 @@ class KilometrikorvausApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Kilometrikorvaus',
+      title: 'Ajopäiväkirja',
       debugShowCheckedModeBanner: false,
+      locale: const Locale('fi'),
+      supportedLocales: const [Locale('fi')],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF1565C0),

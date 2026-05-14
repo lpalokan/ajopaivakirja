@@ -1,7 +1,12 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import '../main.dart';
 import '../providers/settings_provider.dart';
+import '../services/log_service.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -21,6 +26,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _driverController = TextEditingController();
 
   bool _saving = false;
+  bool _signingIn = false;
+  bool _signedIn = false;
 
   @override
   void initState() {
@@ -33,6 +40,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _sheetIdController.text = settings.sheetId;
     _sheetTabController.text = settings.sheetTab;
     _driverController.text = settings.driverName;
+    _checkSignIn();
+  }
+
+  Future<void> _checkSignIn() async {
+    final sheets = ref.read(sheetsServiceProvider);
+    _signedIn = await sheets.isSignedIn;
+    if (mounted) setState(() {});
   }
 
   @override
@@ -119,13 +133,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
             const SizedBox(height: 24),
             _sectionHeader('Google Sheets'),
-            TextFormField(
-              controller: _sheetIdController,
-              decoration: const InputDecoration(
-                labelText: 'Sheets-tiedoston ID',
-                hintText: 'URL:stä löytyvä tunniste',
-                border: OutlineInputBorder(),
-              ),
+            _buildSheetsAuthButton(),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _sheetIdController,
+                    decoration: const InputDecoration(
+                      labelText: 'Sheets-tiedoston ID',
+                      hintText: 'URL:stä löytyvä tunniste',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  height: 56,
+                  child: OutlinedButton(
+                    onPressed: _signedIn ? _showFilePicker : null,
+                    child: const Icon(Icons.folder_open),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             TextFormField(
@@ -136,6 +166,46 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 border: OutlineInputBorder(),
               ),
             ),
+            const SizedBox(height: 16),
+            _sectionHeader('Vianmääritys'),
+            SwitchListTile(
+              title: const Text('Virheloki'),
+              subtitle: const Text('Tallentaa lokitiedoston puhelimeen'),
+              value: ref.watch(settingsProvider).debugLogging,
+              onChanged: (v) async {
+                await ref.read(settingsProvider.notifier).update({
+                  'debug_logging': v ? '1' : '0',
+                });
+                LogService().setEnabled(v);
+                if (v) {
+                  await LogService().init(enabled: true);
+                }
+                setState(() {});
+              },
+            ),
+            if (ref.watch(settingsProvider).debugLogging)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _shareLogs,
+                        icon: const Icon(Icons.share),
+                        label: const Text('Jaa loki'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _copyLogsToDownloads,
+                        icon: const Icon(Icons.download),
+                        label: const Text('Tallenna tiedot'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             const SizedBox(height: 24),
             FilledButton.icon(
               onPressed: _saving ? null : _save,
@@ -166,6 +236,119 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  Widget _buildSheetsAuthButton() {
+    if (_signedIn) {
+      return Row(
+        children: [
+          const Icon(Icons.check_circle, color: Colors.green, size: 20),
+          const SizedBox(width: 8),
+          const Text('Kirjautunut Googleen'),
+          const Spacer(),
+          TextButton(
+            onPressed: _signOut,
+            child: const Text('Kirjaudu ulos'),
+          ),
+        ],
+      );
+    }
+    return OutlinedButton.icon(
+      onPressed: _signingIn ? null : _signIn,
+      icon: _signingIn
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.login),
+      label: Text(_signingIn ? 'Kirjaudutaan...' : 'Kirjaudu Googleen'),
+    );
+  }
+
+  Future<void> _signIn() async {
+    setState(() => _signingIn = true);
+    try {
+      final sheets = ref.read(sheetsServiceProvider);
+      await sheets.signIn();
+      _signedIn = true;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Kirjautuminen epäonnistui: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _signingIn = false);
+    }
+  }
+
+  Future<void> _signOut() async {
+    final sheets = ref.read(sheetsServiceProvider);
+    await sheets.signOut();
+    _signedIn = false;
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _showFilePicker() async {
+    final sheets = ref.read(sheetsServiceProvider);
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => _FilePickerDialog(sheets: sheets, onSelect: (id) {
+        _sheetIdController.text = id;
+        Navigator.pop(ctx);
+      }),
+    );
+  }
+
+  Future<void> _copyLogsToDownloads() async {
+    final logService = LogService();
+    final content = await logService.readLogs();
+    final srcPath = logService.logPath;
+    if (srcPath == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Lokitiedostoa ei löydy')),
+        );
+      }
+      return;
+    }
+
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final destPath = '${dir.path}/kilometrikorvaus.log';
+      final dest = File(destPath);
+      await dest.writeAsString(content);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Tallennettu: $destPath')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Tallennus epäonnistui: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _shareLogs() async {
+    final logService = LogService();
+    final content = await logService.readLogs();
+    final path = logService.logPath;
+    if (path == null) return;
+
+    // Write to a shareable temp file
+    final tempPath = '${(await getApplicationDocumentsDirectory()).path}/kilometrikorvaus_export.log';
+    final file = File(tempPath);
+    await file.writeAsString(content);
+
+    await SharePlus.instance.share(ShareParams(
+      files: [XFile(tempPath)],
+      text: 'Kilometrikorvaus debug log',
+    ));
+  }
+
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
@@ -192,5 +375,84 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+}
+
+class _FilePickerDialog extends StatefulWidget {
+  final dynamic sheets;
+  final void Function(String id) onSelect;
+
+  const _FilePickerDialog({required this.sheets, required this.onSelect});
+
+  @override
+  State<_FilePickerDialog> createState() => _FilePickerDialogState();
+}
+
+class _FilePickerDialogState extends State<_FilePickerDialog> {
+  List<dynamic>? _files;
+  String? _error;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final result = await widget.sheets.listSpreadsheets();
+      if (mounted) {
+        setState(() {
+          _files = result;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = '$e';
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Valitse tiedosto'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: _loading
+            ? const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            : _error != null
+                ? Text(_error!, style: const TextStyle(color: Colors.red))
+                : _files == null || _files!.isEmpty
+                    ? const Text('Ei tiedostoja')
+                    : ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: _files!.length,
+                        itemBuilder: (_, i) {
+                          final f = _files![i];
+                          final name = f.name ?? 'Nimetön';
+                          return ListTile(
+                            leading: const Icon(Icons.table_chart),
+                            title: Text(name),
+                            onTap: () => widget.onSelect(f.id ?? ''),
+                          );
+                        },
+                      ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Peruuta'),
+        ),
+      ],
+    );
   }
 }

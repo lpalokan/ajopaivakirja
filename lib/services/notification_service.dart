@@ -10,19 +10,14 @@ class NotificationService {
   static const _stillDrivingActionId = 'still_driving';
 
   final FlutterLocalNotificationsPlugin _plugin;
-  Function? _onArrived;
-  Function? _onStillDriving;
+  void Function()? onArrived;
+  void Function()? onStillDriving;
 
   NotificationService()
       : _plugin = FlutterLocalNotificationsPlugin();
 
-  Future<void> initialize({
-    Function? onArrived,
-    Function? onStillDriving,
-  }) async {
+  Future<void> initialize() async {
     tz.initializeTimeZones();
-    _onArrived = onArrived;
-    _onStillDriving = onStillDriving;
 
     const androidSettings =
         AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -38,16 +33,35 @@ class NotificationService {
     );
   }
 
+  Future<bool> requestPermission() async {
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (androidPlugin != null) {
+      return await androidPlugin.requestNotificationsPermission() ?? false;
+    }
+    return true;
+  }
+
   void _onNotificationResponse(NotificationResponse response) {
     if (response.actionId == _arrivedActionId) {
-      _onArrived?.call();
+      onArrived?.call();
     } else if (response.actionId == _stillDrivingActionId) {
-      _onStillDriving?.call();
+      onStillDriving?.call();
     }
   }
 
   Future<void> showDrivingNotification(TripLeg leg) async {
     final destination = leg.endLocation ?? leg.routeDescription ?? 'määränpää';
+    final routeInfo = leg.routeDescription ?? '${leg.startLocation} → $destination';
+    final body = '$routeInfo · ${leg.kmDriven.toStringAsFixed(0)} km\n'
+        'Aloitettu: ${_formatTime(leg.startTime)} · Mittari: ${leg.startOdometer} km';
+
+    final bigTextStyle = BigTextStyleInformation(
+      body,
+      htmlFormatBigText: true,
+      contentTitle: 'Ajo käynnissä: $destination',
+    );
+
     final androidDetails = AndroidNotificationDetails(
       _channelId,
       _channelName,
@@ -56,6 +70,7 @@ class NotificationService {
       priority: Priority.low,
       ongoing: true,
       autoCancel: false,
+      styleInformation: bigTextStyle,
       actions: [
         const AndroidNotificationAction(
           _arrivedActionId,
@@ -74,7 +89,7 @@ class NotificationService {
     await _plugin.show(
       1,
       'Ajo käynnissä: $destination',
-      'Aloitettu: ${_formatTime(leg.startTime)}',
+      routeInfo,
       NotificationDetails(android: androidDetails, iOS: iosDetails),
     );
   }
