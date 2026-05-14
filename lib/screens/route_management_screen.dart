@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../main.dart';
 import '../models/route.dart' as route_model;
 import '../providers/route_provider.dart';
+import '../providers/trip_provider.dart';
+import '../providers/settings_provider.dart';
 import '../services/database_service.dart';
+import '../widgets/odometer_dialog.dart';
 
 class RouteManagementScreen extends ConsumerStatefulWidget {
   const RouteManagementScreen({super.key});
@@ -45,13 +49,29 @@ class _RouteManagementScreenState
                   );
                 }
                 final route = routes[index];
+                final isDriving = ref.read(tripProvider).activeLeg != null;
                 return Dismissible(
                   key: Key('route_${route.id}'),
-                  direction: DismissDirection.endToStart,
-                  confirmDismiss: (_) async {
-                    return await _deleteRoute(route);
+                  direction: DismissDirection.horizontal,
+                  confirmDismiss: (direction) async {
+                    if (direction == DismissDirection.endToStart) {
+                      return await _deleteRoute(route);
+                    } else {
+                      _showRouteDialog(route: route);
+                      return false;
+                    }
                   },
                   background: Container(
+                    alignment: Alignment.centerLeft,
+                    padding: const EdgeInsets.only(left: 20),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.edit, color: Colors.white),
+                  ),
+                  secondaryBackground: Container(
                     alignment: Alignment.centerRight,
                     padding: const EdgeInsets.only(right: 20),
                     margin: const EdgeInsets.only(bottom: 8),
@@ -64,13 +84,13 @@ class _RouteManagementScreenState
                   child: Card(
                     margin: const EdgeInsets.only(bottom: 8),
                     child: ListTile(
-                      onTap: () => _showRouteDialog(route: route),
+                      onTap: isDriving ? null : () => _startDrivingFromRoute(route),
                       title: Text(route.name),
                       subtitle: Text(
                         '${route.startLocation} → ${route.endLocation} · '
                         '${route.distanceKm.toStringAsFixed(1)} km',
                       ),
-                      trailing: const Icon(Icons.chevron_right, size: 18),
+                      trailing: const Icon(Icons.play_arrow, size: 18),
                     ),
                   ),
                 );
@@ -183,6 +203,47 @@ class _RouteManagementScreenState
     }
   }
 
+  Future<void> _startDrivingFromRoute(route_model.Route route) async {
+    final tripNotifier = ref.read(tripProvider.notifier);
+    final settings = ref.read(settingsProvider);
+    final backgroundService = ref.read(backgroundServiceProvider);
+    final routeNotifier = ref.read(routeProvider.notifier);
+
+    final lastLeg = await DatabaseService.getLastLeg();
+    final initialOdometer = lastLeg?.endOdometer;
+
+    if (!mounted) return;
+
+    final result = await showOdometerDialog(
+      context: context,
+      title: 'Aloita ajo',
+      subtitle: 'Reitti: ${route.name}\n'
+          '${route.startLocation} → ${route.endLocation}\n'
+          'Matka: ${route.distanceKm.toStringAsFixed(1)} km',
+      label: 'Matkamittari (km)',
+      actionLabel: 'Aloita ajo',
+      relatedField: 'Tarkoitus',
+      initialValue: initialOdometer,
+    );
+
+    if (result == null) return;
+
+    backgroundService.updateSettings(settings);
+    final leg = await tripNotifier.startDriving(
+      route: route,
+      startOdometer: result.odometer,
+      purpose: result.purpose ?? '',
+      driver: settings.driverName,
+    );
+    await backgroundService.onDrivingStarted(leg);
+    if (route.id != null && result.purpose != null && result.purpose!.isNotEmpty) {
+      await routeNotifier.savePurpose(route.id!, result.purpose!);
+    }
+    await routeNotifier.markUsed(route.id!);
+
+    if (mounted) Navigator.of(context).pop();
+  }
+
   Future<bool> _deleteRoute(route_model.Route route) async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -223,15 +284,11 @@ class _LocationField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final filtered = suggestions
-        .where((s) => s.toLowerCase().contains(controller.text.toLowerCase()))
-        .toList();
-
     return Autocomplete<String>(
       optionsBuilder: (textEditingValue) {
-        if (textEditingValue.text.isEmpty) return const Iterable<String>.empty();
-        return suggestions.where((s) =>
-            s.toLowerCase().contains(textEditingValue.text.toLowerCase()));
+        final text = textEditingValue.text.toLowerCase();
+        if (text.isEmpty) return suggestions;
+        return suggestions.where((s) => s.toLowerCase().contains(text));
       },
       onSelected: (value) {
         controller.text = value;
@@ -239,26 +296,21 @@ class _LocationField extends StatelessWidget {
           TextPosition(offset: value.length),
         );
       },
-      fieldViewBuilder: (context, controller, focusNode, onSubmitted) {
-        // Sync our external controller with the Autocomplete's internal one
-        controller.text = this.controller.text;
-        this.controller.addListener(() {
-          if (controller.text != this.controller.text) {
-            controller.text = this.controller.text;
-          }
-        });
+      fieldViewBuilder: (context, autocompleteCtrl, focusNode, onSubmitted) {
+        autocompleteCtrl.text = controller.text;
         return TextField(
-          controller: controller,
+          controller: autocompleteCtrl,
           focusNode: focusNode,
           decoration: InputDecoration(
             labelText: label,
             border: const OutlineInputBorder(),
-            suffixIcon: filtered.isEmpty && controller.text.isNotEmpty
-                ? null
-                : const Icon(Icons.arrow_drop_down),
+            suffixIcon: GestureDetector(
+              onTap: () => focusNode.requestFocus(),
+              child: const Icon(Icons.arrow_drop_down),
+            ),
           ),
           onChanged: (v) {
-            this.controller.text = v;
+            controller.text = v;
           },
         );
       },
