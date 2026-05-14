@@ -1,4 +1,4 @@
-# Kilometrikorvaus
+# Ajopäiväkirja
 
 Android-sovellus työmatkojen kilometrikorvausten ja päivärahojen kirjaamiseen. Tiedot tallennetaan paikallisesti ja viedään Google Sheets -taulukkoon.
 
@@ -171,9 +171,9 @@ flutter pub get
 flutter run          # Vaatii puhelimen kytkettynä USB:llä (developeri-tila)
 ```
 
-## Asennus puhelimeen (ilman developeri-tilaa)
+## Asennus puhelimeen (ilman kehittäjätilaa)
 
-Puhelinta ei tarvitse laittaa developeri-tilaan. APK-tiedoston voi asentaa suoraan.
+Puhelinta ei tarvitse laittaa kehittäjätilaan. APK-tiedoston voi asentaa suoraan.
 
 ### Kertaluontoinen valmistelu tietokoneella
 
