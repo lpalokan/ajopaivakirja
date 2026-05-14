@@ -240,6 +240,20 @@ class SheetsService {
     }
   }
 
+  Future<int?> _getSheetGid(String spreadsheetId, String tabName) async {
+    try {
+      final spreadsheet = await _sheetsApi!.spreadsheets.get(spreadsheetId, includeGridData: false);
+      for (final sheet in spreadsheet.sheets ?? []) {
+        if (sheet.properties?.title == tabName) {
+          return sheet.properties?.sheetId;
+        }
+      }
+    } catch (e) {
+      LogService().warn('Sheets: _getSheetGid failed ($e)');
+    }
+    return null;
+  }
+
   Future<int> appendLegs(
     List<TripLeg> legs, {
     required String sheetId,
@@ -266,6 +280,7 @@ class SheetsService {
     }
 
     // Delete rows for legs removed locally
+    int deletedCount = 0;
     if (deletedLegIds != null && deletedLegIds.isNotEmpty) {
       final rowsToDelete = <int>[];
       for (final id in deletedLegIds) {
@@ -275,15 +290,17 @@ class SheetsService {
         }
       }
       if (rowsToDelete.isNotEmpty) {
-        rowsToDelete.sort((a, b) => b.compareTo(a)); // descending
-        int deleted = 0;
-        for (final row in rowsToDelete) {
-          try {
+        final gid = await _getSheetGid(sheetId, sheetTab);
+        if (gid == null) {
+          LogService().warn('Sheets: could not find sheet gid for "$sheetTab", skipping delete');
+        } else {
+          rowsToDelete.sort((a, b) => b.compareTo(a)); // descending
+          for (final row in rowsToDelete) {
             final requests = [
               sheets.Request(
                 deleteDimension: sheets.DeleteDimensionRequest(
                   range: sheets.DimensionRange(
-                    sheetId: 0,
+                    sheetId: gid,
                     dimension: 'ROWS',
                     startIndex: row - 1,
                     endIndex: row,
@@ -295,17 +312,16 @@ class SheetsService {
               sheets.BatchUpdateSpreadsheetRequest(requests: requests),
               sheetId,
             );
-            deleted++;
-          } catch (e) {
-            LogService().warn('Sheets: failed to delete row $row: $e');
+            deletedCount++;
+            LogService().info('Sheets: deleted row $row from cloud');
           }
         }
-        LogService().info('Sheets: deleted $deleted rows from cloud');
       }
+      LogService().info('Sheets: deleted $deletedCount rows from cloud');
     }
 
     LogService().info('Sheets: sync complete ($synced legs)');
-    return synced;
+    return synced + deletedCount;
   }
 
   List<Object?> _legToRow(TripLeg leg) {
