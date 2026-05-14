@@ -35,7 +35,7 @@ class SheetsService {
       AccessToken(
         'Bearer',
         authHeaders['Authorization']!.replaceFirst('Bearer ', ''),
-        DateTime.now().add(const Duration(hours: 1)),
+        DateTime.now().toUtc().add(const Duration(hours: 1)),
       ),
       null,
       [sheets.SheetsApi.spreadsheetsScope],
