@@ -81,7 +81,8 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     try {
       final sheets = ref.read(sheetsServiceProvider);
       final unsynced = await DatabaseService.getUnsyncedLegs();
-      if (unsynced.isEmpty) {
+      final deletedIds = await DatabaseService.getDeletedLegIds();
+      if (unsynced.isEmpty && deletedIds.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Kaikki rivit on jo synkronoitu')),
@@ -93,12 +94,16 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
         unsynced,
         sheetId: settings.sheetId,
         sheetTab: settings.sheetTab,
+        deletedLegIds: deletedIds,
         onSynced: (legId) => DatabaseService.markLegSynced(legId),
       );
+      if (deletedIds.isNotEmpty) {
+        await DatabaseService.clearDeletedLegIds(deletedIds);
+      }
       await _load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Synkronoitu ${unsynced.length} riviä')),
+          SnackBar(content: Text('Synkronoitu: ${unsynced.length} riviä${deletedIds.isNotEmpty ? ', poistettu ${deletedIds.length}' : ''}')),
         );
       }
     } catch (e) {

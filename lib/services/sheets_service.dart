@@ -244,6 +244,7 @@ class SheetsService {
     List<TripLeg> legs, {
     required String sheetId,
     required String sheetTab,
+    List<int>? deletedLegIds,
     Future<void> Function(int legId)? onSynced,
   }) async {
     await _ensureApiClient();
@@ -261,6 +262,45 @@ class SheetsService {
       } catch (e) {
         LogService().error('Sheets: append/update failed for leg ${leg.id}', e);
         throw Exception('Synkronointi epäonnistui: $e');
+      }
+    }
+
+    // Delete rows for legs removed locally
+    if (deletedLegIds != null && deletedLegIds.isNotEmpty) {
+      final rowsToDelete = <int>[];
+      for (final id in deletedLegIds) {
+        final idStr = id.toString();
+        if (idToRow.containsKey(idStr)) {
+          rowsToDelete.add(idToRow[idStr]!);
+        }
+      }
+      if (rowsToDelete.isNotEmpty) {
+        rowsToDelete.sort((a, b) => b.compareTo(a)); // descending
+        int deleted = 0;
+        for (final row in rowsToDelete) {
+          try {
+            final requests = [
+              sheets.Request(
+                deleteDimension: sheets.DeleteDimensionRequest(
+                  range: sheets.DimensionRange(
+                    sheetId: 0,
+                    dimension: 'ROWS',
+                    startIndex: row - 1,
+                    endIndex: row,
+                  ),
+                ),
+              ),
+            ];
+            await _sheetsApi!.spreadsheets.batchUpdate(
+              sheets.BatchUpdateSpreadsheetRequest(requests: requests),
+              sheetId,
+            );
+            deleted++;
+          } catch (e) {
+            LogService().warn('Sheets: failed to delete row $row: $e');
+          }
+        }
+        LogService().info('Sheets: deleted $deleted rows from cloud');
       }
     }
 

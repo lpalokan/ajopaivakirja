@@ -139,18 +139,21 @@ class TripNotifier extends StateNotifier<TripState> {
 
     try {
       final sheets = _ref.read(sheetsServiceProvider);
-      LogService().info('Sheets: syncing ${legs.length} legs to ${settings.sheetTab}');
+      final deletedIds = await DatabaseService.getDeletedLegIds();
+      LogService().info('Sheets: syncing ${legs.length} legs to ${settings.sheetTab} (+ ${deletedIds.length} deletes)');
       await sheets.appendLegs(
         legs,
         sheetId: settings.sheetId,
         sheetTab: settings.sheetTab,
+        deletedLegIds: deletedIds,
         onSynced: (legId) => DatabaseService.markLegSynced(legId),
       );
+      if (deletedIds.isNotEmpty) {
+        await DatabaseService.clearDeletedLegIds(deletedIds);
+      }
       LogService().info('Sheets: sync complete (${legs.length} legs)');
     } catch (e, st) {
       LogService().error('Sheets: sync failed', e, st);
-      // Sheets sync failed silently — app continues working locally.
-      // User can retry later via manual sync.
     }
   }
 

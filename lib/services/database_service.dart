@@ -20,7 +20,7 @@ class DatabaseService {
 
     return openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -73,12 +73,27 @@ class DatabaseService {
         value TEXT NOT NULL
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE deleted_leg_ids (
+        id INTEGER PRIMARY KEY,
+        deleted_at TEXT NOT NULL
+      )
+    ''');
   }
 
   static Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       await db.execute('''
         ALTER TABLE trip_legs ADD COLUMN daily_allowance_type INTEGER
+      ''');
+    }
+    if (oldVersion < 3) {
+      await db.execute('''
+        CREATE TABLE deleted_leg_ids (
+          id INTEGER PRIMARY KEY,
+          deleted_at TEXT NOT NULL
+        )
       ''');
     }
   }
@@ -184,7 +199,24 @@ class DatabaseService {
   static Future<void> deleteTripLeg(int id) async {
     final db = await database;
     await db.delete('trip_legs', where: 'id = ?', whereArgs: [id]);
+    await db.insert('deleted_leg_ids', {
+      'id': id,
+      'deleted_at': DateTime.now().toIso8601String(),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
     LogService().info('DB: deleted leg $id');
+  }
+
+  static Future<List<int>> getDeletedLegIds() async {
+    final db = await database;
+    final result = await db.query('deleted_leg_ids');
+    return result.map((r) => r['id'] as int).toList();
+  }
+
+  static Future<void> clearDeletedLegIds(List<int> ids) async {
+    final db = await database;
+    for (final id in ids) {
+      await db.delete('deleted_leg_ids', where: 'id = ?', whereArgs: [id]);
+    }
   }
 
   static Future<List<TripLeg>> getLegsForDate(String date) async {

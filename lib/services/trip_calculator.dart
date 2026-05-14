@@ -64,9 +64,11 @@ class TripCalculator {
 
   /// Calculate working time for each leg.
   /// Working time = gap between this leg's end_time and next leg's start_time.
-  /// If destination is home, working time = 0.
+  /// Total working time is stored on the last leg, others get 0.
   List<TripLeg> calculateWorkingTimes(List<TripLeg> legs) {
     final updated = <TripLeg>[];
+    double totalWorkingTime = 0;
+
     for (var i = 0; i < legs.length; i++) {
       final leg = legs[i];
       double workingTime = 0;
@@ -84,8 +86,18 @@ class TripCalculator {
       }
 
       workingTime = double.parse(workingTime.toStringAsFixed(2));
-      updated.add(leg.copyWith(workingTimeHours: workingTime));
+      totalWorkingTime += workingTime;
+      updated.add(leg.copyWith(workingTimeHours: 0));
     }
+
+    // Put total working time on the last leg
+    if (updated.isNotEmpty) {
+      final last = updated.last;
+      updated[updated.length - 1] = last.copyWith(
+        workingTimeHours: double.parse(totalWorkingTime.toStringAsFixed(2)),
+      );
+    }
+
     return updated;
   }
 
