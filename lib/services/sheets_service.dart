@@ -1,5 +1,6 @@
 import 'package:http/http.dart' as http;
 import 'package:googleapis/sheets/v4.dart' as sheets;
+import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis_auth/auth_io.dart';
 import '../models/trip_leg.dart';
@@ -12,7 +13,10 @@ class SheetsService {
 
   SheetsService()
       : _googleSignIn = GoogleSignIn(
-          scopes: [sheets.SheetsApi.spreadsheetsScope],
+          scopes: [
+            sheets.SheetsApi.spreadsheetsScope,
+            drive.DriveApi.driveReadonlyScope,
+          ],
         );
 
   bool isConfigured(String sheetId) => sheetId.isNotEmpty;
@@ -21,16 +25,39 @@ class SheetsService {
 
   Future<void> signIn() async {
     try {
-      LogService().info('Google Sign-In: starting...');
+      // Try silent sign-in first (survives app restart)
+      LogService().info('Google Sign-In: silent attempt...');
+      final silentAccount = await _googleSignIn.signInSilently();
+      if (silentAccount != null) {
+        await _buildApiClient(silentAccount);
+        LogService().info('Google Sign-In: restored session');
+        return;
+      }
+    } catch (e) {
+      LogService().warn('Google Sign-In: silent attempt failed ($e)');
+    }
+
+    // Interactive sign-in
+    try {
+      LogService().info('Google Sign-In: starting interactive...');
       final account = await _googleSignIn.signIn();
       if (account == null) {
         LogService().warn('Google Sign-In: cancelled by user');
         throw Exception('Kirjautuminen peruttu');
       }
       LogService().info('Google Sign-In: got account (${account.email})');
+      await _buildApiClient(account);
+      LogService().info('Google Sign-In: success');
+    } catch (e, st) {
+      LogService().error('Google Sign-In failed', e, st);
+      rethrow;
+    }
+  }
 
-      final authHeaders = await account.authHeaders;
-      LogService().info('Google Sign-In: got auth headers');
+  Future<void> _buildApiClient(GoogleSignInAccount account) async {
+    final authHeaders = await account.authHeaders;
+    LogService().info('Google Sign-In: got auth headers');
+
     final credentials = AccessCredentials(
       AccessToken(
         'Bearer',
@@ -38,16 +65,29 @@ class SheetsService {
         DateTime.now().toUtc().add(const Duration(hours: 1)),
       ),
       null,
-      [sheets.SheetsApi.spreadsheetsScope],
+      [
+        sheets.SheetsApi.spreadsheetsScope,
+        drive.DriveApi.driveReadonlyScope,
+      ],
     );
 
     final client = GoogleAuthClient(credentials, http.Client());
     _authClient = client;
     _sheetsApi = sheets.SheetsApi(client);
-    LogService().info('Google Sign-In: success');
-    } catch (e, st) {
-      LogService().error('Google Sign-In failed', e, st);
-      rethrow;
+  }
+
+  Future<void> _ensureApiClient() async {
+    if (_sheetsApi != null) return;
+    if (!await _googleSignIn.isSignedIn()) return;
+
+    try {
+      final account = await _googleSignIn.signInSilently();
+      if (account != null) {
+        await _buildApiClient(account);
+        LogService().info('Google Sign-In: auto-reconnected');
+      }
+    } catch (e) {
+      LogService().warn('Google Sign-In: auto-reconnect failed ($e)');
     }
   }
 
@@ -58,8 +98,26 @@ class SheetsService {
     _sheetsApi = null;
   }
 
+  /// List spreadsheets the user has access to (for file picker).
+  Future<List<drive.File>> listSpreadsheets() async {
+    await _ensureApiClient();
+    if (_authClient == null) {
+      throw Exception('Ei kirjauduttu Googleen. Kirjaudu asetuksista.');
+    }
+
+    final driveApi = drive.DriveApi(_authClient!);
+    final fileList = await driveApi.files.list(
+      q: "mimeType='application/vnd.google-apps.spreadsheet'",
+      pageSize: 50,
+      orderBy: 'modifiedTime desc',
+      $fields: 'files(id,name,modifiedTime)',
+    );
+    return fileList.files ?? [];
+  }
+
   /// Append a single trip leg as a row in Google Sheets.
   Future<void> appendLeg(TripLeg leg, {required String sheetId, required String sheetTab}) async {
+    await _ensureApiClient();
     if (_sheetsApi == null) {
       throw Exception('Ei kirjauduttu Googleen. Kirjaudu asetuksista.');
     }

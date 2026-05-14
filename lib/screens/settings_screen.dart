@@ -133,13 +133,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
             const SizedBox(height: 24),
             _sectionHeader('Google Sheets'),
-            TextFormField(
-              controller: _sheetIdController,
-              decoration: const InputDecoration(
-                labelText: 'Sheets-tiedoston ID',
-                hintText: 'URL:stä löytyvä tunniste',
-                border: OutlineInputBorder(),
-              ),
+            _buildSheetsAuthButton(),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: _sheetIdController,
+                    decoration: const InputDecoration(
+                      labelText: 'Sheets-tiedoston ID',
+                      hintText: 'URL:stä löytyvä tunniste',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  height: 56,
+                  child: OutlinedButton(
+                    onPressed: _signedIn ? _showFilePicker : null,
+                    child: const Icon(Icons.folder_open),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             TextFormField(
@@ -151,7 +167,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            _buildSheetsAuthButton(),
             _sectionHeader('Vianmääritys'),
             SwitchListTile(
               title: const Text('Virheloki'),
@@ -171,10 +186,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             if (ref.watch(settingsProvider).debugLogging)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
-                child: OutlinedButton.icon(
-                  onPressed: _shareLogs,
-                  icon: const Icon(Icons.share),
-                  label: const Text('Jaa lokitiedosto'),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _shareLogs,
+                        icon: const Icon(Icons.share),
+                        label: const Text('Jaa loki'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _copyLogsToDownloads,
+                        icon: const Icon(Icons.download),
+                        label: const Text('Tallenna tiedot'),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             const SizedBox(height: 24),
@@ -208,18 +237,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Widget _buildSheetsAuthButton() {
-    final sheetId = _sheetIdController.text.trim();
-    if (sheetId.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 4),
-        child: Text(
-          'Google Sheets -integrointi on valinnainen.\n'
-          'Lisää Sheets-tunnus yllä ja kirjaudu sisään,\n'
-          'jos haluat viedä rivit automaattisesti.',
-          style: TextStyle(fontSize: 13),
-        ),
-      );
-    }
     if (_signedIn) {
       return Row(
         children: [
@@ -271,6 +288,50 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (mounted) setState(() {});
   }
 
+  Future<void> _showFilePicker() async {
+    final sheets = ref.read(sheetsServiceProvider);
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => _FilePickerDialog(sheets: sheets, onSelect: (id) {
+        _sheetIdController.text = id;
+        Navigator.pop(ctx);
+      }),
+    );
+  }
+
+  Future<void> _copyLogsToDownloads() async {
+    final logService = LogService();
+    final content = await logService.readLogs();
+    final srcPath = logService.logPath;
+    if (srcPath == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Lokitiedostoa ei löydy')),
+        );
+      }
+      return;
+    }
+
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final destPath = '${dir.path}/kilometrikorvaus.log';
+      final dest = File(destPath);
+      await dest.writeAsString(content);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Tallennettu: $destPath')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Tallennus epäonnistui: $e')),
+        );
+      }
+    }
+  }
+
   Future<void> _shareLogs() async {
     final logService = LogService();
     final content = await logService.readLogs();
@@ -314,5 +375,84 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+}
+
+class _FilePickerDialog extends StatefulWidget {
+  final dynamic sheets;
+  final void Function(String id) onSelect;
+
+  const _FilePickerDialog({required this.sheets, required this.onSelect});
+
+  @override
+  State<_FilePickerDialog> createState() => _FilePickerDialogState();
+}
+
+class _FilePickerDialogState extends State<_FilePickerDialog> {
+  List<dynamic>? _files;
+  String? _error;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final result = await widget.sheets.listSpreadsheets();
+      if (mounted) {
+        setState(() {
+          _files = result;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = '$e';
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Valitse tiedosto'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: _loading
+            ? const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            : _error != null
+                ? Text(_error!, style: const TextStyle(color: Colors.red))
+                : _files == null || _files!.isEmpty
+                    ? const Text('Ei tiedostoja')
+                    : ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: _files!.length,
+                        itemBuilder: (_, i) {
+                          final f = _files![i];
+                          final name = f.name ?? 'Nimetön';
+                          return ListTile(
+                            leading: const Icon(Icons.table_chart),
+                            title: Text(name),
+                            onTap: () => widget.onSelect(f.id ?? ''),
+                          );
+                        },
+                      ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Peruuta'),
+        ),
+      ],
+    );
   }
 }

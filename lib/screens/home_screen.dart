@@ -26,7 +26,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      ref.read(settingsProvider.notifier).load();
+      await ref.read(settingsProvider.notifier).load();
       ref.read(routeProvider.notifier).load();
       ref.read(tripProvider.notifier).load();
 
