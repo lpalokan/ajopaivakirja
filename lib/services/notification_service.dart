@@ -43,6 +43,16 @@ class NotificationService {
 
   Future<void> showDrivingNotification(TripLeg leg) async {
     final destination = leg.endLocation ?? leg.routeDescription ?? 'määränpää';
+    final routeInfo = leg.routeDescription ?? '${leg.startLocation} → $destination';
+    final body = '$routeInfo · ${leg.kmDriven.toStringAsFixed(0)} km\n'
+        'Aloitettu: ${_formatTime(leg.startTime)} · Mittari: ${leg.startOdometer} km';
+
+    final bigTextStyle = BigTextStyleInformation(
+      body,
+      htmlFormatBigText: true,
+      contentTitle: 'Ajo käynnissä: $destination',
+    );
+
     final androidDetails = AndroidNotificationDetails(
       _channelId,
       _channelName,
@@ -51,6 +61,7 @@ class NotificationService {
       priority: Priority.low,
       ongoing: true,
       autoCancel: false,
+      styleInformation: bigTextStyle,
       actions: [
         const AndroidNotificationAction(
           _arrivedActionId,
@@ -69,7 +80,7 @@ class NotificationService {
     await _plugin.show(
       1,
       'Ajo käynnissä: $destination',
-      'Aloitettu: ${_formatTime(leg.startTime)}',
+      routeInfo,
       NotificationDetails(android: androidDetails, iOS: iosDetails),
     );
   }

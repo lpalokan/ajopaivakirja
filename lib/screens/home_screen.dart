@@ -272,34 +272,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     BuildContext context,
   ) {
     final colorScheme = Theme.of(context).colorScheme;
+    final disabled = tripNotifier.isDriving;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(route.name,
-                      style: Theme.of(context).textTheme.titleSmall),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${route.startLocation} → ${route.endLocation} · ${route.distanceKm.toStringAsFixed(1)} km',
-                    style: TextStyle(color: colorScheme.onSurfaceVariant),
-                  ),
-                ],
+    return InkWell(
+      onTap: disabled ? null : () => _startDriving(route, context),
+      borderRadius: BorderRadius.circular(12),
+      child: Card(
+        margin: const EdgeInsets.only(bottom: 8),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(route.name,
+                        style: Theme.of(context).textTheme.titleSmall),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${route.startLocation} → ${route.endLocation} · ${route.distanceKm.toStringAsFixed(1)} km',
+                      style: TextStyle(color: colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            FilledButton(
-              onPressed: tripNotifier.isDriving
-                  ? null
-                  : () => _startDriving(route, context),
-              child: const Text('Aloita'),
-            ),
-          ],
+              FilledButton(
+                onPressed: disabled ? null : () => _startDriving(route, context),
+                child: const Text('Aloita'),
+              ),
+            ],
+          ),
         ),
       ),
     );

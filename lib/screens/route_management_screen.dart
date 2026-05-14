@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import '../main.dart';
 import '../models/route.dart' as route_model;
+import '../models/trip_leg.dart';
 import '../providers/route_provider.dart';
 import '../providers/trip_provider.dart';
 import '../providers/settings_provider.dart';
@@ -21,81 +23,173 @@ class _RouteManagementScreenState
   @override
   Widget build(BuildContext context) {
     final routes = ref.watch(routeProvider);
+    final tripState = ref.watch(tripProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Reitit')),
-      body: routes.isEmpty
-          ? GestureDetector(
-              onTap: () => _showRouteDialog(),
-              behavior: HitTestBehavior.opaque,
-              child: const Center(
-                child: Text('Ei reittejä. Lisää uusi napauttamalla tästä.'),
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: routes.length + 1,
-              itemBuilder: (context, index) {
-                if (index == routes.length) {
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Center(
-                      child: TextButton.icon(
-                        onPressed: () => _showRouteDialog(),
-                        icon: const Icon(Icons.add),
-                        label: const Text('Lisää uusi reitti'),
+      body: Column(
+        children: [
+          if (tripState.activeLeg != null)
+            _buildActiveTripCard(tripState.activeLeg!, context),
+          Expanded(
+            child: routes.isEmpty
+                ? GestureDetector(
+                    onTap: () => _showRouteDialog(),
+                    behavior: HitTestBehavior.opaque,
+                    child: const Center(
+                      child: Text('Ei reittejä. Lisää uusi napauttamalla tästä.'),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: routes.length + 1,
+                    itemBuilder: (context, index) {
+                      if (index == routes.length) {
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Center(
+                            child: TextButton.icon(
+                              onPressed: () => _showRouteDialog(),
+                              icon: const Icon(Icons.add),
+                              label: const Text('Lisää uusi reitti'),
+                            ),
+                          ),
+                        );
+                      }
+                      final route = routes[index];
+                      final isDriving = tripState.activeLeg != null;
+                      return Dismissible(
+                        key: Key('route_${route.id}'),
+                        direction: DismissDirection.horizontal,
+                        confirmDismiss: (direction) async {
+                          if (direction == DismissDirection.endToStart) {
+                            return await _deleteRoute(route);
+                          } else {
+                            _showRouteDialog(route: route);
+                            return false;
+                          }
+                        },
+                        background: Container(
+                          alignment: Alignment.centerLeft,
+                          padding: const EdgeInsets.only(left: 20),
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.primary,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.edit, color: Colors.white),
+                        ),
+                        secondaryBackground: Container(
+                          alignment: Alignment.centerRight,
+                          padding: const EdgeInsets.only(right: 20),
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.error,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.delete, color: Colors.white),
+                        ),
+                        child: Card(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          child: ListTile(
+                            onTap: isDriving ? null : () => _startDrivingFromRoute(route),
+                            title: Text(route.name),
+                            subtitle: Text(
+                              '${route.startLocation} → ${route.endLocation} · '
+                              '${route.distanceKm.toStringAsFixed(1)} km',
+                            ),
+                            trailing: const Icon(Icons.play_arrow, size: 18),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActiveTripCard(TripLeg leg, BuildContext context) {
+    final tripNotifier = ref.read(tripProvider.notifier);
+    final backgroundService = ref.read(backgroundServiceProvider);
+    final colorScheme = Theme.of(context).colorScheme;
+    final startTime = DateFormat('HH:mm').format(leg.startTime);
+    final duration = DateTime.now().difference(leg.startTime);
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    final durationStr = '$hours h ${minutes.toString().padLeft(2, '0')} min';
+    final expectedOdometer = leg.startOdometer + leg.kmDriven.toInt();
+
+    return Card(
+      color: colorScheme.primaryContainer,
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.directions_car, color: colorScheme.onPrimaryContainer),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Ajo käynnissä',
+                          style: Theme.of(context).textTheme.titleMedium),
+                      Text(
+                        leg.routeDescription ??
+                            '${leg.startLocation} → ${leg.endLocation}',
+                        style: Theme.of(context).textTheme.bodyMedium,
                       ),
-                    ),
-                  );
-                }
-                final route = routes[index];
-                final isDriving = ref.read(tripProvider).activeLeg != null;
-                return Dismissible(
-                  key: Key('route_${route.id}'),
-                  direction: DismissDirection.horizontal,
-                  confirmDismiss: (direction) async {
-                    if (direction == DismissDirection.endToStart) {
-                      return await _deleteRoute(route);
-                    } else {
-                      _showRouteDialog(route: route);
-                      return false;
-                    }
-                  },
-                  background: Container(
-                    alignment: Alignment.centerLeft,
-                    padding: const EdgeInsets.only(left: 20),
-                    margin: const EdgeInsets.only(bottom: 8),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primary,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(Icons.edit, color: Colors.white),
+                    ],
                   ),
-                  secondaryBackground: Container(
-                    alignment: Alignment.centerRight,
-                    padding: const EdgeInsets.only(right: 20),
-                    margin: const EdgeInsets.only(bottom: 8),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.error,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(Icons.delete, color: Colors.white),
-                  ),
-                  child: Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    child: ListTile(
-                      onTap: isDriving ? null : () => _startDrivingFromRoute(route),
-                      title: Text(route.name),
-                      subtitle: Text(
-                        '${route.startLocation} → ${route.endLocation} · '
-                        '${route.distanceKm.toStringAsFixed(1)} km',
-                      ),
-                      trailing: const Icon(Icons.play_arrow, size: 18),
-                    ),
-                  ),
-                );
-              },
+                ),
+              ],
             ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Lähtö: $startTime'),
+                Text('Kesto: $durationStr'),
+              ],
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Mittari lähtiessä: ${leg.startOdometer} km'),
+                Text('Arvioitu perillä: $expectedOdometer km'),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () async {
+                  final result = await showOdometerDialog(
+                    context: context,
+                    title: 'Olen perillä',
+                    subtitle: 'Kohde: ${leg.endLocation ?? leg.routeDescription}',
+                    label: 'Matkamittari perillä (km)',
+                    actionLabel: 'Lopeta ajo',
+                    initialValue: expectedOdometer,
+                    expectedHint: expectedOdometer,
+                  );
+                  if (result != null) {
+                    await tripNotifier.stopDriving(result.odometer);
+                    await backgroundService.onDrivingStopped();
+                  }
+                },
+                icon: const Icon(Icons.flag),
+                label: const Text('Olen perillä'),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
