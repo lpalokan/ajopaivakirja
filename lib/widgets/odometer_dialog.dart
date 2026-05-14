@@ -1,6 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import '../services/odometer_vision_service.dart';
 
 typedef OdometerResult = ({int odometer, String? purpose, DateTime? time});
 
@@ -16,6 +19,7 @@ Future<OdometerResult?> showOdometerDialog({
   bool showTime = false,
   DateTime? initialTime,
   String? timeLabel,
+  OdometerVisionService? visionService,
 }) {
   return showDialog<OdometerResult>(
     context: context,
@@ -31,6 +35,7 @@ Future<OdometerResult?> showOdometerDialog({
       showTime: showTime,
       initialTime: initialTime,
       timeLabel: timeLabel,
+      visionService: visionService,
     ),
   );
 }
@@ -46,6 +51,7 @@ class _OdometerInput extends StatefulWidget {
   final bool showTime;
   final DateTime? initialTime;
   final String? timeLabel;
+  final OdometerVisionService? visionService;
 
   const _OdometerInput({
     required this.title,
@@ -58,6 +64,7 @@ class _OdometerInput extends StatefulWidget {
     this.showTime = false,
     this.initialTime,
     this.timeLabel,
+    this.visionService,
   });
 
   @override
@@ -70,6 +77,7 @@ class _OdometerInputState extends State<_OdometerInput> {
   late DateTime _pickedTime;
   bool _hasRelatedField = false;
   String? _errorText;
+  bool _isProcessingOcr = false;
 
   @override
   void initState() {
@@ -160,6 +168,22 @@ class _OdometerInputState extends State<_OdometerInput> {
                     ? 'Arvioitu: ${widget.expectedHint} km'
                     : 'Esim. 123456',
                 errorText: _errorText,
+                suffixIcon: widget.visionService != null
+                    ? _isProcessingOcr
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : IconButton(
+                            icon: const Icon(Icons.camera_alt),
+                            tooltip: 'Ota kuva mittarista',
+                            onPressed: _captureAndOcr,
+                          )
+                    : null,
               ),
               autofocus: true,
             ),
@@ -198,5 +222,37 @@ class _OdometerInputState extends State<_OdometerInput> {
     final time = widget.showTime ? _pickedTime : null;
 
     Navigator.pop(context, (odometer: value, purpose: purpose, time: time));
+  }
+
+  Future<void> _captureAndOcr() async {
+    if (widget.visionService == null) return;
+
+    final photo = await ImagePicker().pickImage(source: ImageSource.camera);
+    if (photo == null) return;
+
+    setState(() => _isProcessingOcr = true);
+
+    try {
+      final reading = await widget.visionService!.extractOdometer(
+        photo.path,
+        expectedHint: widget.expectedHint,
+      );
+
+      if (!mounted) return;
+
+      if (reading != null) {
+        _odometerController.text = reading.toString();
+        setState(() => _errorText = null);
+      } else {
+        setState(
+            () => _errorText = 'Mittarilukemaa ei tunnistettu, syötä käsin');
+      }
+    } finally {
+      try {
+        await File(photo.path).delete();
+      } catch (_) {}
+
+      if (mounted) setState(() => _isProcessingOcr = false);
+    }
   }
 }
