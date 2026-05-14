@@ -82,9 +82,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             actionLabel: 'Lopeta ajo',
             initialValue: expectedOdometer,
             expectedHint: expectedOdometer,
+            showTime: true,
+            initialTime: DateTime.now(),
+            timeLabel: 'Päättymisaika',
           ).then((result) {
             if (result != null && context.mounted) {
-              tripNotifier.stopDriving(result.odometer);
+              tripNotifier.stopDriving(result.odometer, endTime: result.time);
               backgroundService.onDrivingStopped();
             }
           });
@@ -233,9 +236,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   actionLabel: 'Lopeta ajo',
                   initialValue: expectedOdometer,
                   expectedHint: expectedOdometer,
+                  showTime: true,
+                  initialTime: DateTime.now(),
+                  timeLabel: 'Päättymisaika',
                 );
                 if (result != null) {
-                  await tripNotifier.stopDriving(result.odometer);
+                  await tripNotifier.stopDriving(result.odometer, endTime: result.time);
                   await backgroundService.onDrivingStopped();
                 }
               },
@@ -329,6 +335,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       actionLabel: 'Aloita ajo',
       relatedField: 'Tarkoitus',
       initialValue: initialOdometer,
+      showTime: true,
+      initialTime: DateTime.now(),
+      timeLabel: 'Alkamisaika',
     );
 
     if (result != null) {
@@ -339,6 +348,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         startOdometer: result.odometer,
         purpose: result.purpose ?? '',
         driver: settings.driverName,
+        startTime: result.time,
       );
       await backgroundService.onDrivingStarted(leg);
       if (route.id != null &&

@@ -177,9 +177,12 @@ class _RouteManagementScreenState
                     actionLabel: 'Lopeta ajo',
                     initialValue: expectedOdometer,
                     expectedHint: expectedOdometer,
+                    showTime: true,
+                    initialTime: DateTime.now(),
+                    timeLabel: 'Päättymisaika',
                   );
                   if (result != null) {
-                    await tripNotifier.stopDriving(result.odometer);
+                    await tripNotifier.stopDriving(result.odometer, endTime: result.time);
                     await backgroundService.onDrivingStopped();
                   }
                 },
@@ -318,6 +321,9 @@ class _RouteManagementScreenState
       actionLabel: 'Aloita ajo',
       relatedField: 'Tarkoitus',
       initialValue: initialOdometer,
+      showTime: true,
+      initialTime: DateTime.now(),
+      timeLabel: 'Alkamisaika',
     );
 
     if (result == null) return;
@@ -328,6 +334,7 @@ class _RouteManagementScreenState
       startOdometer: result.odometer,
       purpose: result.purpose ?? '',
       driver: settings.driverName,
+      startTime: result.time,
     );
     await backgroundService.onDrivingStarted(leg);
     if (route.id != null && result.purpose != null && result.purpose!.isNotEmpty) {

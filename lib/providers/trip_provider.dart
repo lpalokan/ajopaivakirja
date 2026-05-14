@@ -65,16 +65,17 @@ class TripNotifier extends StateNotifier<TripState> {
     required int startOdometer,
     required String purpose,
     String? driver,
+    DateTime? startTime,
   }) async {
     final driverName = driver ?? _settings.driverName;
-    final now = DateTime.now();
+    final time = startTime ?? DateTime.now();
     final legOrder = await DatabaseService.getNextLegOrder(_today);
 
     final leg = TripLeg(
       date: _today,
       legOrder: legOrder,
       routeId: route.id,
-      startTime: now,
+      startTime: time,
       startOdometer: startOdometer,
       startLocation: route.startLocation,
       endLocation: route.endLocation,
@@ -98,13 +99,13 @@ class TripNotifier extends StateNotifier<TripState> {
     return saved;
   }
 
-  Future<TripLeg> stopDriving(int endOdometer) async {
+  Future<TripLeg> stopDriving(int endOdometer, {DateTime? endTime}) async {
     final active = state.activeLeg;
     if (active == null) throw Exception('Ei aktiivista ajoa');
 
-    final now = DateTime.now();
+    final time = endTime ?? DateTime.now();
     var leg = active.copyWith(
-      endTime: now,
+      endTime: time,
       endOdometer: endOdometer,
     );
 
