@@ -27,6 +27,7 @@ dependencies:
   collection: ^1.19.1
   timezone: ^0.10.1
   path: ^1.9.1
+  share_plus: ^13.1.0
 
 dev_dependencies:
   flutter_test:

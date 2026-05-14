@@ -6,6 +6,7 @@ class AppSettings {
   final String sheetId;
   final String sheetTab;
   final String driverName;
+  final bool debugLogging;
 
   const AppSettings({
     this.homeLocation = 'Koti',
@@ -15,6 +16,7 @@ class AppSettings {
     this.sheetId = '',
     this.sheetTab = 'Sheet1',
     this.driverName = '',
+    this.debugLogging = false,
   });
 
   AppSettings copyWith({
@@ -25,6 +27,7 @@ class AppSettings {
     String? sheetId,
     String? sheetTab,
     String? driverName,
+    bool? debugLogging,
   }) {
     return AppSettings(
       homeLocation: homeLocation ?? this.homeLocation,
@@ -34,6 +37,7 @@ class AppSettings {
       sheetId: sheetId ?? this.sheetId,
       sheetTab: sheetTab ?? this.sheetTab,
       driverName: driverName ?? this.driverName,
+      debugLogging: debugLogging ?? this.debugLogging,
     );
   }
 
@@ -46,6 +50,7 @@ class AppSettings {
       'sheet_id': sheetId,
       'sheet_tab': sheetTab,
       'driver_name': driverName,
+      'debug_logging': debugLogging ? '1' : '0',
     };
   }
 
@@ -58,6 +63,7 @@ class AppSettings {
       sheetId: map['sheet_id'] ?? '',
       sheetTab: map['sheet_tab'] ?? 'Sheet1',
       driverName: map['driver_name'] ?? '',
+      debugLogging: map['debug_logging'] == '1',
     );
   }
 

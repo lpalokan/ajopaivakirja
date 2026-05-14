@@ -3,6 +3,7 @@ import 'package:googleapis/sheets/v4.dart' as sheets;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis_auth/auth_io.dart';
 import '../models/trip_leg.dart';
+import 'log_service.dart';
 
 class SheetsService {
   final GoogleSignIn _googleSignIn;
@@ -19,10 +20,17 @@ class SheetsService {
   Future<bool> get isSignedIn => _googleSignIn.isSignedIn();
 
   Future<void> signIn() async {
-    final account = await _googleSignIn.signIn();
-    if (account == null) throw Exception('Kirjautuminen peruttu');
+    try {
+      LogService().info('Google Sign-In: starting...');
+      final account = await _googleSignIn.signIn();
+      if (account == null) {
+        LogService().warn('Google Sign-In: cancelled by user');
+        throw Exception('Kirjautuminen peruttu');
+      }
+      LogService().info('Google Sign-In: got account (${account.email})');
 
-    final authHeaders = await account.authHeaders;
+      final authHeaders = await account.authHeaders;
+      LogService().info('Google Sign-In: got auth headers');
     final credentials = AccessCredentials(
       AccessToken(
         'Bearer',
@@ -36,6 +44,11 @@ class SheetsService {
     final client = GoogleAuthClient(credentials, http.Client());
     _authClient = client;
     _sheetsApi = sheets.SheetsApi(client);
+    LogService().info('Google Sign-In: success');
+    } catch (e, st) {
+      LogService().error('Google Sign-In failed', e, st);
+      rethrow;
+    }
   }
 
   Future<void> signOut() async {
@@ -62,6 +75,7 @@ class SheetsService {
       ..range = range
       ..values = [row];
 
+    LogService().info('Sheets append: ${leg.startLocation} -> ${leg.endLocation}, ${leg.kmDriven}km');
     await _sheetsApi!.spreadsheets.values.append(
       valueRange,
       sheetId,

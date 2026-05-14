@@ -1,8 +1,12 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../main.dart';
 import '../providers/settings_provider.dart';
+import '../services/log_service.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -148,6 +152,31 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
             const SizedBox(height: 16),
             _buildSheetsAuthButton(),
+            _sectionHeader('Vianmääritys'),
+            SwitchListTile(
+              title: const Text('Virheloki'),
+              subtitle: const Text('Tallentaa lokitiedoston puhelimeen'),
+              value: ref.watch(settingsProvider).debugLogging,
+              onChanged: (v) async {
+                await ref.read(settingsProvider.notifier).update({
+                  'debug_logging': v ? '1' : '0',
+                });
+                LogService().setEnabled(v);
+                if (v) {
+                  await LogService().init(enabled: true);
+                }
+                setState(() {});
+              },
+            ),
+            if (ref.watch(settingsProvider).debugLogging)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: OutlinedButton.icon(
+                  onPressed: _shareLogs,
+                  icon: const Icon(Icons.share),
+                  label: const Text('Jaa lokitiedosto'),
+                ),
+              ),
             const SizedBox(height: 24),
             FilledButton.icon(
               onPressed: _saving ? null : _save,
@@ -240,6 +269,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     await sheets.signOut();
     _signedIn = false;
     if (mounted) setState(() {});
+  }
+
+  Future<void> _shareLogs() async {
+    final logService = LogService();
+    final content = await logService.readLogs();
+    final path = logService.logPath;
+    if (path == null) return;
+
+    // Write to a shareable temp file
+    final tempPath = '${(await getApplicationDocumentsDirectory()).path}/kilometrikorvaus_export.log';
+    final file = File(tempPath);
+    await file.writeAsString(content);
+
+    await SharePlus.instance.share(ShareParams(
+      files: [XFile(tempPath)],
+      text: 'Kilometrikorvaus debug log',
+    ));
   }
 
   Future<void> _save() async {

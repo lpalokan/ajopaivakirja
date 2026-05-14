@@ -8,6 +8,7 @@ import '../providers/route_provider.dart';
 import '../providers/trip_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/database_service.dart';
+import '../services/log_service.dart';
 import '../widgets/odometer_dialog.dart';
 import 'settings_screen.dart';
 import 'route_management_screen.dart';
@@ -28,6 +29,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ref.read(settingsProvider.notifier).load();
       ref.read(routeProvider.notifier).load();
       ref.read(tripProvider.notifier).load();
+
+      final settings = ref.read(settingsProvider);
+      await LogService().init(enabled: settings.debugLogging);
 
       final backgroundService = ref.read(backgroundServiceProvider);
       final tripNotifier = ref.read(tripProvider.notifier);
