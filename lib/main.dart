@@ -39,7 +39,7 @@ class KilometrikorvausApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Kilometrikorvaus',
+      title: 'Ajopäiväkirja',
       debugShowCheckedModeBanner: false,
       locale: const Locale('fi'),
       supportedLocales: const [Locale('fi')],

@@ -62,6 +62,21 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
       return;
     }
 
+    if (!_hasUnsynced) {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Ei muutoksia'),
+          content: const Text('Ei muutoksia synkronoitavana. Haluatko silti päivittää?'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Peruuta')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Synkronoi')),
+          ],
+        ),
+      );
+      if (confirm != true) return;
+    }
+
     setState(() => _syncing = true);
     try {
       final sheets = ref.read(sheetsServiceProvider);
@@ -111,17 +126,42 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     var pickedStartTime = leg.startTime;
     var pickedEndTime = leg.endTime;
     var pickedType = leg.dailyAllowanceType;
+    var pickedDate = DateTime.parse(leg.date);
     final timeFmt = DateFormat('HH:mm');
+    final dateFmt = DateFormat('d.M.yyyy');
 
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('Muokkaa merkintää'),
+          title: null,
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Text('Muokkaa merkintää', style: Theme.of(ctx).textTheme.titleLarge),
+                const SizedBox(height: 16),
+                InkWell(
+                  onTap: () async {
+                    final d = await showDatePicker(
+                      context: ctx,
+                      initialDate: pickedDate,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime(2030),
+                    );
+                    if (d != null) setDialogState(() => pickedDate = d);
+                  },
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Päivämäärä',
+                      border: OutlineInputBorder(),
+                      suffixIcon: Icon(Icons.calendar_today),
+                    ),
+                    child: Text(dateFmt.format(pickedDate)),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 InkWell(
                   onTap: () async {
                     final t = await showTimePicker(
@@ -277,6 +317,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     final endOdo = endOdoText.isNotEmpty ? int.tryParse(endOdoText) : leg.endOdometer;
 
     var updated = leg.copyWith(
+      date: DateFormat('yyyy-MM-dd').format(pickedDate),
       startTime: pickedStartTime,
       endTime: pickedEndTime,
       startLocation: startLocCtrl.text.trim(),
@@ -294,18 +335,29 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
       await DatabaseService.markLegUnsynced(updated.id!);
     }
 
-    // Recalculate daily allowance for the full day
-    final dayLegs = await DatabaseService.getLegsForDate(leg.date);
-    await calc.finalizeDay(dayLegs);
-    // Mark all legs unsynced since daily allowance may have changed
-    for (final l in dayLegs) {
-      if (l.id != null) await DatabaseService.markLegUnsynced(l.id!);
+    // Recalculate daily allowance for both old and new dates
+    final oldDateLegs = await DatabaseService.getLegsForDate(leg.date);
+    if (oldDateLegs.isNotEmpty) {
+      await calc.finalizeDay(oldDateLegs);
+      for (final l in oldDateLegs) {
+        if (l.id != null) await DatabaseService.markLegUnsynced(l.id!);
+      }
+    }
+    final newDate = DateFormat('yyyy-MM-dd').format(pickedDate);
+    if (newDate != leg.date) {
+      final newDateLegs = await DatabaseService.getLegsForDate(newDate);
+      if (newDateLegs.isNotEmpty) {
+        await calc.finalizeDay(newDateLegs);
+        for (final l in newDateLegs) {
+          if (l.id != null) await DatabaseService.markLegUnsynced(l.id!);
+        }
+      }
     }
 
     await _load();
   }
 
-  Future<void> _deleteLeg(TripLeg leg) async {
+  Future<bool> _deleteLeg(TripLeg leg) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -328,7 +380,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
       ),
     );
 
-    if (confirm != true || leg.id == null) return;
+    if (confirm != true || leg.id == null) return false;
 
     await DatabaseService.deleteTripLeg(leg.id!);
     await _load();
@@ -337,6 +389,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
         const SnackBar(content: Text('Merkintä poistettu')),
       );
     }
+    return true;
   }
 
   @override
@@ -345,18 +398,20 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
       appBar: AppBar(
         title: const Text('Historia'),
         actions: [
-          if (_hasUnsynced)
-            IconButton(
-              onPressed: _syncing ? null : _syncAll,
-              icon: _syncing
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.cloud_upload),
-              tooltip: 'Synkronoi Sheetsiin',
-            ),
+          IconButton(
+            onPressed: _syncing ? null : _syncAll,
+            icon: _syncing
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(Icons.cloud_upload,
+                    color: _hasUnsynced
+                        ? null
+                        : Theme.of(context).colorScheme.outline),
+            tooltip: 'Synkronoi Sheetsiin',
+          ),
         ],
       ),
       body: _loading
@@ -403,39 +458,41 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
             ),
           ),
           for (final leg in legs)
-            ListTile(
-              dense: true,
-              title: Text(
-                  leg.routeDescription ?? '${leg.startLocation} → ${leg.endLocation ?? "-"}'),
-              subtitle: Text(
-                '${_formatTime(leg.startTime)}–${leg.endTime != null ? _formatTime(leg.endTime!) : "..."} · '
-                '${leg.kmDriven.toStringAsFixed(1)} km',
+            Dismissible(
+              key: Key('leg_${leg.id}'),
+              direction: DismissDirection.endToStart,
+              confirmDismiss: (_) async {
+                return await _deleteLeg(leg);
+              },
+              background: Container(
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.only(right: 20),
+                color: Theme.of(context).colorScheme.error,
+                child: const Icon(Icons.delete, color: Colors.white),
               ),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('€${leg.totalAllowance.toStringAsFixed(2)}'),
-                  if (!leg.synced)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 8),
-                      child: Icon(Icons.cloud_off,
-                          size: 16,
-                          color: Theme.of(context).colorScheme.outline),
-                    ),
-                  PopupMenuButton<String>(
-                    onSelected: (action) {
-                      if (action == 'edit') {
-                        _showEditDialog(leg);
-                      } else if (action == 'delete') {
-                        _deleteLeg(leg);
-                      }
-                    },
-                    itemBuilder: (context) => [
-                      const PopupMenuItem(value: 'edit', child: Text('Muokkaa')),
-                      const PopupMenuItem(value: 'delete', child: Text('Poista')),
-                    ],
-                  ),
-                ],
+              child: ListTile(
+                dense: true,
+                onTap: () => _showEditDialog(leg),
+                title: Text(
+                    leg.routeDescription ?? '${leg.startLocation} → ${leg.endLocation ?? "-"}'),
+                subtitle: Text(
+                  '${_formatTime(leg.startTime)}–${leg.endTime != null ? _formatTime(leg.endTime!) : "..."} · '
+                  '${leg.kmDriven.toStringAsFixed(1)} km',
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('€${leg.totalAllowance.toStringAsFixed(2)}'),
+                    if (!leg.synced)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: Icon(Icons.cloud_off,
+                            size: 16,
+                            color: Theme.of(context).colorScheme.outline),
+                      ),
+                    const Icon(Icons.chevron_right, size: 18),
+                  ],
+                ),
               ),
             ),
         ],

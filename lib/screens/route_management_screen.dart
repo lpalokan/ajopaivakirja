@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/route.dart' as route_model;
 import '../providers/route_provider.dart';
+import '../services/database_service.dart';
 
 class RouteManagementScreen extends ConsumerStatefulWidget {
   const RouteManagementScreen({super.key});
@@ -18,40 +19,58 @@ class _RouteManagementScreenState
     final routes = ref.watch(routeProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Reitit'),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showRouteDialog(),
-        child: const Icon(Icons.add),
-      ),
+      appBar: AppBar(title: const Text('Reitit')),
       body: routes.isEmpty
-          ? const Center(child: Text('Ei reittejä. Lisää uusi +-napista.'))
+          ? GestureDetector(
+              onTap: () => _showRouteDialog(),
+              behavior: HitTestBehavior.opaque,
+              child: const Center(
+                child: Text('Ei reittejä. Lisää uusi napauttamalla tästä.'),
+              ),
+            )
           : ListView.builder(
               padding: const EdgeInsets.all(16),
-              itemCount: routes.length,
+              itemCount: routes.length + 1,
               itemBuilder: (context, index) {
-                final route = routes[index];
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  child: ListTile(
-                    title: Text(route.name),
-                    subtitle: Text(
-                      '${route.startLocation} → ${route.endLocation} · '
-                      '${route.distanceKm.toStringAsFixed(1)} km',
+                if (index == routes.length) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Center(
+                      child: TextButton.icon(
+                        onPressed: () => _showRouteDialog(),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Lisää uusi reitti'),
+                      ),
                     ),
-                    trailing: PopupMenuButton<String>(
-                      onSelected: (action) {
-                        if (action == 'edit') {
-                          _showRouteDialog(route: route);
-                        } else if (action == 'delete') {
-                          _deleteRoute(route);
-                        }
-                      },
-                      itemBuilder: (context) => [
-                        const PopupMenuItem(value: 'edit', child: Text('Muokkaa')),
-                        const PopupMenuItem(value: 'delete', child: Text('Poista')),
-                      ],
+                  );
+                }
+                final route = routes[index];
+                return Dismissible(
+                  key: Key('route_${route.id}'),
+                  direction: DismissDirection.endToStart,
+                  confirmDismiss: (_) async {
+                    return await _deleteRoute(route);
+                  },
+                  background: Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: 20),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.error,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.delete, color: Colors.white),
+                  ),
+                  child: Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      onTap: () => _showRouteDialog(route: route),
+                      title: Text(route.name),
+                      subtitle: Text(
+                        '${route.startLocation} → ${route.endLocation} · '
+                        '${route.distanceKm.toStringAsFixed(1)} km',
+                      ),
+                      trailing: const Icon(Icons.chevron_right, size: 18),
                     ),
                   ),
                 );
@@ -66,6 +85,12 @@ class _RouteManagementScreenState
     final endController = TextEditingController(text: route?.endLocation);
     final distController =
         TextEditingController(text: route?.distanceKm.toString() ?? '');
+
+    // Load known locations for autocomplete
+    List<String> knownLocations = [];
+    try {
+      knownLocations = await DatabaseService.getUniqueLocations();
+    } catch (_) {}
 
     final result = await showDialog<bool>(
       context: context,
@@ -83,14 +108,16 @@ class _RouteManagementScreenState
                 ),
               ),
               const SizedBox(height: 12),
-              TextField(
+              _LocationField(
                 controller: startController,
-                decoration: const InputDecoration(labelText: 'Lähtöpaikka'),
+                label: 'Lähtöpaikka',
+                suggestions: knownLocations,
               ),
               const SizedBox(height: 12),
-              TextField(
+              _LocationField(
                 controller: endController,
-                decoration: const InputDecoration(labelText: 'Määränpää'),
+                label: 'Määränpää',
+                suggestions: knownLocations,
               ),
               const SizedBox(height: 12),
               TextField(
@@ -156,7 +183,7 @@ class _RouteManagementScreenState
     }
   }
 
-  Future<void> _deleteRoute(route_model.Route route) async {
+  Future<bool> _deleteRoute(route_model.Route route) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -177,6 +204,64 @@ class _RouteManagementScreenState
 
     if (confirm == true && route.id != null) {
       await ref.read(routeProvider.notifier).remove(route.id!);
+      return true;
     }
+    return false;
+  }
+}
+
+class _LocationField extends StatelessWidget {
+  final TextEditingController controller;
+  final String label;
+  final List<String> suggestions;
+
+  const _LocationField({
+    required this.controller,
+    required this.label,
+    required this.suggestions,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = suggestions
+        .where((s) => s.toLowerCase().contains(controller.text.toLowerCase()))
+        .toList();
+
+    return Autocomplete<String>(
+      optionsBuilder: (textEditingValue) {
+        if (textEditingValue.text.isEmpty) return const Iterable<String>.empty();
+        return suggestions.where((s) =>
+            s.toLowerCase().contains(textEditingValue.text.toLowerCase()));
+      },
+      onSelected: (value) {
+        controller.text = value;
+        controller.selection = TextSelection.fromPosition(
+          TextPosition(offset: value.length),
+        );
+      },
+      fieldViewBuilder: (context, controller, focusNode, onSubmitted) {
+        // Sync our external controller with the Autocomplete's internal one
+        controller.text = this.controller.text;
+        this.controller.addListener(() {
+          if (controller.text != this.controller.text) {
+            controller.text = this.controller.text;
+          }
+        });
+        return TextField(
+          controller: controller,
+          focusNode: focusNode,
+          decoration: InputDecoration(
+            labelText: label,
+            border: const OutlineInputBorder(),
+            suffixIcon: filtered.isEmpty && controller.text.isNotEmpty
+                ? null
+                : const Icon(Icons.arrow_drop_down),
+          ),
+          onChanged: (v) {
+            this.controller.text = v;
+          },
+        );
+      },
+    );
   }
 }

@@ -104,7 +104,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Kilometrikorvaus'),
+        title: const Text('Ajopäiväkirja'),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
@@ -348,47 +348,55 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final tripNotifier = ref.read(tripProvider.notifier);
     final summary = tripNotifier.daySummary;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Tänään (${legs.first.date})',
-                style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 8),
-            ...legs.map((leg) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.circle, size: 8),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${leg.startLocation} → ${leg.endLocation ?? '...'}  ',
-                      ),
-                      Text(
-                        '${leg.kmDriven.toStringAsFixed(1)} km',
-                        style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary),
-                      ),
-                      if (leg.dailyAllowance > 0)
+    return InkWell(
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const TripHistoryScreen()),
+        );
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Tänään (${legs.first.date})',
+                  style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 8),
+              ...legs.map((leg) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.circle, size: 8),
+                        const SizedBox(width: 8),
                         Text(
-                          '  (€${leg.dailyAllowance.toStringAsFixed(2)} pvr)',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                          '${leg.startLocation} → ${leg.endLocation ?? '...'}  ',
                         ),
-                    ],
-                  ),
-                )),
-            const Divider(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Yht: ${summary.totalKm.toStringAsFixed(1)} km'),
-                Text(
-                    '€${summary.grandTotal.toStringAsFixed(2)}'),
-              ],
-            ),
-          ],
+                        Text(
+                          '${leg.kmDriven.toStringAsFixed(1)} km',
+                          style: TextStyle(
+                              color: Theme.of(context).colorScheme.primary),
+                        ),
+                        if (leg.dailyAllowance > 0)
+                          Text(
+                            '  (€${leg.dailyAllowance.toStringAsFixed(2)} pvr)',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                      ],
+                    ),
+                  )),
+              const Divider(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Yht: ${summary.totalKm.toStringAsFixed(1)} km'),
+                  Text(
+                      '€${summary.grandTotal.toStringAsFixed(2)}'),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

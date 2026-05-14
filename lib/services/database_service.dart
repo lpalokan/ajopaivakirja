@@ -130,6 +130,15 @@ class DatabaseService {
     return maps.map((m) => Route.fromMap(m)).toList();
   }
 
+  static Future<List<String>> getUniqueLocations() async {
+    final db = await database;
+    final result = await db.rawQuery(
+      'SELECT DISTINCT start_location as loc FROM routes '
+      'UNION SELECT DISTINCT end_location as loc FROM routes ORDER BY loc',
+    );
+    return result.map((r) => r['loc'] as String).toList();
+  }
+
   static Future<void> updateRouteLastPurpose(int routeId, String purpose) async {
     final db = await database;
     final now = DateTime.now().toIso8601String();
