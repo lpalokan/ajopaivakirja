@@ -1,6 +1,7 @@
 import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
 import 'database_service.dart';
+import 'log_service.dart';
 
 class TripCalculator {
   final AppSettings _settings;
@@ -102,15 +103,20 @@ class TripCalculator {
     // Determine daily allowance: honor manual override if set
     final last = updated.last;
     final double allowance;
+    final String mode;
     if (last.dailyAllowanceType != null) {
       allowance = switch (last.dailyAllowanceType) {
         1 => allowance6h,
         2 => allowance10h,
         _ => 0,
       };
+      mode = 'manual(type: ${last.dailyAllowanceType})';
     } else {
-      allowance = calculateDailyAllowance(updated).allowance;
+      final daily = calculateDailyAllowance(updated);
+      allowance = daily.allowance;
+      mode = 'auto(hours: ${daily.totalHours})';
     }
+    LogService().info('Calc: finalizeDay ${updated.length} legs, allowance=$allowance€ ($mode)');
 
     // Apply daily allowance to the last leg if returning home or override is set
     if (last.isReturnHome || last.dailyAllowanceType != null) {

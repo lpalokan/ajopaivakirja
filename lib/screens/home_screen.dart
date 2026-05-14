@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -27,11 +29,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await ref.read(settingsProvider.notifier).load();
-      ref.read(routeProvider.notifier).load();
+      await ref.read(routeProvider.notifier).load();
       ref.read(tripProvider.notifier).load();
 
       final settings = ref.read(settingsProvider);
       await LogService().init(enabled: settings.debugLogging);
+
+      // Seed debug routes
+      if (kDebugMode) {
+        final routes = ref.read(routeProvider);
+        if (routes.isEmpty) {
+          final routeNotifier = ref.read(routeProvider.notifier);
+          final now = DateTime.now();
+          await routeNotifier.add(model.Route(
+            name: 'Töihin',
+            startLocation: 'Koti',
+            endLocation: 'Työ',
+            distanceKm: 54,
+            createdAt: now,
+            updatedAt: now,
+          ));
+          await routeNotifier.add(model.Route(
+            name: 'Kotiin',
+            startLocation: 'Työ',
+            endLocation: 'Koti',
+            distanceKm: 54,
+            createdAt: now,
+            updatedAt: now,
+          ));
+          LogService().info('App: seeded debug routes (Töihin, Kotiin)');
+        }
+      }
 
       final backgroundService = ref.read(backgroundServiceProvider);
       final tripNotifier = ref.read(tripProvider.notifier);

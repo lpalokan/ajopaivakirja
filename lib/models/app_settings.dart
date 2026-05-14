@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 class AppSettings {
   final String homeLocation;
   final double kmRate;
@@ -14,8 +16,8 @@ class AppSettings {
     this.allowance6h = 24.0,
     this.allowance10h = 48.0,
     this.sheetId = '',
-    this.sheetTab = 'Sheet1',
-    this.driverName = '',
+    this.sheetTab = 'Taulukko1',
+    this.driverName = kDebugMode ? 'Lapa' : '',
     this.debugLogging = false,
   });
 
@@ -61,7 +63,7 @@ class AppSettings {
       allowance6h: double.tryParse(map['allowance_6h'] ?? '') ?? 24.0,
       allowance10h: double.tryParse(map['allowance_10h'] ?? '') ?? 48.0,
       sheetId: map['sheet_id'] ?? '',
-      sheetTab: map['sheet_tab'] ?? 'Sheet1',
+      sheetTab: map['sheet_tab'] ?? 'Taulukko1',
       driverName: map['driver_name'] ?? '',
       debugLogging: map['debug_logging'] == '1',
     );

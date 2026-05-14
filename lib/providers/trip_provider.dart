@@ -5,6 +5,7 @@ import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
 import '../services/database_service.dart';
 import '../services/trip_calculator.dart';
+import '../services/log_service.dart';
 import '../main.dart';
 import 'settings_provider.dart';
 
@@ -84,6 +85,7 @@ class TripNotifier extends StateNotifier<TripState> {
     );
 
     final saved = await DatabaseService.insertTripLeg(leg);
+    LogService().info('Trip: started ${route.name} (odo: $startOdometer, leg #$legOrder)');
     await DatabaseService.updateRouteTimestamp(route.id!);
 
     final todayLegs = await DatabaseService.getLegsForDate(_today);
@@ -107,10 +109,12 @@ class TripNotifier extends StateNotifier<TripState> {
     );
 
     leg = _calculator.calculateLeg(leg);
+    LogService().info('Trip: stopped (odo: $endOdometer, km: ${leg.kmDriven}, returnHome: ${leg.isReturnHome})');
     await DatabaseService.updateTripLeg(leg);
 
     if (leg.isReturnHome) {
       final dayLegs = await DatabaseService.getLegsForDate(_today);
+      LogService().info('Trip: finalizing day with ${dayLegs.length} legs');
       await _calculator.finalizeDay(dayLegs);
       _syncToSheets(dayLegs);
     }
@@ -135,13 +139,16 @@ class TripNotifier extends StateNotifier<TripState> {
 
     try {
       final sheets = _ref.read(sheetsServiceProvider);
+      LogService().info('Sheets: syncing ${legs.length} legs to ${settings.sheetTab}');
       await sheets.appendLegs(
         legs,
         sheetId: settings.sheetId,
         sheetTab: settings.sheetTab,
         onSynced: (legId) => DatabaseService.markLegSynced(legId),
       );
-    } catch (_) {
+      LogService().info('Sheets: sync complete (${legs.length} legs)');
+    } catch (e, st) {
+      LogService().error('Sheets: sync failed', e, st);
       // Sheets sync failed silently — app continues working locally.
       // User can retry later via manual sync.
     }

@@ -3,6 +3,7 @@ import 'package:path/path.dart' as p;
 import '../models/route.dart';
 import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
+import 'log_service.dart';
 
 class DatabaseService {
   static Database? _db;
@@ -155,6 +156,7 @@ class DatabaseService {
   static Future<TripLeg> insertTripLeg(TripLeg leg) async {
     final db = await database;
     final id = await db.insert('trip_legs', leg.toMap());
+    LogService().info('DB: inserted leg $id (${leg.startLocation} -> ${leg.endLocation})');
     return leg.copyWith(id: id);
   }
 
@@ -166,12 +168,14 @@ class DatabaseService {
       where: 'id = ?',
       whereArgs: [leg.id],
     );
+    LogService().info('DB: updated leg ${leg.id}');
     return leg;
   }
 
   static Future<void> deleteTripLeg(int id) async {
     final db = await database;
     await db.delete('trip_legs', where: 'id = ?', whereArgs: [id]);
+    LogService().info('DB: deleted leg $id');
   }
 
   static Future<List<TripLeg>> getLegsForDate(String date) async {

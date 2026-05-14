@@ -125,7 +125,9 @@ class SheetsService {
       throw Exception('Google Sheets -tunnusta ei ole määritetty asetuksissa.');
     }
 
-    final range = '$sheetTab!A1:P1';
+    await _ensureSheet(sheetId, sheetTab);
+
+    final range = "'$sheetTab'!A1:P1";
 
     final row = _legToRow(leg);
 
@@ -141,6 +143,38 @@ class SheetsService {
       valueInputOption: 'USER_ENTERED',
       insertDataOption: 'INSERT_ROWS',
     );
+    LogService().info('Sheets append: success');
+  }
+
+  Future<void> _ensureSheet(String sheetId, String tabName) async {
+    try {
+      LogService().info('Sheets: checking tab "$tabName"...');
+      final spreadsheet = await _sheetsApi!.spreadsheets.get(sheetId, includeGridData: false);
+      final exists = spreadsheet.sheets?.any((s) => s.properties?.title == tabName) ?? false;
+
+      if (exists) {
+        LogService().info('Sheets: tab "$tabName" found');
+        return;
+      }
+
+      LogService().info('Sheets: tab "$tabName" not found, creating...');
+      final requests = [
+        sheets.Request(
+          addSheet: sheets.AddSheetRequest(
+            properties: sheets.SheetProperties(title: tabName),
+          ),
+        ),
+      ];
+
+      await _sheetsApi!.spreadsheets.batchUpdate(
+        sheets.BatchUpdateSpreadsheetRequest(requests: requests),
+        sheetId,
+      );
+      LogService().info('Sheets: tab "$tabName" created');
+    } catch (e) {
+      LogService().error('Sheets: _ensureSheet failed', e);
+      throw Exception('Välilehden "$tabName" luonti epäonnistui: $e');
+    }
   }
 
   /// Append multiple legs, optionally marking them as synced.
