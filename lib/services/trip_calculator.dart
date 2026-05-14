@@ -17,15 +17,12 @@ class TripCalculator {
   TripLeg calculateLeg(TripLeg leg) {
     final kmDriven = (leg.endOdometer ?? leg.startOdometer) - leg.startOdometer;
     final kmAllowance = kmDriven * kmRate;
-    final legDurationHours = leg.endTime != null
-        ? leg.endTime!.difference(leg.startTime).inMinutes / 60.0
-        : 0.0;
     final isReturnHome = _isReturningHome(leg.endLocation);
 
     return leg.copyWith(
       kmDriven: kmDriven.toDouble(),
       kmAllowance: double.parse(kmAllowance.toStringAsFixed(2)),
-      legDurationHours: double.parse(legDurationHours.toStringAsFixed(2)),
+      legDurationHours: 0,
       isReturnHome: isReturnHome,
       dailyAllowance: 0,
     );
@@ -134,6 +131,16 @@ class TripCalculator {
     if (last.isReturnHome || last.dailyAllowanceType != null) {
       updated[updated.length - 1] = last.copyWith(
         dailyAllowance: allowance,
+      );
+    }
+
+    // Calculate total day hours and place on last leg
+    if (last.endTime != null) {
+      final totalHours = last.endTime!
+          .difference(updated.first.startTime)
+          .inMinutes / 60.0;
+      updated[updated.length - 1] = updated.last.copyWith(
+        legDurationHours: double.parse(totalHours.toStringAsFixed(2)),
       );
     }
 
