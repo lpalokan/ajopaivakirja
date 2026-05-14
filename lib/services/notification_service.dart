@@ -33,6 +33,15 @@ class NotificationService {
     );
   }
 
+  Future<bool> requestPermission() async {
+    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    if (androidPlugin != null) {
+      return await androidPlugin.requestNotificationsPermission() ?? false;
+    }
+    return true;
+  }
+
   void _onNotificationResponse(NotificationResponse response) {
     if (response.actionId == _arrivedActionId) {
       onArrived?.call();

@@ -66,6 +66,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
       await backgroundService.initialize();
 
+      final notificationService = ref.read(notificationServiceProvider);
+      await notificationService.requestPermission();
+
       backgroundService.onArrived = () {
         final activeLeg = ref.read(tripProvider).activeLeg;
         if (activeLeg != null) {
