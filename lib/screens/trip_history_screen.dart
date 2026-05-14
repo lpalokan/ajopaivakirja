@@ -63,18 +63,21 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     }
 
     if (!_hasUnsynced) {
-      final confirm = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Ei muutoksia'),
-          content: const Text('Ei muutoksia synkronoitavana. Haluatko silti päivittää?'),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Peruuta')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Synkronoi')),
-          ],
-        ),
-      );
-      if (confirm != true) return;
+      final deletedIds = await DatabaseService.getDeletedLegIds();
+      if (deletedIds.isEmpty) {
+        final confirm = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Ei muutoksia'),
+            content: const Text('Ei muutoksia synkronoitavana. Haluatko silti päivittää?'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Peruuta')),
+              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Synkronoi')),
+            ],
+          ),
+        );
+        if (confirm != true) return;
+      }
     }
 
     setState(() => _syncing = true);
