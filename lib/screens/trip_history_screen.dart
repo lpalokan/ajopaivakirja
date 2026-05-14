@@ -290,10 +290,17 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
 
     updated = calc.calculateLeg(updated);
     await DatabaseService.updateTripLeg(updated);
+    if (updated.id != null) {
+      await DatabaseService.markLegUnsynced(updated.id!);
+    }
 
     // Recalculate daily allowance for the full day
     final dayLegs = await DatabaseService.getLegsForDate(leg.date);
     await calc.finalizeDay(dayLegs);
+    // Mark all legs unsynced since daily allowance may have changed
+    for (final l in dayLegs) {
+      if (l.id != null) await DatabaseService.markLegUnsynced(l.id!);
+    }
 
     await _load();
   }

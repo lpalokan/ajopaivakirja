@@ -11,6 +11,26 @@ class SheetsService {
   sheets.SheetsApi? _sheetsApi;
   http.Client? _authClient;
 
+  static const _headerRow = [
+    'Päivämäärä',
+    'Alkamisaika',
+    'Alussa',
+    'Päättymisaika',
+    'Lopussa',
+    'Alkamispaikka',
+    'Päättymispaikka',
+    'Ajoreitti',
+    'Matkan pituus',
+    'Tarkoitus',
+    'Käyttäjä',
+    'Km-korvaus €',
+    'Päiväraha €',
+    'Yhteensä €',
+    'Tuntia',
+    'Työaika',
+    'ID',
+  ];
+
   SheetsService()
       : _googleSignIn = GoogleSignIn(
           scopes: [
@@ -25,7 +45,6 @@ class SheetsService {
 
   Future<void> signIn() async {
     try {
-      // Try silent sign-in first (survives app restart)
       LogService().info('Google Sign-In: silent attempt...');
       final silentAccount = await _googleSignIn.signInSilently();
       if (silentAccount != null) {
@@ -37,7 +56,6 @@ class SheetsService {
       LogService().warn('Google Sign-In: silent attempt failed ($e)');
     }
 
-    // Interactive sign-in
     try {
       LogService().info('Google Sign-In: starting interactive...');
       final account = await _googleSignIn.signIn();
@@ -98,7 +116,6 @@ class SheetsService {
     _sheetsApi = null;
   }
 
-  /// List spreadsheets the user has access to (for file picker).
   Future<List<drive.File>> listSpreadsheets() async {
     await _ensureApiClient();
     if (_authClient == null) {
@@ -113,37 +130,6 @@ class SheetsService {
       $fields: 'files(id,name,modifiedTime)',
     );
     return fileList.files ?? [];
-  }
-
-  /// Append a single trip leg as a row in Google Sheets.
-  Future<void> appendLeg(TripLeg leg, {required String sheetId, required String sheetTab}) async {
-    await _ensureApiClient();
-    if (_sheetsApi == null) {
-      throw Exception('Ei kirjauduttu Googleen. Kirjaudu asetuksista.');
-    }
-    if (sheetId.isEmpty) {
-      throw Exception('Google Sheets -tunnusta ei ole määritetty asetuksissa.');
-    }
-
-    await _ensureSheet(sheetId, sheetTab);
-
-    final range = "'$sheetTab'!A1:P1";
-
-    final row = _legToRow(leg);
-
-    final valueRange = sheets.ValueRange()
-      ..range = range
-      ..values = [row];
-
-    LogService().info('Sheets append: ${leg.startLocation} -> ${leg.endLocation}, ${leg.kmDriven}km');
-    await _sheetsApi!.spreadsheets.values.append(
-      valueRange,
-      sheetId,
-      range,
-      valueInputOption: 'USER_ENTERED',
-      insertDataOption: 'INSERT_ROWS',
-    );
-    LogService().info('Sheets append: success');
   }
 
   Future<void> _ensureSheet(String sheetId, String tabName) async {
@@ -171,29 +157,114 @@ class SheetsService {
         sheetId,
       );
       LogService().info('Sheets: tab "$tabName" created');
+
+      // Write header row
+      final headerRange = "'$tabName'!A1:Q1";
+      await _sheetsApi!.spreadsheets.values.update(
+        sheets.ValueRange()..range = headerRange..values = [_headerRow],
+        sheetId,
+        headerRange,
+        valueInputOption: 'USER_ENTERED',
+      );
+      LogService().info('Sheets: header row written to "$tabName"');
     } catch (e) {
       LogService().error('Sheets: _ensureSheet failed', e);
       throw Exception('Välilehden "$tabName" luonti epäonnistui: $e');
     }
   }
 
-  /// Append multiple legs, optionally marking them as synced.
+  Future<Map<String, int>> _buildIdRowMap(String sheetId, String sheetTab) async {
+    final map = <String, int>{};
+    try {
+      final response = await _sheetsApi!.spreadsheets.values.get(
+        sheetId,
+        "'$sheetTab'!Q:Q",
+      );
+      final rows = response.values;
+      if (rows != null) {
+        for (var i = 0; i < rows.length; i++) {
+          final row = rows[i];
+          if (row.isNotEmpty) {
+            final id = row[0]?.toString() ?? '';
+            if (id.isNotEmpty) {
+              map[id] = i + 1;
+            }
+          }
+        }
+      }
+      LogService().info('Sheets: ID map built (${map.length} rows)');
+    } catch (e) {
+      LogService().warn('Sheets: could not read ID column ($e), will append all');
+    }
+    return map;
+  }
+
+  Future<void> appendLeg(TripLeg leg, {
+    required String sheetId,
+    required String sheetTab,
+    Map<String, int>? idToRow,
+  }) async {
+    await _ensureApiClient();
+    if (_sheetsApi == null) {
+      throw Exception('Ei kirjauduttu Googleen. Kirjaudu asetuksista.');
+    }
+    if (sheetId.isEmpty) {
+      throw Exception('Google Sheets -tunnusta ei ole määritetty asetuksissa.');
+    }
+
+    await _ensureSheet(sheetId, sheetTab);
+
+    final row = _legToRow(leg);
+    final legId = leg.id?.toString() ?? '';
+
+    if (idToRow != null && legId.isNotEmpty && idToRow.containsKey(legId)) {
+      final rowNum = idToRow[legId]!;
+      final range = "'$sheetTab'!A${rowNum}:Q${rowNum}";
+      await _sheetsApi!.spreadsheets.values.update(
+        sheets.ValueRange()..range = range..values = [row],
+        sheetId,
+        range,
+        valueInputOption: 'USER_ENTERED',
+      );
+      LogService().info('Sheets: updated row $rowNum for leg $legId');
+    } else {
+      final range = "'$sheetTab'!A1:Q1";
+      await _sheetsApi!.spreadsheets.values.append(
+        sheets.ValueRange()..range = range..values = [row],
+        sheetId,
+        range,
+        valueInputOption: 'USER_ENTERED',
+        insertDataOption: 'INSERT_ROWS',
+      );
+      LogService().info('Sheets: appended leg $legId');
+    }
+  }
+
   Future<int> appendLegs(
     List<TripLeg> legs, {
     required String sheetId,
     required String sheetTab,
     Future<void> Function(int legId)? onSynced,
   }) async {
+    await _ensureApiClient();
+    if (_sheetsApi == null) throw Exception('Ei kirjauduttu Googleen.');
+    await _ensureSheet(sheetId, sheetTab);
+
+    final idToRow = await _buildIdRowMap(sheetId, sheetTab);
     var synced = 0;
+
     for (final leg in legs) {
       try {
-        await appendLeg(leg, sheetId: sheetId, sheetTab: sheetTab);
+        await appendLeg(leg, sheetId: sheetId, sheetTab: sheetTab, idToRow: idToRow);
         await onSynced?.call(leg.id!);
         synced++;
       } catch (e) {
-        rethrow;
+        LogService().error('Sheets: append/update failed for leg ${leg.id}', e);
+        throw Exception('Synkronointi epäonnistui: $e');
       }
     }
+
+    LogService().info('Sheets: sync complete ($synced legs)');
     return synced;
   }
 
@@ -221,6 +292,7 @@ class SheetsService {
       leg.totalAllowance,
       leg.legDurationHours,
       leg.workingTimeHours,
+      leg.id?.toString() ?? '',
     ];
   }
 

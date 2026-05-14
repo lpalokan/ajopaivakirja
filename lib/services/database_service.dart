@@ -226,6 +226,17 @@ class DatabaseService {
     );
   }
 
+  static Future<void> markLegUnsynced(int id) async {
+    final db = await database;
+    await db.update(
+      'trip_legs',
+      {'synced': 0},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    LogService().info('DB: leg $id marked unsynced');
+  }
+
   static Future<int> getNextLegOrder(String date) async {
     final db = await database;
     final result = await db.rawQuery(
@@ -269,8 +280,8 @@ class DatabaseService {
         'settings',
         {'key': entry.key, 'value': entry.value},
         conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-    }
+    );
+  }
     await batch.commit(noResult: true);
   }
 
