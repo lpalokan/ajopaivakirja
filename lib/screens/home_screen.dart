@@ -12,6 +12,7 @@ import '../services/database_service.dart';
 import '../services/log_service.dart';
 import '../widgets/odometer_dialog.dart';
 import '../widgets/active_trip_card.dart';
+import '../services/location_service.dart';
 import 'settings_screen.dart';
 import 'route_management_screen.dart';
 import 'trip_history_screen.dart';
@@ -248,12 +249,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final lastLeg = await DatabaseService.getLastLeg();
     final initialOdometer = lastLeg?.endOdometer;
 
+    // Try to get GPS-based location suggestion
+    String? locationHint;
+    final locationService = ref.read(locationServiceProvider);
+    if (await locationService.hasPermission()) {
+      final pos = await locationService.getCurrentPosition();
+      if (pos != null && mounted) {
+        locationHint = await locationService.getLocationName(pos);
+      }
+    }
+
+    final subtitle = StringBuffer();
+    subtitle.writeln('Reitti: ${route.name}');
+    subtitle.writeln('${route.startLocation} → ${route.endLocation}');
+    subtitle.writeln('Matka: ${route.distanceKm.toStringAsFixed(1)} km');
+    if (locationHint != null) {
+      subtitle.writeln('📍 Sijaintisi: $locationHint');
+    }
+
     final result = await showOdometerDialog(
       context: context,
       title: 'Aloita ajo',
-      subtitle: 'Reitti: ${route.name}\n'
-          '${route.startLocation} → ${route.endLocation}\n'
-          'Matka: ${route.distanceKm.toStringAsFixed(1)} km',
+      subtitle: subtitle.toString().trim(),
       label: 'Matkamittari (km)',
       actionLabel: 'Aloita ajo',
       relatedField: 'Tarkoitus',

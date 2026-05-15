@@ -6,7 +6,9 @@ import 'package:kilometrikorvaus/models/trip_leg.dart';
 import 'package:kilometrikorvaus/models/km_rate.dart';
 import 'package:kilometrikorvaus/services/trip_calculator.dart';
 import 'package:kilometrikorvaus/services/csv_export_service.dart';
+import 'package:kilometrikorvaus/services/location_service.dart';
 import 'package:kilometrikorvaus/models/expense.dart';
+import 'package:kilometrikorvaus/models/location_zone.dart';
 
 void main() {
   // ── AppSettings model tests ──
@@ -622,6 +624,66 @@ void main() {
       expect(summary.totalKmAllowance, 0);
       expect(summary.totalDailyAllowance, 0);
       expect(summary.grandTotal, 0);
+    });
+  });
+
+  // ── LocationZone model tests ──
+
+  group('LocationZone', () {
+    test('toMap and fromMap round-trip', () {
+      final zone = LocationZone(
+        id: 1,
+        name: 'Koti',
+        latitude: 60.1699,
+        longitude: 24.9384,
+        radiusMeters: 200,
+        createdAt: '2025-05-15T10:00:00',
+      );
+      final map = zone.toMap();
+      final restored = LocationZone.fromMap(map);
+
+      expect(restored.id, 1);
+      expect(restored.name, 'Koti');
+      expect(restored.latitude, 60.1699);
+      expect(restored.longitude, 24.9384);
+      expect(restored.radiusMeters, 200);
+      expect(restored.createdAt, '2025-05-15T10:00:00');
+    });
+
+    test('toMap excludes null id for inserts', () {
+      final zone = LocationZone(
+        name: 'Toimisto',
+        latitude: 60.2055,
+        longitude: 24.6559,
+        createdAt: '2025-05-15T10:00:00',
+      );
+      final map = zone.toMap();
+      expect(map.containsKey('id'), false);
+    });
+
+    test('copyWith', () {
+      final zone = LocationZone(
+        id: 1,
+        name: 'Koti',
+        latitude: 60.1699,
+        longitude: 24.9384,
+        createdAt: '2025-05-15T10:00:00',
+      );
+      final updated = zone.copyWith(name: 'Uusi koti', radiusMeters: 500);
+      expect(updated.name, 'Uusi koti');
+      expect(updated.radiusMeters, 500);
+      expect(updated.latitude, 60.1699);
+      expect(updated.id, 1);
+    });
+
+    test('default radius is 200', () {
+      final zone = LocationZone(
+        name: 'Testi',
+        latitude: 0,
+        longitude: 0,
+        createdAt: '2025-05-15T10:00:00',
+      );
+      expect(zone.radiusMeters, 200);
     });
   });
 

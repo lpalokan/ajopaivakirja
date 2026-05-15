@@ -8,6 +8,8 @@ import '../main.dart';
 import '../providers/settings_provider.dart';
 import '../services/database_service.dart';
 import '../services/log_service.dart';
+import '../services/location_service.dart';
+import '../models/location_zone.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -31,6 +33,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _signedIn = false;
   Map<int, double> _kmRates = {};
   bool _kmRatesExpanded = false;
+  List<LocationZone> _locationZones = [];
+  bool _zonesExpanded = false;
 
   @override
   void initState() {
@@ -45,10 +49,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _driverController.text = settings.driverName;
     _checkSignIn();
     _loadKmRates();
+    _loadZones();
   }
 
   Future<void> _loadKmRates() async {
     _kmRates = await DatabaseService.getAllKmRates();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _loadZones() async {
+    _locationZones = await DatabaseService.getAllLocationZones();
     if (mounted) setState(() {});
   }
 
@@ -154,6 +164,33 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     onPressed: () => _showAddKmRateDialog(),
                     icon: const Icon(Icons.add, size: 18),
                     label: const Text('Lisää vuosi'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            _sectionHeader('Sijaintialueet'),
+            ExpansionTile(
+              title: const Text('Tallennetut sijainnit'),
+              subtitle: Text('${_locationZones.length} aluetta — auttaa automaattisessa nimeämisessä'),
+              initiallyExpanded: _zonesExpanded,
+              onExpansionChanged: (v) => _zonesExpanded = v,
+              children: [
+                ..._locationZones.map((z) => ListTile(
+                  dense: true,
+                  title: Text(z.name),
+                  subtitle: Text('${z.radiusMeters.toStringAsFixed(0)} m'),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete, size: 18),
+                    onPressed: () => _deleteZone(z),
+                  ),
+                )),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: OutlinedButton.icon(
+                    onPressed: _addZone,
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Lisää nykyinen sijainti'),
                   ),
                 ),
               ],
@@ -325,6 +362,97 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         Navigator.pop(ctx);
       }),
     );
+  }
+
+  Future<void> _addZone() async {
+    final locationService = ref.read(locationServiceProvider);
+    final hasPerm = await locationService.hasPermission();
+    if (!hasPerm) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sijaintilupaa ei myönnetty')),
+        );
+      }
+      return;
+    }
+
+    final pos = await locationService.getCurrentPosition();
+    if (pos == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sijaintia ei saatu')),
+        );
+      }
+      return;
+    }
+
+    final nameCtrl = TextEditingController();
+    final radiusCtrl = TextEditingController(text: '200');
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Lisää sijaintialue'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Nimi',
+                hintText: 'esim. Koti, Toimisto',
+                border: OutlineInputBorder(),
+              ),
+              autofocus: true,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: radiusCtrl,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(
+                labelText: 'Säde (metriä)',
+                suffixText: 'm',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Sijainti: ${pos.latitude.toStringAsFixed(4)}, ${pos.longitude.toStringAsFixed(4)}',
+              style: Theme.of(ctx).textTheme.bodySmall,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Peruuta'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Lisää'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok == true && nameCtrl.text.trim().isNotEmpty) {
+      final radius = double.tryParse(radiusCtrl.text.trim()) ?? 200;
+      await DatabaseService.insertLocationZone(LocationZone(
+        name: nameCtrl.text.trim(),
+        latitude: pos.latitude,
+        longitude: pos.longitude,
+        radiusMeters: radius,
+        createdAt: DateTime.now().toIso8601String(),
+      ));
+      await _loadZones();
+    }
+  }
+
+  Future<void> _deleteZone(LocationZone zone) async {
+    if (zone.id == null) return;
+    await DatabaseService.deleteLocationZone(zone.id!);
+    await _loadZones();
   }
 
   Widget _buildKmRateRow(int year, double rate) {

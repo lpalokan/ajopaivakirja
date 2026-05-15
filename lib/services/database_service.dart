@@ -5,6 +5,7 @@ import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
 import '../models/km_rate.dart';
 import '../models/expense.dart';
+import '../models/location_zone.dart';
 import 'log_service.dart';
 
 class DatabaseService {
@@ -22,7 +23,7 @@ class DatabaseService {
 
     return openDatabase(
       path,
-      version: 5,
+      version: 6,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -103,6 +104,17 @@ class DatabaseService {
         FOREIGN KEY (trip_leg_id) REFERENCES trip_legs(id) ON DELETE SET NULL
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE location_zones (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        latitude REAL NOT NULL,
+        longitude REAL NOT NULL,
+        radius_meters REAL NOT NULL DEFAULT 200,
+        created_at TEXT NOT NULL
+      )
+    ''');
   }
 
   static Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -119,16 +131,15 @@ class DatabaseService {
         )
       ''');
     }
-    if (oldVersion < 5) {
+    if (oldVersion < 6) {
       await db.execute('''
-        CREATE TABLE expenses (
+        CREATE TABLE location_zones (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          trip_leg_id INTEGER,
-          type INTEGER NOT NULL,
-          amount REAL NOT NULL,
-          description TEXT,
-          created_at TEXT NOT NULL,
-          FOREIGN KEY (trip_leg_id) REFERENCES trip_legs(id) ON DELETE SET NULL
+          name TEXT NOT NULL,
+          latitude REAL NOT NULL,
+          longitude REAL NOT NULL,
+          radius_meters REAL NOT NULL DEFAULT 200,
+          created_at TEXT NOT NULL
         )
       ''');
     }
@@ -492,5 +503,36 @@ class DatabaseService {
       [date],
     );
     return maps.map((m) => Expense.fromMap(m)).toList();
+  }
+
+  // ── Location Zones ──
+
+  static Future<LocationZone> insertLocationZone(LocationZone zone) async {
+    final db = await database;
+    final id = await db.insert('location_zones', zone.toMap());
+    LogService().info('DB: inserted location zone $id (${zone.name})');
+    return zone.copyWith(id: id);
+  }
+
+  static Future<void> updateLocationZone(LocationZone zone) async {
+    final db = await database;
+    await db.update(
+      'location_zones',
+      zone.toMap(),
+      where: 'id = ?',
+      whereArgs: [zone.id],
+    );
+  }
+
+  static Future<void> deleteLocationZone(int id) async {
+    final db = await database;
+    await db.delete('location_zones', where: 'id = ?', whereArgs: [id]);
+    LogService().info('DB: deleted location zone $id');
+  }
+
+  static Future<List<LocationZone>> getAllLocationZones() async {
+    final db = await database;
+    final maps = await db.query('location_zones', orderBy: 'name ASC');
+    return maps.map((m) => LocationZone.fromMap(m)).toList();
   }
 }
