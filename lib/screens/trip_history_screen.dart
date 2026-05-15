@@ -9,6 +9,7 @@ import '../providers/settings_provider.dart';
 import '../services/database_service.dart';
 import '../services/trip_calculator.dart';
 import '../services/pdf_report_service.dart';
+import '../services/csv_export_service.dart';
 
 class TripHistoryScreen extends ConsumerStatefulWidget {
   const TripHistoryScreen({super.key});
@@ -411,6 +412,11 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
         title: const Text('Historia'),
         actions: [
           IconButton(
+            onPressed: _legsByDate.isNotEmpty ? _exportCsv : null,
+            icon: const Icon(Icons.table_chart),
+            tooltip: 'Vie CSV',
+          ),
+          IconButton(
             onPressed: _legsByDate.isNotEmpty ? _exportPdf : null,
             icon: const Icon(Icons.picture_as_pdf),
             tooltip: 'Vie PDF-raportti',
@@ -445,6 +451,31 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                   },
                 ),
     );
+  }
+
+  Future<void> _exportCsv() async {
+    try {
+      // Collect all legs
+      final allLegs = <TripLeg>[];
+      for (final date in _dates) {
+        allLegs.addAll(_legsByDate[date]!);
+      }
+
+      final file = await CsvExportService.generate(legs: allLegs);
+
+      if (mounted) {
+        await SharePlus.instance.share(ShareParams(
+          files: [XFile(file.path)],
+          text: 'Ajopäiväkirja CSV-vienti',
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('CSV:n luonti epäonnistui: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _exportPdf() async {

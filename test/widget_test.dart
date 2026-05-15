@@ -5,6 +5,7 @@ import 'package:kilometrikorvaus/models/route.dart';
 import 'package:kilometrikorvaus/models/trip_leg.dart';
 import 'package:kilometrikorvaus/models/km_rate.dart';
 import 'package:kilometrikorvaus/services/trip_calculator.dart';
+import 'package:kilometrikorvaus/services/csv_export_service.dart';
 
 void main() {
   // ── AppSettings model tests ──
@@ -620,6 +621,96 @@ void main() {
       expect(summary.totalKmAllowance, 0);
       expect(summary.totalDailyAllowance, 0);
       expect(summary.grandTotal, 0);
+    });
+  });
+
+  // ── CsvExportService tests ──
+
+  group('CsvExportService', () {
+    final now = DateTime(2025, 5, 15, 8, 0);
+
+    test('generateContent creates CSV with header and data rows', () {
+      final legs = [
+        TripLeg(
+          id: 1,
+          date: '2025-05-15',
+          legOrder: 1,
+          startTime: now,
+          endTime: now.add(const Duration(hours: 1)),
+          startOdometer: 10000,
+          endOdometer: 10054,
+          startLocation: 'Koti',
+          endLocation: 'Työ',
+          routeDescription: 'Koti → Työ',
+          kmDriven: 54.0,
+          purpose: 'Työmatka',
+          driver: 'Lapa',
+          kmAllowance: 30.78,
+          dailyAllowance: 24.0,
+          dailyAllowanceType: 1,
+          isReturnHome: false,
+        ),
+      ];
+
+      final content = CsvExportService.generateContent(legs);
+      final lines = content.trim().split('\n');
+
+      expect(lines.length, 2); // header + 1 data row
+      expect(lines[0], contains('Päivämäärä'));
+      expect(lines[0], contains('Km-korvaus (€)'));
+      expect(lines[1], contains('2025-05-15'));
+      expect(lines[1], contains('Koti'));
+      expect(lines[1], contains('30.78'));
+      expect(lines[1], contains('Puolipäivä'));
+    });
+
+    test('generateContent sorts legs by date and leg order', () {
+      final legs = [
+        TripLeg(
+          id: 2,
+          date: '2025-05-15',
+          legOrder: 2,
+          startTime: DateTime(2025, 5, 15, 17, 0),
+          startOdometer: 10054,
+          startLocation: 'Työ',
+          driver: 'Lapa',
+        ),
+        TripLeg(
+          id: 1,
+          date: '2025-05-15',
+          legOrder: 1,
+          startTime: DateTime(2025, 5, 15, 8, 0),
+          startOdometer: 10000,
+          startLocation: 'Koti',
+          driver: 'Lapa',
+        ),
+      ];
+
+      final content = CsvExportService.generateContent(legs);
+      final lines = content.trim().split('\n');
+
+      expect(lines[1], contains('Koti'));
+      expect(lines[2], contains('Työ'));
+    });
+
+    test('generateContent escapes CSV special characters', () {
+      final legs = [
+        TripLeg(
+          id: 1,
+          date: '2025-05-15',
+          legOrder: 1,
+          startTime: now,
+          startOdometer: 10000,
+          startLocation: 'Koti, Helsinki',
+          purpose: 'Meeting "important"',
+          driver: 'Lapa',
+        ),
+      ];
+
+      final content = CsvExportService.generateContent(legs);
+
+      expect(content, contains('"Koti, Helsinki"'));
+      expect(content, contains('"Meeting ""important"""'));
     });
   });
 }
