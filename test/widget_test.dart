@@ -249,6 +249,7 @@ void main() {
       expect(KmRate.finnishDefaults[2023], 0.53);
       expect(KmRate.finnishDefaults[2024], 0.57);
       expect(KmRate.finnishDefaults[2025], 0.57);
+      expect(KmRate.finnishDefaults[2026], 0.57);
     });
   });
 
