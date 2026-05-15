@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/trip_leg.dart';
+import '../models/expense.dart';
+import '../services/database_service.dart';
 import 'odometer_dialog.dart';
+import 'expense_dialog.dart';
 
 /// Shared widget showing the currently active (in-progress) trip.
 /// Used by both [HomeScreen] and [RouteManagementScreen].
@@ -71,18 +74,43 @@ class ActiveTripCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: () => _stopDriving(context),
-                icon: const Icon(Icons.flag),
-                label: const Text('Olen perillä'),
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => _stopDriving(context),
+                    icon: const Icon(Icons.flag),
+                    label: const Text('Olen perillä'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: () => _addExpense(context),
+                  icon: const Icon(Icons.receipt_long, size: 20),
+                  label: const Text('Kulu'),
+                ),
+              ],
             ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _addExpense(BuildContext context) async {
+    final result = await showDialog<({ExpenseType type, double amount, String? description})>(
+      context: context,
+      builder: (ctx) => const ExpenseDialog(),
+    );
+    if (result != null && leg.id != null) {
+      await DatabaseService.insertExpense(Expense(
+        tripLegId: leg.id,
+        type: result.type,
+        amount: result.amount,
+        description: result.description,
+        createdAt: DateTime.now().toIso8601String(),
+      ));
+    }
   }
 
   Future<void> _stopDriving(BuildContext context) async {

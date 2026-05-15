@@ -22,6 +22,7 @@ class TripHistoryScreen extends ConsumerStatefulWidget {
 class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
   List<String> _dates = [];
   Map<String, List<TripLeg>> _legsByDate = {};
+  Map<int, List<Expense>> _expensesByLegId = {};
   bool _loading = true;
   bool _syncing = false;
   Map<int, double> _kmRates = {};
@@ -47,6 +48,9 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     for (final date in dates) {
       legsByDate[date] = await DatabaseService.getLegsForDate(date);
     }
+    // Load expenses for all legs
+    final allLegIds = legsByDate.values.expand((l) => l).map((l) => l.id).whereType<int>().toList();
+    _expensesByLegId = await DatabaseService.getExpensesForLegs(allLegIds);
     if (mounted) {
       setState(() {
         _dates = dates;
@@ -461,7 +465,10 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
         allLegs.addAll(_legsByDate[date]!);
       }
 
-      final file = await CsvExportService.generate(legs: allLegs);
+      final file = await CsvExportService.generate(
+        legs: allLegs,
+        expensesByLegId: _expensesByLegId,
+      );
 
       if (mounted) {
         await SharePlus.instance.share(ShareParams(
@@ -566,7 +573,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
               ],
             ),
           ),
-          for (final leg in legs)
+          for (final leg in legs) ...[
             Dismissible(
               key: Key('leg_${leg.id}'),
               direction: DismissDirection.endToStart,
@@ -604,9 +611,74 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                 ),
               ),
             ),
+            // Show expenses for this leg
+            if (leg.id != null)
+              ..._buildExpenseRows(leg.id!),
+          ],
         ],
       ),
     );
+  }
+
+  List<Widget> _buildExpenseRows(int legId) {
+    final expenses = _expensesByLegId[legId] ?? [];
+    return expenses.map((exp) {
+      return Padding(
+        padding: const EdgeInsets.only(left: 56, right: 16, bottom: 2),
+        child: Row(
+          children: [
+            Icon(Icons.receipt_long, size: 14, color: Theme.of(context).colorScheme.outline),
+            const SizedBox(width: 6),
+            Text(
+              exp.type.displayName,
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            if (exp.description != null && exp.description!.isNotEmpty) ...[
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  exp.description!,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+            const Spacer(),
+            Text(
+              '${exp.amount.toStringAsFixed(2)} €',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                iconSize: 14,
+                icon: Icon(Icons.delete_outline,
+                    color: Theme.of(context).colorScheme.outline),
+                onPressed: () => _deleteExpense(exp),
+              ),
+            ),
+          ],
+        ),
+      );
+    }).toList();
+  }
+
+  Future<void> _deleteExpense(Expense exp) async {
+    if (exp.id == null) return;
+    await DatabaseService.deleteExpense(exp.id!);
+    await _load();
   }
 
   String _formatDisplayDate(String isoDate) {

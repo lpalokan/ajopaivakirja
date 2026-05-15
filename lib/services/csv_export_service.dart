@@ -2,10 +2,14 @@ import 'dart:io';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/trip_leg.dart';
+import '../models/expense.dart';
 
 class CsvExportService {
-  /// Generate CSV content string for the given legs.
-  static String generateContent(List<TripLeg> legs) {
+  /// Generate CSV content string for the given legs and optional expenses.
+  static String generateContent(
+    List<TripLeg> legs, {
+    Map<int, List<Expense>>? expensesByLegId,
+  }) {
     final buf = StringBuffer();
 
     // Header
@@ -21,18 +25,25 @@ class CsvExportService {
 
     for (final leg in sorted) {
       buf.writeln(_row(leg));
+
+      // Append expense rows for this leg
+      final legExpenses = expensesByLegId?[leg.id] ?? [];
+      for (final exp in legExpenses) {
+        buf.writeln(_expenseRow(leg, exp));
+      }
     }
 
     return buf.toString();
   }
 
-  /// Generate a CSV file for the given legs.
+  /// Generate a CSV file for the given legs and optional expenses.
   /// Returns the file path.
   static Future<File> generate({
     required List<TripLeg> legs,
+    Map<int, List<Expense>>? expensesByLegId,
     String? fileName,
   }) async {
-    final content = generateContent(legs);
+    final content = generateContent(legs, expensesByLegId: expensesByLegId);
 
     // Save to documents directory
     final dir = await getApplicationDocumentsDirectory();
@@ -60,6 +71,10 @@ class CsvExportService {
       'Päiväraha (€)',
       'Päivärahatyyppi',
       'Kotiinpaluu',
+      'Tyyppi (kulu/matka)',
+      'Kulutyyppi',
+      'Kulun summa (€)',
+      'Kulun kuvaus',
     ].join(',');
   }
 
@@ -89,6 +104,36 @@ class CsvExportService {
       leg.dailyAllowance.toStringAsFixed(2),
       dailyTypeStr,
       leg.isReturnHome ? 'Kyllä' : 'Ei',
+      'Matka',
+      '',
+      '',
+      '',
+    ]);
+  }
+
+  static String _expenseRow(TripLeg leg, Expense exp) {
+    final typeStr = exp.type.displayName;
+    return _csvLine([
+      leg.date,
+      leg.legOrder.toString(),
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      'Kulu',
+      typeStr,
+      exp.amount.toStringAsFixed(2),
+      _escape(exp.description ?? ''),
     ]);
   }
 

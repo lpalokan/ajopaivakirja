@@ -6,6 +6,7 @@ import 'package:kilometrikorvaus/models/trip_leg.dart';
 import 'package:kilometrikorvaus/models/km_rate.dart';
 import 'package:kilometrikorvaus/services/trip_calculator.dart';
 import 'package:kilometrikorvaus/services/csv_export_service.dart';
+import 'package:kilometrikorvaus/models/expense.dart';
 
 void main() {
   // ── AppSettings model tests ──
@@ -624,6 +625,62 @@ void main() {
     });
   });
 
+  // ── Expense model tests ──
+
+  group('Expense', () {
+    test('toMap and fromMap round-trip', () {
+      final expense = Expense(
+        id: 1,
+        tripLegId: 42,
+        type: ExpenseType.parking,
+        amount: 5.50,
+        description: 'Pysäköintitalo',
+        createdAt: '2025-05-15T10:00:00',
+      );
+      final map = expense.toMap();
+      final restored = Expense.fromMap(map);
+
+      expect(restored.id, 1);
+      expect(restored.tripLegId, 42);
+      expect(restored.type, ExpenseType.parking);
+      expect(restored.amount, 5.50);
+      expect(restored.description, 'Pysäköintitalo');
+      expect(restored.createdAt, '2025-05-15T10:00:00');
+    });
+
+    test('toMap excludes null id for inserts', () {
+      final expense = Expense(
+        type: ExpenseType.meal,
+        amount: 12.90,
+        createdAt: '2025-05-15T12:00:00',
+      );
+      final map = expense.toMap();
+      expect(map.containsKey('id'), false);
+    });
+
+    test('copyWith', () {
+      final expense = Expense(
+        id: 1,
+        tripLegId: 42,
+        type: ExpenseType.toll,
+        amount: 2.50,
+        createdAt: '2025-05-15T10:00:00',
+      );
+      final updated = expense.copyWith(amount: 3.00, description: 'Silta');
+      expect(updated.amount, 3.00);
+      expect(updated.description, 'Silta');
+      expect(updated.type, ExpenseType.toll);
+      expect(updated.id, 1);
+    });
+
+    test('ExpenseType display names', () {
+      expect(ExpenseType.parking.displayName, 'Pysäköinti');
+      expect(ExpenseType.toll.displayName, 'Tietulli');
+      expect(ExpenseType.meal.displayName, 'Ateria');
+      expect(ExpenseType.other.displayName, 'Muu');
+    });
+  });
+
   // ── CsvExportService tests ──
 
   group('CsvExportService', () {
@@ -711,6 +768,41 @@ void main() {
 
       expect(content, contains('"Koti, Helsinki"'));
       expect(content, contains('"Meeting ""important"""'));
+    });
+
+    test('generateContent includes expense rows', () {
+      final legs = [
+        TripLeg(
+          id: 1,
+          date: '2025-05-15',
+          legOrder: 1,
+          startTime: now,
+          startOdometer: 10000,
+          startLocation: 'Koti',
+          driver: 'Lapa',
+        ),
+      ];
+
+      final expenses = {
+        1: [
+          Expense(
+            id: 1,
+            tripLegId: 1,
+            type: ExpenseType.parking,
+            amount: 5.50,
+            createdAt: '2025-05-15T10:00:00',
+          ),
+        ],
+      };
+
+      final content = CsvExportService.generateContent(legs, expensesByLegId: expenses);
+      final lines = content.trim().split('\n');
+
+      expect(lines.length, 3); // header + leg row + expense row
+      expect(lines[1], contains('Matka'));
+      expect(lines[2], contains('Kulu'));
+      expect(lines[2], contains('Pysäköinti'));
+      expect(lines[2], contains('5.50'));
     });
   });
 }

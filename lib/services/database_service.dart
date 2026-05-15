@@ -4,6 +4,7 @@ import '../models/route.dart';
 import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
 import '../models/km_rate.dart';
+import '../models/expense.dart';
 import 'log_service.dart';
 
 class DatabaseService {
@@ -21,7 +22,7 @@ class DatabaseService {
 
     return openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -90,6 +91,18 @@ class DatabaseService {
     ''');
 
     await _seedKmRates(db);
+
+    await db.execute('''
+      CREATE TABLE expenses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        trip_leg_id INTEGER,
+        type INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        description TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (trip_leg_id) REFERENCES trip_legs(id) ON DELETE SET NULL
+      )
+    ''');
   }
 
   static Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -106,14 +119,18 @@ class DatabaseService {
         )
       ''');
     }
-    if (oldVersion < 4) {
+    if (oldVersion < 5) {
       await db.execute('''
-        CREATE TABLE km_rates (
-          year INTEGER PRIMARY KEY,
-          rate REAL NOT NULL
+        CREATE TABLE expenses (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          trip_leg_id INTEGER,
+          type INTEGER NOT NULL,
+          amount REAL NOT NULL,
+          description TEXT,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (trip_leg_id) REFERENCES trip_legs(id) ON DELETE SET NULL
         )
       ''');
-      await _seedKmRates(db);
     }
   }
 
@@ -413,5 +430,67 @@ class DatabaseService {
     );
     if (maps.isEmpty) return null;
     return maps.first['value'] as String;
+  }
+
+  // ── Expenses ──
+
+  static Future<Expense> insertExpense(Expense expense) async {
+    final db = await database;
+    final id = await db.insert('expenses', expense.toMap());
+    LogService().info('DB: inserted expense $id (${expense.type.displayName}, ${expense.amount}€)');
+    return expense.copyWith(id: id);
+  }
+
+  static Future<void> deleteExpense(int id) async {
+    final db = await database;
+    await db.delete('expenses', where: 'id = ?', whereArgs: [id]);
+    LogService().info('DB: deleted expense $id');
+  }
+
+  static Future<List<Expense>> getExpensesForLeg(int legId) async {
+    final db = await database;
+    final maps = await db.query(
+      'expenses',
+      where: 'trip_leg_id = ?',
+      whereArgs: [legId],
+      orderBy: 'created_at ASC',
+    );
+    return maps.map((m) => Expense.fromMap(m)).toList();
+  }
+
+  static Future<Map<int, List<Expense>>> getExpensesForLegs(List<int> legIds) async {
+    if (legIds.isEmpty) return {};
+    final db = await database;
+    final placeholders = legIds.map((_) => '?').join(',');
+    final maps = await db.query(
+      'expenses',
+      where: 'trip_leg_id IN ($placeholders)',
+      whereArgs: legIds,
+      orderBy: 'created_at ASC',
+    );
+    final result = <int, List<Expense>>{};
+    for (final legId in legIds) {
+      result[legId] = [];
+    }
+    for (final map in maps) {
+      final expense = Expense.fromMap(map);
+      final legId = expense.tripLegId;
+      if (legId != null) {
+        result[legId]?.add(expense);
+      }
+    }
+    return result;
+  }
+
+  static Future<List<Expense>> getExpensesForDate(String date) async {
+    final db = await database;
+    final maps = await db.rawQuery(
+      '''SELECT e.* FROM expenses e
+         INNER JOIN trip_legs tl ON e.trip_leg_id = tl.id
+         WHERE tl.date = ?
+         ORDER BY e.created_at ASC''',
+      [date],
+    );
+    return maps.map((m) => Expense.fromMap(m)).toList();
   }
 }
