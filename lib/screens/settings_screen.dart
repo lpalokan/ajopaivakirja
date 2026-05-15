@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../main.dart';
 import '../providers/settings_provider.dart';
+import '../services/database_service.dart';
 import '../services/log_service.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -28,6 +29,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _saving = false;
   bool _signingIn = false;
   bool _signedIn = false;
+  Map<int, double> _kmRates = {};
+  bool _kmRatesExpanded = false;
 
   @override
   void initState() {
@@ -41,6 +44,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _sheetTabController.text = settings.sheetTab;
     _driverController.text = settings.driverName;
     _checkSignIn();
+    _loadKmRates();
+  }
+
+  Future<void> _loadKmRates() async {
+    _kmRates = await DatabaseService.getAllKmRates();
+    if (mounted) setState(() {});
   }
 
   Future<void> _checkSignIn() async {
@@ -130,6 +139,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 suffixText: '€',
                 border: OutlineInputBorder(),
               ),
+            ),
+            const SizedBox(height: 8),
+            ExpansionTile(
+              title: const Text('Aiemmat km-korvaukset'),
+              subtitle: Text('${_kmRates.length} vuodelle tallennettu'),
+              initiallyExpanded: _kmRatesExpanded,
+              onExpansionChanged: (v) => _kmRatesExpanded = v,
+              children: [
+                ..._kmRates.entries.map((e) => _buildKmRateRow(e.key, e.value)),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: OutlinedButton.icon(
+                    onPressed: () => _showAddKmRateDialog(),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Lisää vuosi'),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 24),
             _sectionHeader('Google Sheets'),
@@ -300,6 +327,158 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  Widget _buildKmRateRow(int year, double rate) {
+    return ListTile(
+      dense: true,
+      title: Text('$year'),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('${rate.toStringAsFixed(2)} €/km',
+              style: TextStyle(
+                  color: Theme.of(context).colorScheme.primary)),
+          const SizedBox(width: 8),
+          IconButton(
+            icon: const Icon(Icons.edit, size: 18),
+            onPressed: () => _editKmRate(year, rate),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete, size: 18),
+            onPressed: () => _deleteKmRate(year),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showAddKmRateDialog() async {
+    final yearCtrl = TextEditingController(text: '${DateTime.now().year}');
+    final rateCtrl = TextEditingController();
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Lisää km-korvaus'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: yearCtrl,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(
+                labelText: 'Vuosi',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: rateCtrl,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
+              ],
+              decoration: const InputDecoration(
+                labelText: 'Km-korvaus (€/km)',
+                suffixText: '€/km',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Peruuta'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Lisää'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok == true) {
+      final year = int.tryParse(yearCtrl.text.trim());
+      final rate = double.tryParse(rateCtrl.text.trim().replaceAll(',', '.'));
+      if (year != null && rate != null) {
+        await DatabaseService.upsertKmRate(year, rate);
+        await _loadKmRates();
+      }
+    }
+  }
+
+  Future<void> _editKmRate(int year, double currentRate) async {
+    final rateCtrl = TextEditingController(text: currentRate.toString());
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Muokkaa km-korvausta $year'),
+        content: TextField(
+          controller: rateCtrl,
+          keyboardType:
+              const TextInputType.numberWithOptions(decimal: true),
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
+          ],
+          decoration: const InputDecoration(
+            labelText: 'Km-korvaus (€/km)',
+            suffixText: '€/km',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Peruuta'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Tallenna'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok == true) {
+      final rate = double.tryParse(rateCtrl.text.trim().replaceAll(',', '.'));
+      if (rate != null) {
+        await DatabaseService.upsertKmRate(year, rate);
+        await _loadKmRates();
+      }
+    }
+  }
+
+  Future<void> _deleteKmRate(int year) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Poista km-korvaus'),
+        content: Text('Poistetaanko km-korvaus vuodelle $year?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Peruuta'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error),
+            child: const Text('Poista'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await DatabaseService.deleteKmRate(year);
+      await _loadKmRates();
+    }
+  }
+
   Future<void> _copyLogsToDownloads() async {
     final logService = LogService();
     final content = await logService.readLogs();
@@ -356,7 +535,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       final a6hStr = _allowance6hController.text.replaceAll(',', '.');
       final a10hStr = _allowance10hController.text.replaceAll(',', '.');
 
-      await ref.read(settingsProvider.notifier).update({
+      final notifier = ref.read(settingsProvider.notifier);
+      await notifier.update({
         'home_location': _homeController.text.trim(),
         'km_rate': kmRateStr,
         'allowance_6h': a6hStr,
@@ -365,6 +545,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         'sheet_tab': _sheetTabController.text.trim(),
         'driver_name': _driverController.text.trim(),
       });
+      // Sync current year rate to km_rates table
+      final currentYear = DateTime.now().year;
+      final parsedRate =
+          double.tryParse(kmRateStr) ?? 0.57;
+      await notifier.saveKmRate(currentYear, parsedRate);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

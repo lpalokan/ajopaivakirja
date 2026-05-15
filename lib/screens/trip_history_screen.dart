@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 import '../main.dart';
 import '../models/trip_leg.dart';
 import '../providers/settings_provider.dart';
 import '../services/database_service.dart';
 import '../services/trip_calculator.dart';
+import '../services/pdf_report_service.dart';
 
 class TripHistoryScreen extends ConsumerStatefulWidget {
   const TripHistoryScreen({super.key});
@@ -21,6 +23,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
   Map<String, List<TripLeg>> _legsByDate = {};
   bool _loading = true;
   bool _syncing = false;
+  Map<int, double> _kmRates = {};
 
   @override
   void initState() {
@@ -37,6 +40,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
+    _kmRates = await DatabaseService.getAllKmRates();
     final dates = await DatabaseService.getDistinctDates();
     final legsByDate = <String, List<TripLeg>>{};
     for (final date in dates) {
@@ -122,7 +126,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
 
   Future<void> _showEditDialog(TripLeg leg) async {
     final settings = ref.read(settingsProvider);
-    final calc = TripCalculator(settings);
+    final calc = TripCalculator(settings, kmRates: _kmRates);
 
     final startOdoCtrl = TextEditingController(text: leg.startOdometer.toString());
     final endOdoCtrl = TextEditingController(text: leg.endOdometer?.toString() ?? '');
@@ -407,6 +411,11 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
         title: const Text('Historia'),
         actions: [
           IconButton(
+            onPressed: _legsByDate.isNotEmpty ? _exportPdf : null,
+            icon: const Icon(Icons.picture_as_pdf),
+            tooltip: 'Vie PDF-raportti',
+          ),
+          IconButton(
             onPressed: _syncing ? null : _syncAll,
             icon: _syncing
                 ? const SizedBox(
@@ -436,6 +445,67 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                   },
                 ),
     );
+  }
+
+  Future<void> _exportPdf() async {
+    // Show date range picker
+    DateTime startDate = DateTime.now().subtract(const Duration(days: 365));
+    DateTime endDate = DateTime.now();
+
+    // Find earliest and latest dates
+    if (_dates.isNotEmpty) {
+      try {
+        final firstDate = DateTime.parse(_dates.last);
+        final lastDate = DateTime.parse(_dates.first);
+        startDate = firstDate;
+        endDate = lastDate;
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+
+    final range = await showDialog<({DateTime start, DateTime end})?>(
+      context: context,
+      builder: (ctx) => _PdfDateRangeDialog(
+        initialStart: startDate,
+        initialEnd: endDate,
+      ),
+    );
+
+    if (range == null || !mounted) return;
+
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final settings = ref.read(settingsProvider);
+      final service = PdfReportService(settings);
+
+      final file = await service.generate(
+        startDate: range.start,
+        endDate: range.end,
+        legsByDate: _legsByDate,
+      );
+
+      if (mounted) {
+        Navigator.of(context).pop(); // close loading
+        await SharePlus.instance.share(ShareParams(
+          files: [XFile(file.path)],
+          text: 'Ajopäiväkirja PDF-raportti',
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop(); // close loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('PDF:n luonti epäonnistui: $e')),
+        );
+      }
+    }
   }
 
   Widget _buildDateGroup(String date, List<TripLeg> legs) {
@@ -520,5 +590,107 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
 
   String _formatTime(DateTime dt) {
     return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+class _PdfDateRangeDialog extends StatefulWidget {
+  final DateTime initialStart;
+  final DateTime initialEnd;
+
+  const _PdfDateRangeDialog({
+    required this.initialStart,
+    required this.initialEnd,
+  });
+
+  @override
+  State<_PdfDateRangeDialog> createState() => _PdfDateRangeDialogState();
+}
+
+class _PdfDateRangeDialogState extends State<_PdfDateRangeDialog> {
+  late DateTime _start;
+  late DateTime _end;
+
+  @override
+  void initState() {
+    super.initState();
+    _start = widget.initialStart;
+    _end = widget.initialEnd;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dateFmt = DateFormat('d.M.yyyy', 'fi');
+    return AlertDialog(
+      title: const Text('Vie PDF-raportti'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('Valitse ajanjakso raportille:'),
+          const SizedBox(height: 16),
+          InkWell(
+            onTap: () async {
+              final d = await showDatePicker(
+                context: context,
+                initialDate: _start,
+                firstDate: DateTime(2020),
+                lastDate: DateTime.now(),
+              );
+              if (d != null) setState(() => _start = d);
+            },
+            child: InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'Aloituspäivä',
+                border: OutlineInputBorder(),
+                suffixIcon: Icon(Icons.calendar_today),
+              ),
+              child: Text(dateFmt.format(_start)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          InkWell(
+            onTap: () async {
+              final d = await showDatePicker(
+                context: context,
+                initialDate: _end,
+                firstDate: DateTime(2020),
+                lastDate: DateTime.now(),
+              );
+              if (d != null) setState(() => _end = d);
+            },
+            child: InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'Päättymispäivä',
+                border: OutlineInputBorder(),
+                suffixIcon: Icon(Icons.calendar_today),
+              ),
+              child: Text(dateFmt.format(_end)),
+            ),
+          ),
+          if (_end.isBefore(_start))
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(
+                'Päättymispäivä on ennen aloituspäivää',
+                style: TextStyle(color: Colors.red, fontSize: 12),
+              ),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Peruuta'),
+        ),
+        FilledButton(
+          onPressed: _end.isBefore(_start)
+              ? null
+              : () => Navigator.pop(
+                    context,
+                    (start: _start, end: _end),
+                  ),
+          child: const Text('Luo PDF'),
+        ),
+      ],
+    );
   }
 }

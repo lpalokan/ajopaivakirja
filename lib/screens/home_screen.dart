@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 import '../main.dart';
 import '../models/route.dart' as model;
 import '../models/trip_leg.dart';
@@ -12,6 +11,7 @@ import '../providers/settings_provider.dart';
 import '../services/database_service.dart';
 import '../services/log_service.dart';
 import '../widgets/odometer_dialog.dart';
+import '../widgets/active_trip_card.dart';
 import 'settings_screen.dart';
 import 'route_management_screen.dart';
 import 'trip_history_screen.dart';
@@ -30,7 +30,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await ref.read(settingsProvider.notifier).load();
       await ref.read(routeProvider.notifier).load();
-      ref.read(tripProvider.notifier).load();
+      final tripNotif2 = ref.read(tripProvider.notifier);
+      await tripNotif2.loadKmRates();
+      tripNotif2.load();
 
       final settings = ref.read(settingsProvider);
       await LogService().init(enabled: settings.debugLogging);
@@ -62,7 +64,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
 
       final backgroundService = ref.read(backgroundServiceProvider);
-      final tripNotifier = ref.read(tripProvider.notifier);
+      final tripNotif = ref.read(tripProvider.notifier);
 
       await backgroundService.initialize();
 
@@ -87,7 +89,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             timeLabel: 'Päättymisaika',
           ).then((result) {
             if (result != null && context.mounted) {
-              tripNotifier.stopDriving(result.odometer, endTime: result.time);
+              tripNotif.stopDriving(result.odometer, endTime: result.time);
               backgroundService.onDrivingStopped();
             }
           });
@@ -126,7 +128,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           if (tripState.activeLeg != null) ...[
-            _buildActiveTripCard(tripState.activeLeg!, context),
+            ActiveTripCard(
+              leg: tripState.activeLeg!,
+              onStopDriving: (odometer, {endTime}) async {
+                await tripNotifier.stopDriving(odometer, endTime: endTime);
+                await ref.read(backgroundServiceProvider).onDrivingStopped();
+              },
+            ),
             const SizedBox(height: 24),
           ],
           _buildRecentRoutes(
@@ -167,92 +175,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildActiveTripCard(TripLeg leg, BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final startTime = DateFormat('HH:mm').format(leg.startTime);
-    final duration = DateTime.now().difference(leg.startTime);
-    final hours = duration.inHours;
-    final minutes = duration.inMinutes.remainder(60);
-    final durationStr = '$hours h ${minutes.toString().padLeft(2, '0')} min';
-    final expectedOdometer =
-        leg.startOdometer + leg.kmDriven.toInt();
 
-    return Card(
-      color: colorScheme.primaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-          Row(
-            children: [
-              Icon(Icons.directions_car, color: colorScheme.onPrimaryContainer),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Ajo käynnissä',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    Text(
-                      leg.routeDescription ?? '${leg.startLocation} → ${leg.endLocation}',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Lähtö: $startTime'),
-              Text('Kesto: $durationStr'),
-            ],
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Mittari lähtiessä: ${leg.startOdometer} km'),
-              Text('Arvioitu perillä: $expectedOdometer km'),
-            ],
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-              child: FilledButton.icon(
-              onPressed: () async {
-                final tripNotifier = ref.read(tripProvider.notifier);
-                final backgroundService = ref.read(backgroundServiceProvider);
-                final result = await showOdometerDialog(
-                  context: context,
-                  title: 'Olen perillä',
-                  subtitle:
-                      'Kohde: ${leg.endLocation ?? leg.routeDescription}',
-                  label: 'Matkamittari perillä (km)',
-                  actionLabel: 'Lopeta ajo',
-                  initialValue: expectedOdometer,
-                  expectedHint: expectedOdometer,
-                  showTime: true,
-                  initialTime: DateTime.now(),
-                  timeLabel: 'Päättymisaika',
-                );
-                if (result != null) {
-                  await tripNotifier.stopDriving(result.odometer, endTime: result.time);
-                  await backgroundService.onDrivingStopped();
-                }
-              },
-              icon: const Icon(Icons.flag),
-              label: const Text('Olen perillä'),
-            ),
-          ),
-        ],
-      ),
-    ));
-  }
 
   Widget _buildRecentRoutes(
     List<model.Route> recentRoutes,

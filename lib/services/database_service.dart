@@ -3,6 +3,7 @@ import 'package:path/path.dart' as p;
 import '../models/route.dart';
 import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
+import '../models/km_rate.dart';
 import 'log_service.dart';
 
 class DatabaseService {
@@ -20,7 +21,7 @@ class DatabaseService {
 
     return openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -80,6 +81,15 @@ class DatabaseService {
         deleted_at TEXT NOT NULL
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE km_rates (
+        year INTEGER PRIMARY KEY,
+        rate REAL NOT NULL
+      )
+    ''');
+
+    await _seedKmRates(db);
   }
 
   static Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -96,6 +106,27 @@ class DatabaseService {
         )
       ''');
     }
+    if (oldVersion < 4) {
+      await db.execute('''
+        CREATE TABLE km_rates (
+          year INTEGER PRIMARY KEY,
+          rate REAL NOT NULL
+        )
+      ''');
+      await _seedKmRates(db);
+    }
+  }
+
+  static Future<void> _seedKmRates(Database db) async {
+    final batch = db.batch();
+    for (final entry in KmRate.finnishDefaults.entries) {
+      batch.insert(
+        'km_rates',
+        {'year': entry.key, 'rate': entry.value},
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
   }
 
   // ── Routes ──
@@ -309,6 +340,43 @@ class DatabaseService {
     );
     if (maps.isEmpty) return null;
     return TripLeg.fromMap(maps.first);
+  }
+
+  // ── Km Rates ──
+
+  static Future<Map<int, double>> getAllKmRates() async {
+    final db = await database;
+    final maps = await db.query('km_rates', orderBy: 'year DESC');
+    final result = <int, double>{};
+    for (final m in maps) {
+      result[m['year'] as int] = (m['rate'] as num).toDouble();
+    }
+    return result;
+  }
+
+  static Future<double?> getKmRateForYear(int year) async {
+    final db = await database;
+    final maps = await db.query(
+      'km_rates',
+      where: 'year = ?',
+      whereArgs: [year],
+    );
+    if (maps.isEmpty) return null;
+    return (maps.first['rate'] as num).toDouble();
+  }
+
+  static Future<void> upsertKmRate(int year, double rate) async {
+    final db = await database;
+    await db.insert(
+      'km_rates',
+      {'year': year, 'rate': rate},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  static Future<void> deleteKmRate(int year) async {
+    final db = await database;
+    await db.delete('km_rates', where: 'year = ?', whereArgs: [year]);
   }
 
   // ── Settings ──

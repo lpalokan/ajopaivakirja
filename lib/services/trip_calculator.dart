@@ -5,18 +5,27 @@ import 'log_service.dart';
 
 class TripCalculator {
   final AppSettings _settings;
+  final Map<int, double>? _kmRates;
 
-  TripCalculator(this._settings);
+  TripCalculator(this._settings, {Map<int, double>? kmRates})
+      : _kmRates = kmRates;
 
-  double get kmRate => _settings.kmRate;
   double get allowance6h => _settings.allowance6h;
   double get allowance10h => _settings.allowance10h;
   String get homeLocation => _settings.homeLocation;
 
+  /// Get the km rate applicable for a given year.
+  /// Looks up from km_rates table first, falls back to settings default.
+  double getKmRateForYear(int year) {
+    return _kmRates?[year] ?? _settings.kmRate;
+  }
+
   /// Calculate values for a single leg.
   TripLeg calculateLeg(TripLeg leg) {
     final kmDriven = (leg.endOdometer ?? leg.startOdometer) - leg.startOdometer;
-    final kmAllowance = kmDriven * kmRate;
+    final year = _yearFromDate(leg.date);
+    final rate = getKmRateForYear(year);
+    final kmAllowance = kmDriven * rate;
     final isReturnHome = _isReturningHome(leg.endLocation);
 
     return leg.copyWith(
@@ -26,6 +35,15 @@ class TripCalculator {
       isReturnHome: isReturnHome,
       dailyAllowance: 0,
     );
+  }
+
+  int _yearFromDate(String date) {
+    // date is in yyyy-MM-dd format
+    try {
+      return int.parse(date.substring(0, 4));
+    } catch (_) {
+      return DateTime.now().year;
+    }
   }
 
   bool _isReturningHome(String? endLocation) {

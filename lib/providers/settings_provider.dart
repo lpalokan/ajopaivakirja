@@ -16,6 +16,21 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   Future<void> save(AppSettings settings) async {
     state = settings;
     await DatabaseService.saveSettings(settings);
+    // Sync current year km rate to the km_rates table
+    final currentYear = DateTime.now().year;
+    await DatabaseService.upsertKmRate(currentYear, settings.kmRate);
+  }
+
+  Future<Map<int, double>> loadKmRates() async {
+    return DatabaseService.getAllKmRates();
+  }
+
+  Future<void> saveKmRate(int year, double rate) async {
+    await DatabaseService.upsertKmRate(year, rate);
+  }
+
+  Future<void> deleteKmRate(int year) async {
+    await DatabaseService.deleteKmRate(year);
   }
 
   Future<void> update(Map<String, String?> fields) async {
