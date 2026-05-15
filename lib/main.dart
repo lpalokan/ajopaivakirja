@@ -6,6 +6,7 @@ import 'services/notification_service.dart';
 import 'services/location_service.dart';
 import 'services/background_service.dart';
 import 'services/sheets_service.dart';
+import 'services/trip_detection_service.dart';
 
 final notificationServiceProvider = Provider<NotificationService>((ref) {
   return NotificationService();
@@ -26,6 +27,15 @@ final backgroundServiceProvider = Provider<BackgroundService>((ref) {
 
 final sheetsServiceProvider = Provider<SheetsService>((ref) {
   return SheetsService();
+});
+
+final tripDetectionServiceProvider = Provider<TripDetectionService>((ref) {
+  final ls = ref.watch(locationServiceProvider);
+  final ns = ref.watch(notificationServiceProvider);
+  return TripDetectionService(
+    locationService: ls,
+    notificationService: ns,
+  );
 });
 
 void main() {

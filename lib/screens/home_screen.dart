@@ -12,7 +12,6 @@ import '../services/database_service.dart';
 import '../services/log_service.dart';
 import '../widgets/odometer_dialog.dart';
 import '../widgets/active_trip_card.dart';
-import '../services/location_service.dart';
 import 'settings_screen.dart';
 import 'route_management_screen.dart';
 import 'trip_history_screen.dart';
@@ -92,6 +91,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             if (result != null && context.mounted) {
               tripNotif.stopDriving(result.odometer, endTime: result.time);
               backgroundService.onDrivingStopped();
+              // Restart auto-detection
+              ref.read(tripDetectionServiceProvider).stop();
+              ref.read(tripDetectionServiceProvider).start();
             }
           });
         }
@@ -100,6 +102,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       backgroundService.onStillDriving = () {
         backgroundService.onStillDrivingPressed();
       };
+
+      // Set up trip detection callbacks
+      final detectionService = ref.read(tripDetectionServiceProvider);
+      final ns = ref.read(notificationServiceProvider);
+
+      detectionService.onStartTripRequested = () {
+        // Auto-start trip with most recent route
+        final routes = ref.read(routeProvider);
+        if (routes.isNotEmpty) {
+          _startDriving(routes.first, context);
+        }
+      };
+
+      ns.onStartTrip = () {
+        detectionService.onStartTripRequested?.call();
+      };
+
+      ns.onEndTrip = () {
+        if (ref.read(tripProvider).activeLeg != null) {
+          // Trigger stop driving flow
+          backgroundService.onArrived?.call();
+        }
+      };
+
+      // Start auto-detection if not already driving
+      if (!ref.read(tripProvider.notifier).isDriving) {
+        detectionService.updateSettings(settings);
+        detectionService.start();
+      }
     });
   }
 
@@ -134,6 +165,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               onStopDriving: (odometer, {endTime}) async {
                 await tripNotifier.stopDriving(odometer, endTime: endTime);
                 await ref.read(backgroundServiceProvider).onDrivingStopped();
+                // Restart auto-detection
+                ref.read(tripDetectionServiceProvider).stop();
+                ref.read(tripDetectionServiceProvider).start();
               },
             ),
             const SizedBox(height: 24),
@@ -282,6 +316,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     if (result != null) {
       final backgroundService = ref.read(backgroundServiceProvider);
+      // Stop auto-detection while we know the user is driving
+      ref.read(tripDetectionServiceProvider).stop();
       backgroundService.updateSettings(settings);
       final leg = await tripNotifier.startDriving(
         route: route,

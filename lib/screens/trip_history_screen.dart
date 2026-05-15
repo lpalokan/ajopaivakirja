@@ -10,6 +10,7 @@ import '../services/database_service.dart';
 import '../services/trip_calculator.dart';
 import '../services/pdf_report_service.dart';
 import '../services/csv_export_service.dart';
+import '../models/expense.dart';
 
 class TripHistoryScreen extends ConsumerStatefulWidget {
   const TripHistoryScreen({super.key});

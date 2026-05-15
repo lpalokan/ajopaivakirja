@@ -6,7 +6,6 @@ import 'package:kilometrikorvaus/models/trip_leg.dart';
 import 'package:kilometrikorvaus/models/km_rate.dart';
 import 'package:kilometrikorvaus/services/trip_calculator.dart';
 import 'package:kilometrikorvaus/services/csv_export_service.dart';
-import 'package:kilometrikorvaus/services/location_service.dart';
 import 'package:kilometrikorvaus/models/expense.dart';
 import 'package:kilometrikorvaus/models/location_zone.dart';
 

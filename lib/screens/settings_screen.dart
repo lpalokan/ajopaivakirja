@@ -8,7 +8,6 @@ import '../main.dart';
 import '../providers/settings_provider.dart';
 import '../services/database_service.dart';
 import '../services/log_service.dart';
-import '../services/location_service.dart';
 import '../models/location_zone.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
