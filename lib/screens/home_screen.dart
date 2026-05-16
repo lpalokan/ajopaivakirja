@@ -176,6 +176,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ref.read(tripDetectionServiceProvider).stop();
                 ref.read(tripDetectionServiceProvider).start();
               },
+              visionService: ref.read(odometerVisionServiceProvider),
             ),
             const SizedBox(height: 24),
           ],

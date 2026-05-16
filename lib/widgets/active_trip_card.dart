@@ -5,6 +5,7 @@ import '../models/expense.dart';
 import '../services/database_service.dart';
 import 'odometer_dialog.dart';
 import 'expense_dialog.dart';
+import '../services/odometer_vision_service.dart';
 
 /// Shared widget showing the currently active (in-progress) trip.
 /// Used by both [HomeScreen] and [RouteManagementScreen].
@@ -12,12 +13,14 @@ class ActiveTripCard extends StatelessWidget {
   final TripLeg leg;
   final Future<void> Function(int odometer, {DateTime? endTime}) onStopDriving;
   final VoidCallback? onCancel;
+  final OdometerVisionService? visionService;
 
   const ActiveTripCard({
     super.key,
     required this.leg,
     required this.onStopDriving,
     this.onCancel,
+    this.visionService,
   });
 
   @override
@@ -142,6 +145,7 @@ class ActiveTripCard extends StatelessWidget {
       showTime: true,
       initialTime: DateTime.now(),
       timeLabel: 'Päättymisaika',
+      visionService: visionService,
     );
     if (result != null) {
       await onStopDriving(result.odometer, endTime: result.time);

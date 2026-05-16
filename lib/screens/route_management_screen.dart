@@ -40,6 +40,7 @@ class _RouteManagementScreenState
                 await tripNotifier.cancelDriving();
                 await ref.read(backgroundServiceProvider).onDrivingStopped();
               },
+              visionService: ref.read(odometerVisionServiceProvider),
             ),
           Expanded(
             child: routes.isEmpty
@@ -267,6 +268,7 @@ class _RouteManagementScreenState
       showTime: true,
       initialTime: DateTime.now(),
       timeLabel: 'Alkamisaika',
+      visionService: ref.read(odometerVisionServiceProvider),
     );
 
     if (result == null) return;
