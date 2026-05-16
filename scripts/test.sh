@@ -71,9 +71,31 @@ fi
 # --- Emulator integration smoke test -----------------------------------------
 
 info "Setting up Android emulator"
-require sdkmanager "Install Android cmdline-tools and add them to PATH (ANDROID_SDK_ROOT)."
-require avdmanager "Install Android cmdline-tools and add them to PATH (ANDROID_SDK_ROOT)."
-require emulator   "Install the Android 'emulator' package via sdkmanager."
+
+# Locate the Android SDK and put its tool dirs on PATH. The SDK is usually
+# installed (Flutter needs it to build) but its binaries are often not on
+# PATH on macOS.
+SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+if [ -z "$SDK_ROOT" ]; then
+  for cand in "$HOME/Library/Android/sdk" "$HOME/Android/Sdk"; do
+    [ -d "$cand" ] && SDK_ROOT="$cand" && break
+  done
+fi
+if [ -n "$SDK_ROOT" ] && [ -d "$SDK_ROOT" ]; then
+  ok "Android SDK: $SDK_ROOT"
+  export ANDROID_SDK_ROOT="$SDK_ROOT"
+  for d in "emulator" "platform-tools" "cmdline-tools/latest/bin" "tools/bin"; do
+    [ -d "$SDK_ROOT/$d" ] && PATH="$SDK_ROOT/$d:$PATH"
+  done
+  export PATH
+else
+  fail "Android SDK not found. Set ANDROID_SDK_ROOT or install via Android Studio."
+  exit 1
+fi
+
+require sdkmanager "Install Android cmdline-tools (Android Studio > SDK Manager > SDK Tools)."
+require avdmanager "Install Android cmdline-tools (Android Studio > SDK Manager > SDK Tools)."
+require emulator   "Install the Android 'emulator' package (Android Studio > SDK Manager)."
 
 # Pick an ABI matching the host CPU (Apple Silicon vs Intel).
 case "$(uname -m)" in
