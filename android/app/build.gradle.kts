@@ -44,24 +44,6 @@ flutter {
     source = "../.."
 }
 
-// Auto-bump version from git tags + commit count before each build.
-// Release: updates pubspec.yaml + app_version.dart.
-// Debug: only updates app_version.dart (appends -debug, safe for hot reload).
-tasks.register<Exec>("updateVersionRelease") {
-    workingDir = file("../..")
-    commandLine("bash", "scripts/version.sh", "--release")
-}
-tasks.register<Exec>("updateVersionDebug") {
-    workingDir = file("../..")
-    commandLine("bash", "scripts/version.sh", "--debug")
-}
-tasks.matching { it.name.startsWith("assembleRelease") }.configureEach {
-    dependsOn("updateVersionRelease")
-}
-tasks.matching { it.name.startsWith("assembleDebug") }.configureEach {
-    dependsOn("updateVersionDebug")
-}
-
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.2")
 }
