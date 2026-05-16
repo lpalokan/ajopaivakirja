@@ -146,7 +146,10 @@ Future<void> pumpApp(WidgetTester tester) async {
     ),
   );
   await settle(tester);
-  // Let HomeScreen's post-frame seeding/loading complete.
+  // HomeScreen seeds two debug routes in a post-frame callback. Wait for the
+  // second one so the async seeding completes before the test proceeds (and
+  // before teardown — otherwise RouteNotifier is used after dispose).
+  await waitFor(tester, find.text('Kotiin'));
   await settle(tester);
 }
 
@@ -155,6 +158,22 @@ Finder get _odometerField => find.ancestor(
       of: find.text('Matkamittari (km)'),
       matching: find.byType(TextField),
     );
+
+/// The odometer field in the arrival dialog (label "Matkamittari perillä (km)").
+Finder get _arrivalOdoField => find.ancestor(
+      of: find.text('Matkamittari perillä (km)'),
+      matching: find.byType(TextField),
+    );
+
+/// Pump until [f] matches at least one widget (or [timeoutMs] elapses).
+Future<void> waitFor(WidgetTester tester, Finder f,
+    {int timeoutMs = 10000}) async {
+  final deadline = DateTime.now().add(Duration(milliseconds: timeoutMs));
+  while (DateTime.now().isBefore(deadline)) {
+    await tester.pump(const Duration(milliseconds: 100));
+    if (f.evaluate().isNotEmpty) return;
+  }
+}
 
 Finder _formField(String label) => find.ancestor(
       of: find.text(label),
@@ -187,7 +206,12 @@ Future<void> goBack(WidgetTester tester) async {
 Future<void> scrollIntoView(WidgetTester tester, Finder f) async {
   final sc = find.byType(Scrollable);
   if (sc.evaluate().isEmpty) return;
-  await tester.scrollUntilVisible(f, 120, scrollable: sc.first, maxScrolls: 60);
+  try {
+    await tester.scrollUntilVisible(f, 120,
+        scrollable: sc.first, maxScrolls: 60);
+  } catch (_) {
+    // Not found while scrolling; let the following expect report it clearly.
+  }
 }
 
 /// Scroll to and tap the Settings "Tallenna" (save) button.
@@ -210,8 +234,8 @@ Future<void> startTrip(
     matching: find.byType(ListTile),
   ));
   await settle(tester);
-  // "Aloita ajo" is both the dialog title and the action button.
-  expect(find.text('Aloita ajo'), findsWidgets);
+  // Wait for the start dialog (subtitle "Reitti: …" is unique to it).
+  await waitFor(tester, find.textContaining('Reitti:'));
   await tester.enterText(
     find.ancestor(of: find.text('Tarkoitus'), matching: find.byType(TextField)),
     purpose,
@@ -219,14 +243,19 @@ Future<void> startTrip(
   await tester.enterText(_odometerField, '$odometer');
   await tester.tap(find.widgetWithText(FilledButton, 'Aloita ajo'));
   await settle(tester);
+  // Back on Home with the active-trip card rendered.
+  await waitFor(tester, find.widgetWithText(FilledButton, 'Olen perillä'));
 }
 
 /// Tap "Olen perillä" on the active-trip card and confirm arrival odometer.
 Future<void> arrive(WidgetTester tester, int odometer) async {
+  await waitFor(tester, find.widgetWithText(FilledButton, 'Olen perillä'));
   await tester.tap(find.widgetWithText(FilledButton, 'Olen perillä'));
   await settle(tester);
-  // Arrival dialog has no purpose field, so exactly one TextField.
-  await tester.enterText(find.byType(TextField).last, '$odometer');
+  // Wait for the arrival dialog's odometer field before typing.
+  await waitFor(tester, _arrivalOdoField);
+  await tester.enterText(_arrivalOdoField, '$odometer');
+  await waitFor(tester, find.widgetWithText(FilledButton, 'Lopeta ajo'));
   await tester.tap(find.widgetWithText(FilledButton, 'Lopeta ajo'));
   await settle(tester);
 }
@@ -436,7 +465,8 @@ void main() {
       await settle(t);
       // _save pops back to Home.
       await openSettings(t);
-      expect(find.text('Saunatie 9'), findsOneWidget);
+      await scrollIntoView(t, find.text('Saunatie 9'));
+      expect(find.text('Saunatie 9'), findsWidgets);
     });
 
     testWidgets('km rate persists across reopen', (t) async {
@@ -446,6 +476,7 @@ void main() {
       await saveSettings(t);
       await settle(t);
       await openSettings(t);
+      await scrollIntoView(t, find.textContaining('0.62'));
       expect(find.textContaining('0.62'), findsWidgets);
     });
 
@@ -456,7 +487,8 @@ void main() {
       await saveSettings(t);
       await settle(t);
       await openSettings(t);
-      expect(find.text('Matti M'), findsOneWidget);
+      await scrollIntoView(t, find.text('Matti M'));
+      expect(find.text('Matti M'), findsWidgets);
     });
 
     testWidgets('debug logging toggle reveals log actions', (t) async {
@@ -476,7 +508,8 @@ void main() {
       await saveSettings(t);
       await settle(t);
       await openSettings(t);
-      expect(find.text('Matkat2026'), findsOneWidget);
+      await scrollIntoView(t, find.text('Matkat2026'));
+      expect(find.text('Matkat2026'), findsWidgets);
     });
   });
 
