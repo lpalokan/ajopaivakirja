@@ -17,8 +17,8 @@ void main() {
       const settings = AppSettings();
       expect(settings.homeLocation, 'Koti');
       expect(settings.kmRate, 0.57);
-      expect(settings.allowance6h, 24.0);
-      expect(settings.allowance10h, 48.0);
+      expect(settings.allowance6h, 25.0);
+      expect(settings.allowance10h, 54.0);
       expect(settings.sheetId, '');
       expect(settings.sheetTab, 'Taulukko1');
     });
@@ -51,12 +51,12 @@ void main() {
       const settings = AppSettings(
         homeLocation: 'Koti',
         kmRate: 0.57,
-        allowance6h: 24.0,
+        allowance6h: 25.0,
       );
       final updated = settings.copyWith(homeLocation: 'Toimisto');
       expect(updated.homeLocation, 'Toimisto');
       expect(updated.kmRate, 0.57);
-      expect(updated.allowance6h, 24.0);
+      expect(updated.allowance6h, 25.0);
     });
 
     test('fromMap handles empty map', () {
@@ -71,7 +71,7 @@ void main() {
         'allowance_6h': '',
       });
       expect(settings.kmRate, 0.57); // fallback to default
-      expect(settings.allowance6h, 24.0);
+      expect(settings.allowance6h, 25.0);
     });
   });
 
@@ -156,7 +156,7 @@ void main() {
         purpose: 'Työmatka',
         driver: 'Lapa',
         kmAllowance: 30.78,
-        dailyAllowance: 24.0,
+        dailyAllowance: 25.0,
         dailyAllowanceType: 1,
         isReturnHome: false,
         synced: true,
@@ -174,7 +174,7 @@ void main() {
       expect(restored.endLocation, 'Työ');
       expect(restored.kmDriven, 54);
       expect(restored.kmAllowance, 30.78);
-      expect(restored.dailyAllowance, 24.0);
+      expect(restored.dailyAllowance, 25.0);
       expect(restored.dailyAllowanceType, 1);
       expect(restored.isReturnHome, false);
       expect(restored.synced, true);
@@ -189,9 +189,9 @@ void main() {
         startLocation: 'Koti',
         driver: 'Test',
         kmAllowance: 30.78,
-        dailyAllowance: 24.0,
+        dailyAllowance: 25.0,
       );
-      expect(leg.totalAllowance, 54.78);
+      expect(leg.totalAllowance, 55.78);
     });
 
     test('copyWith with sentinel preserves dailyAllowanceType', () {
@@ -262,8 +262,8 @@ void main() {
     final baseSettings = AppSettings(
       homeLocation: 'Koti',
       kmRate: 0.57,
-      allowance6h: 24.0,
-      allowance10h: 48.0,
+      allowance6h: 25.0,
+      allowance10h: 54.0,
     );
 
     final baseLeg = TripLeg(
@@ -404,7 +404,7 @@ void main() {
       ];
 
       final result = calc.calculateDailyAllowance(legs);
-      expect(result.allowance, 24.0);
+      expect(result.allowance, 25.0);
       expect(result.totalHours, closeTo(8.0, 0.01));
     });
 
@@ -425,7 +425,7 @@ void main() {
       ];
 
       final result = calc.calculateDailyAllowance(legs);
-      expect(result.allowance, 48.0);
+      expect(result.allowance, 54.0);
       expect(result.totalHours, closeTo(12.0, 0.01));
     });
 
@@ -458,7 +458,7 @@ void main() {
 
       final result = calc.calculateDailyAllowance(legs);
       // 8:00 to 18:00 = 10h → just at boundary, >10 is false, >6 is true
-      expect(result.allowance, 24.0);
+      expect(result.allowance, 25.0);
     });
 
     test('calculateDailyAllowance empty list', () {
@@ -605,14 +605,14 @@ void main() {
           driver: 'Lapa',
           kmDriven: 54,
           kmAllowance: 30.78,
-          dailyAllowance: 24.0,
+          dailyAllowance: 25.0,
         ),
       ];
 
       final summary = calc.summarizeDay(legs);
       expect(summary.totalKm, 108.0);
       expect(summary.totalKmAllowance, closeTo(61.56, 0.01));
-      expect(summary.totalDailyAllowance, 24.0);
+      expect(summary.totalDailyAllowance, 25.0);
       expect(summary.grandTotal, closeTo(85.56, 0.01));
     });
 
@@ -764,7 +764,7 @@ void main() {
           purpose: 'Työmatka',
           driver: 'Lapa',
           kmAllowance: 30.78,
-          dailyAllowance: 24.0,
+          dailyAllowance: 25.0,
           dailyAllowanceType: 1,
           isReturnHome: false,
         ),
