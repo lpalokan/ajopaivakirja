@@ -374,25 +374,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _addZone() async {
     final locationService = ref.read(locationServiceProvider);
-    final hasPerm = await locationService.hasPermission();
-    if (!hasPerm) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Sijaintilupaa ei myönnetty')),
-        );
+    try {
+      final hasPerm = await locationService.hasPermission();
+      if (!hasPerm) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Sijaintilupaa ei myönnetty')),
+          );
+        }
+        return;
       }
-      return;
-    }
 
-    final pos = await locationService.getCurrentPosition();
-    if (pos == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Sijaintia ei saatu')),
-        );
+      final pos = await locationService.getCurrentPosition();
+      if (pos == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Sijaintia ei saatu')),
+          );
+        }
+        return;
       }
-      return;
-    }
 
     final nameCtrl = TextEditingController();
     final radiusCtrl = TextEditingController(text: '200');
@@ -454,6 +455,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         createdAt: DateTime.now().toIso8601String(),
       ));
       await _loadZones();
+    }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Sijaintia ei saatu: $e')),
+        );
+      }
     }
   }
 

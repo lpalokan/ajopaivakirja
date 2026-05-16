@@ -140,6 +140,18 @@ class TripNotifier extends StateNotifier<TripState> {
     await load();
   }
 
+  /// Cancel the active trip without recording it.
+  Future<void> cancelDriving() async {
+    final active = state.activeLeg;
+    if (active == null || active.id == null) return;
+
+    await DatabaseService.deleteTripLeg(active.id!);
+    LogService().info('Trip: cancelled leg ${active.id}');
+
+    final todayLegs = await DatabaseService.getLegsForDate(_today);
+    state = state.copyWith(activeLeg: null, todayLegs: todayLegs);
+  }
+
   Future<void> _syncToSheets(List<TripLeg> legs) async {
     final settings = _ref.read(settingsProvider);
     if (settings.sheetId.isEmpty) return;

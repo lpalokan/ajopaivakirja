@@ -36,6 +36,10 @@ class _RouteManagementScreenState
                 await tripNotifier.stopDriving(odometer, endTime: endTime);
                 await ref.read(backgroundServiceProvider).onDrivingStopped();
               },
+              onCancel: () async {
+                await tripNotifier.cancelDriving();
+                await ref.read(backgroundServiceProvider).onDrivingStopped();
+              },
             ),
           Expanded(
             child: routes.isEmpty
@@ -124,6 +128,7 @@ class _RouteManagementScreenState
     final endController = TextEditingController(text: route?.endLocation);
     final distController =
         TextEditingController(text: route?.distanceKm.toString() ?? '');
+    final purposeController = TextEditingController(text: route?.lastPurpose);
 
     // Load known locations for autocomplete
     List<String> knownLocations = [];
@@ -168,6 +173,15 @@ class _RouteManagementScreenState
                   suffixText: 'km',
                 ),
               ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: purposeController,
+                decoration: const InputDecoration(
+                  labelText: 'Tarkoitus (oletus)',
+                  hintText: 'Esim. asiakastapaaminen',
+                ),
+                textCapitalization: TextCapitalization.sentences,
+              ),
             ],
           ),
         ),
@@ -204,6 +218,9 @@ class _RouteManagementScreenState
                 startLocation: startController.text.trim(),
                 endLocation: endController.text.trim(),
                 distanceKm: dist ?? route.distanceKm,
+                lastPurpose: purposeController.text.trim().isEmpty
+                    ? null
+                    : purposeController.text.trim(),
                 updatedAt: now,
               ),
             );
@@ -214,6 +231,9 @@ class _RouteManagementScreenState
                 startLocation: startController.text.trim(),
                 endLocation: endController.text.trim(),
                 distanceKm: dist ?? 0,
+                lastPurpose: purposeController.text.trim().isEmpty
+                    ? null
+                    : purposeController.text.trim(),
                 createdAt: now,
                 updatedAt: now,
               ),
@@ -242,6 +262,7 @@ class _RouteManagementScreenState
       label: 'Matkamittari (km)',
       actionLabel: 'Aloita ajo',
       relatedField: 'Tarkoitus',
+      initialPurpose: route.lastPurpose,
       initialValue: initialOdometer,
       showTime: true,
       initialTime: DateTime.now(),

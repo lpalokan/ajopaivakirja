@@ -170,6 +170,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ref.read(tripDetectionServiceProvider).stop();
                 ref.read(tripDetectionServiceProvider).start();
               },
+              onCancel: () async {
+                await tripNotifier.cancelDriving();
+                await ref.read(backgroundServiceProvider).onDrivingStopped();
+                ref.read(tripDetectionServiceProvider).stop();
+                ref.read(tripDetectionServiceProvider).start();
+              },
             ),
             const SizedBox(height: 24),
           ],
@@ -286,12 +292,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     // Try to get GPS-based location suggestion
     String? locationHint;
-    final locationService = ref.read(locationServiceProvider);
-    if (await locationService.hasPermission()) {
-      final pos = await locationService.getCurrentPosition();
-      if (pos != null && mounted) {
-        locationHint = await locationService.getLocationName(pos);
+    try {
+      final locationService = ref.read(locationServiceProvider);
+      if (await locationService.hasPermission()) {
+        final pos = await locationService.getCurrentPosition();
+        if (pos != null && mounted) {
+          locationHint = await locationService.getLocationName(pos);
+        }
       }
+    } catch (_) {
+      // GPS unavailable, proceed without location hint
     }
 
     final subtitle = StringBuffer();
@@ -309,6 +319,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       label: 'Matkamittari (km)',
       actionLabel: 'Aloita ajo',
       relatedField: 'Tarkoitus',
+      initialPurpose: route.lastPurpose,
       initialValue: initialOdometer,
       showTime: true,
       initialTime: DateTime.now(),

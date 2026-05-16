@@ -44,6 +44,15 @@ flutter {
     source = "../.."
 }
 
+// Auto-bump version from git tags + commit count before release builds
+tasks.register<Exec>("updateVersion") {
+    workingDir = file("../..")
+    commandLine("bash", "scripts/version.sh")
+}
+tasks.matching { it.name.startsWith("assembleRelease") }.configureEach {
+    dependsOn("updateVersion")
+}
+
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.2")
 }

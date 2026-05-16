@@ -11,11 +11,13 @@ import 'expense_dialog.dart';
 class ActiveTripCard extends StatelessWidget {
   final TripLeg leg;
   final Future<void> Function(int odometer, {DateTime? endTime}) onStopDriving;
+  final VoidCallback? onCancel;
 
   const ActiveTripCard({
     super.key,
     required this.leg,
     required this.onStopDriving,
+    this.onCancel,
   });
 
   @override
@@ -91,6 +93,20 @@ class ActiveTripCard extends StatelessWidget {
                 ),
               ],
             ),
+            if (onCancel != null) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton.icon(
+                  onPressed: () => _cancelDriving(context),
+                  icon: const Icon(Icons.close, size: 18),
+                  label: const Text('Peru matka'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: colorScheme.error,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -129,6 +145,29 @@ class ActiveTripCard extends StatelessWidget {
     );
     if (result != null) {
       await onStopDriving(result.odometer, endTime: result.time);
+    }
+  }
+
+  Future<void> _cancelDriving(BuildContext context) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Peru matka'),
+        content: const Text('Haluatko varmasti peruuttaa käynnissä olevan matkan?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Ei'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Peru'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      onCancel?.call();
     }
   }
 }
