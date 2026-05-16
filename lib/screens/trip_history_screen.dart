@@ -2,11 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 import '../main.dart';
 import '../models/trip_leg.dart';
 import '../providers/settings_provider.dart';
 import '../services/database_service.dart';
 import '../services/trip_calculator.dart';
+import '../services/pdf_report_service.dart';
+import '../services/csv_export_service.dart';
+import '../models/expense.dart';
 
 class TripHistoryScreen extends ConsumerStatefulWidget {
   const TripHistoryScreen({super.key});
@@ -19,8 +23,10 @@ class TripHistoryScreen extends ConsumerStatefulWidget {
 class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
   List<String> _dates = [];
   Map<String, List<TripLeg>> _legsByDate = {};
+  Map<int, List<Expense>> _expensesByLegId = {};
   bool _loading = true;
   bool _syncing = false;
+  Map<int, double> _kmRates = {};
 
   @override
   void initState() {
@@ -37,11 +43,15 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
+    _kmRates = await DatabaseService.getAllKmRates();
     final dates = await DatabaseService.getDistinctDates();
     final legsByDate = <String, List<TripLeg>>{};
     for (final date in dates) {
       legsByDate[date] = await DatabaseService.getLegsForDate(date);
     }
+    // Load expenses for all legs
+    final allLegIds = legsByDate.values.expand((l) => l).map((l) => l.id).whereType<int>().toList();
+    _expensesByLegId = await DatabaseService.getExpensesForLegs(allLegIds);
     if (mounted) {
       setState(() {
         _dates = dates;
@@ -122,7 +132,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
 
   Future<void> _showEditDialog(TripLeg leg) async {
     final settings = ref.read(settingsProvider);
-    final calc = TripCalculator(settings);
+    final calc = TripCalculator(settings, kmRates: _kmRates);
 
     final startOdoCtrl = TextEditingController(text: leg.startOdometer.toString());
     final endOdoCtrl = TextEditingController(text: leg.endOdometer?.toString() ?? '');
@@ -407,6 +417,16 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
         title: const Text('Historia'),
         actions: [
           IconButton(
+            onPressed: _legsByDate.isNotEmpty ? _exportCsv : null,
+            icon: const Icon(Icons.table_chart),
+            tooltip: 'Vie CSV',
+          ),
+          IconButton(
+            onPressed: _legsByDate.isNotEmpty ? _exportPdf : null,
+            icon: const Icon(Icons.picture_as_pdf),
+            tooltip: 'Vie PDF-raportti',
+          ),
+          IconButton(
             onPressed: _syncing ? null : _syncAll,
             icon: _syncing
                 ? const SizedBox(
@@ -438,6 +458,95 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     );
   }
 
+  Future<void> _exportCsv() async {
+    try {
+      // Collect all legs
+      final allLegs = <TripLeg>[];
+      for (final date in _dates) {
+        allLegs.addAll(_legsByDate[date]!);
+      }
+
+      final file = await CsvExportService.generate(
+        legs: allLegs,
+        expensesByLegId: _expensesByLegId,
+      );
+
+      if (mounted) {
+        await SharePlus.instance.share(ShareParams(
+          files: [XFile(file.path)],
+          text: 'Ajopäiväkirja CSV-vienti',
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('CSV:n luonti epäonnistui: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _exportPdf() async {
+    // Show date range picker
+    DateTime startDate = DateTime.now().subtract(const Duration(days: 365));
+    DateTime endDate = DateTime.now();
+
+    // Find earliest and latest dates
+    if (_dates.isNotEmpty) {
+      try {
+        final firstDate = DateTime.parse(_dates.last);
+        final lastDate = DateTime.parse(_dates.first);
+        startDate = firstDate;
+        endDate = lastDate;
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+
+    final range = await showDialog<({DateTime start, DateTime end})?>(
+      context: context,
+      builder: (ctx) => _PdfDateRangeDialog(
+        initialStart: startDate,
+        initialEnd: endDate,
+      ),
+    );
+
+    if (range == null || !mounted) return;
+
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final settings = ref.read(settingsProvider);
+      final service = PdfReportService(settings);
+
+      final file = await service.generate(
+        startDate: range.start,
+        endDate: range.end,
+        legsByDate: _legsByDate,
+      );
+
+      if (mounted) {
+        Navigator.of(context).pop(); // close loading
+        await SharePlus.instance.share(ShareParams(
+          files: [XFile(file.path)],
+          text: 'Ajopäiväkirja PDF-raportti',
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop(); // close loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('PDF:n luonti epäonnistui: $e')),
+        );
+      }
+    }
+  }
+
   Widget _buildDateGroup(String date, List<TripLeg> legs) {
     final totalKm = legs.fold<double>(0, (s, l) => s + l.kmDriven);
     final totalAllowance =
@@ -465,7 +574,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
               ],
             ),
           ),
-          for (final leg in legs)
+          for (final leg in legs) ...[
             Dismissible(
               key: Key('leg_${leg.id}'),
               direction: DismissDirection.endToStart,
@@ -503,9 +612,74 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                 ),
               ),
             ),
+            // Show expenses for this leg
+            if (leg.id != null)
+              ..._buildExpenseRows(leg.id!),
+          ],
         ],
       ),
     );
+  }
+
+  List<Widget> _buildExpenseRows(int legId) {
+    final expenses = _expensesByLegId[legId] ?? [];
+    return expenses.map((exp) {
+      return Padding(
+        padding: const EdgeInsets.only(left: 56, right: 16, bottom: 2),
+        child: Row(
+          children: [
+            Icon(Icons.receipt_long, size: 14, color: Theme.of(context).colorScheme.outline),
+            const SizedBox(width: 6),
+            Text(
+              exp.type.displayName,
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            if (exp.description != null && exp.description!.isNotEmpty) ...[
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  exp.description!,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+            const Spacer(),
+            Text(
+              '${exp.amount.toStringAsFixed(2)} €',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                iconSize: 14,
+                icon: Icon(Icons.delete_outline,
+                    color: Theme.of(context).colorScheme.outline),
+                onPressed: () => _deleteExpense(exp),
+              ),
+            ),
+          ],
+        ),
+      );
+    }).toList();
+  }
+
+  Future<void> _deleteExpense(Expense exp) async {
+    if (exp.id == null) return;
+    await DatabaseService.deleteExpense(exp.id!);
+    await _load();
   }
 
   String _formatDisplayDate(String isoDate) {
@@ -520,5 +694,107 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
 
   String _formatTime(DateTime dt) {
     return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+class _PdfDateRangeDialog extends StatefulWidget {
+  final DateTime initialStart;
+  final DateTime initialEnd;
+
+  const _PdfDateRangeDialog({
+    required this.initialStart,
+    required this.initialEnd,
+  });
+
+  @override
+  State<_PdfDateRangeDialog> createState() => _PdfDateRangeDialogState();
+}
+
+class _PdfDateRangeDialogState extends State<_PdfDateRangeDialog> {
+  late DateTime _start;
+  late DateTime _end;
+
+  @override
+  void initState() {
+    super.initState();
+    _start = widget.initialStart;
+    _end = widget.initialEnd;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dateFmt = DateFormat('d.M.yyyy', 'fi');
+    return AlertDialog(
+      title: const Text('Vie PDF-raportti'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('Valitse ajanjakso raportille:'),
+          const SizedBox(height: 16),
+          InkWell(
+            onTap: () async {
+              final d = await showDatePicker(
+                context: context,
+                initialDate: _start,
+                firstDate: DateTime(2020),
+                lastDate: DateTime.now(),
+              );
+              if (d != null) setState(() => _start = d);
+            },
+            child: InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'Aloituspäivä',
+                border: OutlineInputBorder(),
+                suffixIcon: Icon(Icons.calendar_today),
+              ),
+              child: Text(dateFmt.format(_start)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          InkWell(
+            onTap: () async {
+              final d = await showDatePicker(
+                context: context,
+                initialDate: _end,
+                firstDate: DateTime(2020),
+                lastDate: DateTime.now(),
+              );
+              if (d != null) setState(() => _end = d);
+            },
+            child: InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'Päättymispäivä',
+                border: OutlineInputBorder(),
+                suffixIcon: Icon(Icons.calendar_today),
+              ),
+              child: Text(dateFmt.format(_end)),
+            ),
+          ),
+          if (_end.isBefore(_start))
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(
+                'Päättymispäivä on ennen aloituspäivää',
+                style: TextStyle(color: Colors.red, fontSize: 12),
+              ),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Peruuta'),
+        ),
+        FilledButton(
+          onPressed: _end.isBefore(_start)
+              ? null
+              : () => Navigator.pop(
+                    context,
+                    (start: _start, end: _end),
+                  ),
+          child: const Text('Luo PDF'),
+        ),
+      ],
+    );
   }
 }

@@ -39,12 +39,18 @@ class TripState {
 
 class TripNotifier extends StateNotifier<TripState> {
   final Ref _ref;
+  Map<int, double>? _kmRates;
 
   TripNotifier(this._ref) : super(const TripState());
 
   AppSettings get _settings => _ref.read(settingsProvider);
 
-  TripCalculator get _calculator => TripCalculator(_settings);
+  TripCalculator get _calculator =>
+      TripCalculator(_settings, kmRates: _kmRates);
+
+  Future<void> loadKmRates() async {
+    _kmRates = await DatabaseService.getAllKmRates();
+  }
 
   String get _today => DateFormat('yyyy-MM-dd').format(DateTime.now());
 

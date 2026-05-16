@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 import '../main.dart';
 import '../models/route.dart' as route_model;
-import '../models/trip_leg.dart';
 import '../providers/route_provider.dart';
 import '../providers/trip_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/database_service.dart';
 import '../widgets/odometer_dialog.dart';
+import '../widgets/active_trip_card.dart';
 
 class RouteManagementScreen extends ConsumerStatefulWidget {
   const RouteManagementScreen({super.key});
@@ -24,13 +23,20 @@ class _RouteManagementScreenState
   Widget build(BuildContext context) {
     final routes = ref.watch(routeProvider);
     final tripState = ref.watch(tripProvider);
+    final tripNotifier = ref.read(tripProvider.notifier);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Reitit')),
       body: Column(
         children: [
           if (tripState.activeLeg != null)
-            _buildActiveTripCard(tripState.activeLeg!, context),
+            ActiveTripCard(
+              leg: tripState.activeLeg!,
+              onStopDriving: (odometer, {endTime}) async {
+                await tripNotifier.stopDriving(odometer, endTime: endTime);
+                await ref.read(backgroundServiceProvider).onDrivingStopped();
+              },
+            ),
           Expanded(
             child: routes.isEmpty
                 ? GestureDetector(
@@ -110,91 +116,7 @@ class _RouteManagementScreenState
     );
   }
 
-  Widget _buildActiveTripCard(TripLeg leg, BuildContext context) {
-    final tripNotifier = ref.read(tripProvider.notifier);
-    final backgroundService = ref.read(backgroundServiceProvider);
-    final colorScheme = Theme.of(context).colorScheme;
-    final startTime = DateFormat('HH:mm').format(leg.startTime);
-    final duration = DateTime.now().difference(leg.startTime);
-    final hours = duration.inHours;
-    final minutes = duration.inMinutes.remainder(60);
-    final durationStr = '$hours h ${minutes.toString().padLeft(2, '0')} min';
-    final expectedOdometer = leg.startOdometer + leg.kmDriven.toInt();
 
-    return Card(
-      color: colorScheme.primaryContainer,
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.directions_car, color: colorScheme.onPrimaryContainer),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Ajo käynnissä',
-                          style: Theme.of(context).textTheme.titleMedium),
-                      Text(
-                        leg.routeDescription ??
-                            '${leg.startLocation} → ${leg.endLocation}',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Lähtö: $startTime'),
-                Text('Kesto: $durationStr'),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Mittari lähtiessä: ${leg.startOdometer} km'),
-                Text('Arvioitu perillä: $expectedOdometer km'),
-              ],
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: () async {
-                  final result = await showOdometerDialog(
-                    context: context,
-                    title: 'Olen perillä',
-                    subtitle: 'Kohde: ${leg.endLocation ?? leg.routeDescription}',
-                    label: 'Matkamittari perillä (km)',
-                    actionLabel: 'Lopeta ajo',
-                    initialValue: expectedOdometer,
-                    expectedHint: expectedOdometer,
-                    showTime: true,
-                    initialTime: DateTime.now(),
-                    timeLabel: 'Päättymisaika',
-                  );
-                  if (result != null) {
-                    await tripNotifier.stopDriving(result.odometer, endTime: result.time);
-                    await backgroundService.onDrivingStopped();
-                  }
-                },
-                icon: const Icon(Icons.flag),
-                label: const Text('Olen perillä'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Future<void> _showRouteDialog({route_model.Route? route}) async {
     final nameController = TextEditingController(text: route?.name);
