@@ -43,6 +43,7 @@ final tripDetectionServiceProvider = Provider<TripDetectionService>((ref) {
   );
 });
 
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const ProviderScope(child: KilometrikorvausApp()));
