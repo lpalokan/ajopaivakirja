@@ -122,8 +122,8 @@ class TripNotifier extends StateNotifier<TripState> {
     if (leg.isReturnHome) {
       final dayLegs = await DatabaseService.getLegsForDate(_today);
       LogService().info('Trip: finalizing day with ${dayLegs.length} legs');
-      await _calculator.finalizeDay(dayLegs);
-      _syncToSheets(dayLegs);
+      final updatedDayLegs = await _calculator.finalizeDay(dayLegs);
+      _syncToSheets(updatedDayLegs);
     }
 
     final todayLegs = await DatabaseService.getLegsForDate(_today);
