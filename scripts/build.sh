@@ -11,6 +11,9 @@
 
 set -e
 
+# Ensure we run from the project root (where pubspec.yaml lives)
+cd "$(dirname "$0")/.."
+
 MODE="release"
 FLUTTER_ARGS=()
 
@@ -23,7 +26,9 @@ for arg in "$@"; do
 done
 
 # Generate version file before Flutter compiles
+echo "==> Running version.sh --$MODE"
 bash scripts/version.sh "--$MODE"
 
 # Run Flutter build
+echo "==> Running flutter build ${FLUTTER_ARGS[*]}"
 flutter build "${FLUTTER_ARGS[@]}"
