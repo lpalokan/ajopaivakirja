@@ -87,6 +87,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             showTime: true,
             initialTime: DateTime.now(),
             timeLabel: 'Päättymisaika',
+            visionService: ref.read(odometerVisionServiceProvider),
           ).then((result) {
             if (result != null && context.mounted) {
               tripNotif.stopDriving(result.odometer, endTime: result.time);
@@ -312,6 +313,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       showTime: true,
       initialTime: DateTime.now(),
       timeLabel: 'Alkamisaika',
+      visionService: ref.read(odometerVisionServiceProvider),
     );
 
     if (result != null) {

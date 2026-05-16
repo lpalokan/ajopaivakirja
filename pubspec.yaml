@@ -1,7 +1,7 @@
 name: kilometrikorvaus
 description: "Mileage and daily allowance tracker for work trips"
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.0+8
 
 environment:
   sdk: ^3.11.5
@@ -28,6 +28,8 @@ dependencies:
   timezone: ^0.10.1
   path: ^1.9.1
   share_plus: ^13.1.0
+  google_mlkit_text_recognition: ^0.14.0
+  image_picker: ^1.1.2
   pdf: ^3.11.2
   printing: ^5.14.2
 
