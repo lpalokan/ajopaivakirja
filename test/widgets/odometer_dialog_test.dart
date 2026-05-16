@@ -2,23 +2,28 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kilometrikorvaus/widgets/odometer_dialog.dart';
 
-Future<OdometerResult?> openDialog(
+/// Pumps a screen with a button that opens the dialog. The dialog result is
+/// reported via [onResult] once the dialog is dismissed (we cannot return the
+/// dialog future from an async helper — it would be flattened and awaited
+/// before the test can interact with the dialog).
+Future<void> openDialog(
   WidgetTester tester, {
   String? relatedField,
+  void Function(OdometerResult?)? onResult,
 }) async {
-  late Future<OdometerResult?> future;
   await tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
         body: Builder(
           builder: (context) => ElevatedButton(
-            onPressed: () {
-              future = showOdometerDialog(
+            onPressed: () async {
+              final result = await showOdometerDialog(
                 context: context,
                 title: 'Aloita ajo',
                 actionLabel: 'Aloita',
                 relatedField: relatedField,
               );
+              onResult?.call(result);
             },
             child: const Text('open'),
           ),
@@ -28,7 +33,6 @@ Future<OdometerResult?> openDialog(
   );
   await tester.tap(find.text('open'));
   await tester.pumpAndSettle();
-  return future;
 }
 
 void main() {
@@ -44,16 +48,21 @@ void main() {
   });
 
   testWidgets('valid input returns the entered odometer', (tester) async {
-    final future = await openDialog(tester);
+    OdometerResult? result;
+    var called = false;
+    await openDialog(tester, onResult: (r) {
+      result = r;
+      called = true;
+    });
 
     await tester.enterText(find.byType(TextField), '123456');
     await tester.tap(find.text('Aloita'));
     await tester.pumpAndSettle();
 
-    final result = await future;
+    expect(called, isTrue);
     expect(result, isNotNull);
     expect(result!.odometer, 123456);
-    expect(result.purpose, isNull);
+    expect(result!.purpose, isNull);
   });
 
   testWidgets('no purpose field when relatedField is unset', (tester) async {

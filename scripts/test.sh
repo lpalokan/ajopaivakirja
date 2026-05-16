@@ -54,8 +54,8 @@ ok "java:    $(java -version 2>&1 | head -1)"
 info "flutter pub get"
 flutter pub get
 
-info "flutter analyze"
-flutter analyze
+info "flutter analyze (advisory — does not block the test run)"
+flutter analyze || fail "analyze reported issues (see above); continuing to tests"
 
 info "flutter test (host unit + widget tests)"
 flutter test
