@@ -16,8 +16,8 @@ FLUTTER_ARGS=()
 
 for arg in "$@"; do
   case "$arg" in
-    --debug) MODE="debug" ;;
-    --release) MODE="release" ;;
+    --debug) MODE="debug" ; FLUTTER_ARGS+=("$arg") ;;
+    --release) MODE="release" ; FLUTTER_ARGS+=("$arg") ;;
     *) FLUTTER_ARGS+=("$arg") ;;
   esac
 done
