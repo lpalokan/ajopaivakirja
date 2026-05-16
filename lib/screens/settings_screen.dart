@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../main.dart';
 import '../providers/settings_provider.dart';
+import '../app_version.dart';
 import '../services/database_service.dart';
 import '../services/log_service.dart';
 import '../models/location_zone.dart';
@@ -269,6 +270,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ],
                 ),
               ),
+            const SizedBox(height: 16),
+            _sectionHeader('Tietoja'),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Sovelluksen versio'),
+              subtitle: Text(appVersion),
+              leading: const Icon(Icons.info_outline),
+            ),
             const SizedBox(height: 24),
             FilledButton.icon(
               onPressed: _saving ? null : _save,
