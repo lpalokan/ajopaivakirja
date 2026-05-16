@@ -6,6 +6,7 @@ import 'services/notification_service.dart';
 import 'services/location_service.dart';
 import 'services/background_service.dart';
 import 'services/sheets_service.dart';
+import 'services/odometer_vision_service.dart';
 
 final notificationServiceProvider = Provider<NotificationService>((ref) {
   return NotificationService();
@@ -26,6 +27,10 @@ final backgroundServiceProvider = Provider<BackgroundService>((ref) {
 
 final sheetsServiceProvider = Provider<SheetsService>((ref) {
   return SheetsService();
+});
+
+final odometerVisionServiceProvider = Provider<OdometerVisionService>((ref) {
+  return OdometerVisionService();
 });
 
 void main() {
