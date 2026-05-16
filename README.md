@@ -177,6 +177,16 @@ Testit jakautuvat kahteen tasoon: nopeat host-testit (yksikkö- ja
 widget-testit, ajetaan Dart-VM:ssä ilman emulaattoria) ja yksi
 integraatiotesti, joka ajetaan oikealla Android-emulaattorilla.
 
+Helpoin tapa on apuskripti (idempotentti, turvallinen ajaa uudelleen):
+
+```bash
+./scripts/test.sh              # host-testit (pub get, analyze, flutter test)
+./scripts/test.sh --emulator   # luo myös AVD:n ja ajaa emulaattoritestin
+```
+
+Skripti ei asenna Flutter- tai Android-SDK:ta, vaan tarkistaa ne ja
+kertoo mitä puuttuu. Alla manuaaliset vaiheet samoihin asioihin.
+
 ### Host-testit (ilman emulaattoria)
 
 ```bash
