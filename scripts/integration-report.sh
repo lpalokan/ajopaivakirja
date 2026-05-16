@@ -94,18 +94,21 @@ DEVICE_PROPS="$(adb shell getprop ro.build.version.release 2>/dev/null | tr -d '
   echo "Git commit    : $(git rev-parse --short HEAD 2>/dev/null)"
   echo "Flutter       : $(flutter --version 2>/dev/null | head -1)"
   echo "Emulator      : Android $DEVICE_PROPS"
-  echo "Suite         : integration_test/app_use_cases_test.dart"
+  echo "Suite         : integration_test/features/*.feature (Gherkin)"
   echo "==================================================================="
   echo
   echo "----- flutter analyze (advisory) ----------------------------------"
   flutter analyze 2>&1 | tail -8
   echo
+  echo "----- build_runner (Gherkin → Dart) -------------------------------"
+  dart run build_runner build --delete-conflicting-outputs 2>&1 | tail -6
+  echo
   echo "----- integration_test (emulator) ---------------------------------"
 } | tee "$REPORT"
 
-info "Running use-case suite on the emulator"
+info "Running the Gherkin suite on the emulator"
 set -o pipefail
-flutter test integration_test/app_use_cases_test.dart --reporter expanded 2>&1 \
+flutter test integration_test --reporter expanded 2>&1 \
   | tee -a "$REPORT"
 RESULT=${PIPESTATUS[0]}
 

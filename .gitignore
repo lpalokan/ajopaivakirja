@@ -34,6 +34,9 @@ migrate_working_dir/
 /coverage/
 /reports/
 
+# bdd_widget_test generates these from integration_test/features/*.feature
+integration_test/features/*_test.dart
+
 # Symbolication related
 app.*.symbols
 

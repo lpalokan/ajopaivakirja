@@ -173,9 +173,17 @@ flutter run          # Vaatii puhelimen kytkettynä USB:llä (developeri-tila)
 
 ## Automaattitestaus
 
-Testit jakautuvat kahteen tasoon: nopeat host-testit (yksikkö- ja
-widget-testit, ajetaan Dart-VM:ssä ilman emulaattoria) ja yksi
-integraatiotesti, joka ajetaan oikealla Android-emulaattorilla.
+Projekti on **BDD-first**: jokainen ominaisuus alkaa selkokielisellä
+Gherkin-skenaariolla (`integration_test/features/*.feature`), joka ajetaan
+Android-emulaattorilla. Testit jakautuvat: nopeat host-testit (yksikkö- ja
+widget-testit, Dart-VM, ilman emulaattoria) ja Gherkin-päästä-päähän-testit
+emulaattorilla. Täysi ohje ja ylläpito: `docs/testing.md`.
+
+Gherkin-paketin ajo ja raportti:
+
+```bash
+./scripts/integration-report.sh   # build_runner + emulaattoriajo + raportti
+```
 
 Helpoin tapa on apuskripti (idempotentti, turvallinen ajaa uudelleen):
 
