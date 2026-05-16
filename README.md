@@ -171,6 +171,43 @@ flutter pub get
 flutter run          # Vaatii puhelimen kytkettynä USB:llä (developeri-tila)
 ```
 
+## Automaattitestaus
+
+Testit jakautuvat kahteen tasoon: nopeat host-testit (yksikkö- ja
+widget-testit, ajetaan Dart-VM:ssä ilman emulaattoria) ja yksi
+integraatiotesti, joka ajetaan oikealla Android-emulaattorilla.
+
+### Host-testit (ilman emulaattoria)
+
+```bash
+flutter pub get
+flutter analyze
+flutter test          # test/ – TripCalculator, mallit, OdometerDialog
+```
+
+### Emulaattoritesti (macOS)
+
+Vaatii Android SDK:n ja emulaattorin (vakio Android-emulaattori,
+QEMU/HVF-pohjainen). Esivalmistelu kerran:
+
+```bash
+# Apple Silicon: arm64-v8a, Intel: x86_64
+sdkmanager "platform-tools" "emulator" \
+  "system-images;android-34;google_apis;arm64-v8a"
+avdmanager create avd -n test_pixel \
+  -k "system-images;android-34;google_apis;arm64-v8a" -d pixel_6
+```
+
+Aja integraatiotesti käynnissä olevalla emulaattorilla:
+
+```bash
+flutter emulators --launch test_pixel      # tai käynnistä Android Studiosta
+flutter test integration_test/app_smoke_test.dart
+```
+
+Smoke-testi varmistaa, että sovellus kääntyy ja käynnistyy laitteella
+(sqflite ja pluginit alustuvat) ennen kuin testikattavuutta laajennetaan.
+
 ## Asennus puhelimeen (ilman kehittäjätilaa)
 
 Puhelinta ei tarvitse laittaa kehittäjätilaan. APK-tiedoston voi asentaa suoraan.
