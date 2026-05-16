@@ -176,6 +176,26 @@ Future<void> openHistory(WidgetTester tester) async {
   await settle(tester);
 }
 
+/// Tap the AppBar back button (tester.pageBack can't locate it reliably here).
+Future<void> goBack(WidgetTester tester) async {
+  await tester.tap(find.byType(BackButton));
+  await settle(tester);
+}
+
+/// Scroll [f] into view inside the first Scrollable (settings list is lazy,
+/// so off-screen widgets aren't built until scrolled to).
+Future<void> scrollIntoView(WidgetTester tester, Finder f) async {
+  final sc = find.byType(Scrollable);
+  if (sc.evaluate().isEmpty) return;
+  await tester.scrollUntilVisible(f, 120, scrollable: sc.first, maxScrolls: 60);
+}
+
+/// Scroll to and tap the Settings "Tallenna" (save) button.
+Future<void> saveSettings(WidgetTester tester) async {
+  await scrollIntoView(tester, find.text('Tallenna'));
+  await tester.tap(find.widgetWithText(FilledButton, 'Tallenna'));
+}
+
 /// Drive a route to start a trip: opens Routes, taps the named route's tile,
 /// fills the odometer, confirms. Leaves the app on Home with an active trip.
 Future<void> startTrip(
@@ -190,7 +210,8 @@ Future<void> startTrip(
     matching: find.byType(ListTile),
   ));
   await settle(tester);
-  expect(find.text('Aloita ajo'), findsOneWidget);
+  // "Aloita ajo" is both the dialog title and the action button.
+  expect(find.text('Aloita ajo'), findsWidgets);
   await tester.enterText(
     find.ancestor(of: find.text('Tarkoitus'), matching: find.byType(TextField)),
     purpose,
@@ -226,8 +247,7 @@ void main() {
       await pumpApp(t);
       await openSettings(t);
       expect(find.text('Asetukset'), findsOneWidget);
-      await t.pageBack();
-      await settle(t);
+      await goBack(t);
       expect(find.text('Ajopäiväkirja'), findsOneWidget);
     });
 
@@ -235,8 +255,7 @@ void main() {
       await pumpApp(t);
       await openRoutes(t);
       expect(find.text('Reitit'), findsOneWidget);
-      await t.pageBack();
-      await settle(t);
+      await goBack(t);
       expect(find.text('Ajopäiväkirja'), findsOneWidget);
     });
 
@@ -244,8 +263,7 @@ void main() {
       await pumpApp(t);
       await openHistory(t);
       expect(find.text('Historia'), findsWidgets);
-      await t.pageBack();
-      await settle(t);
+      await goBack(t);
       expect(find.text('Ajopäiväkirja'), findsOneWidget);
     });
 
@@ -388,8 +406,7 @@ void main() {
           '12');
       await t.tap(find.widgetWithText(FilledButton, 'Tallenna'));
       await settle(t);
-      await t.pageBack();
-      await settle(t);
+      await goBack(t);
       expect(find.text('Varikko'), findsWidgets);
     });
   });
@@ -406,7 +423,7 @@ void main() {
       await pumpApp(t);
       await openSettings(t);
       await t.enterText(_formField('Kotiosoite'), 'Kotikatu 1');
-      await t.tap(find.widgetWithText(FilledButton, 'Tallenna'));
+      await saveSettings(t);
       await pumpFor(t, 1000); // SnackBar is transient; don't settle it away
       expect(find.text('Asetukset tallennettu'), findsOneWidget);
     });
@@ -415,7 +432,7 @@ void main() {
       await pumpApp(t);
       await openSettings(t);
       await t.enterText(_formField('Kotiosoite'), 'Saunatie 9');
-      await t.tap(find.widgetWithText(FilledButton, 'Tallenna'));
+      await saveSettings(t);
       await settle(t);
       // _save pops back to Home.
       await openSettings(t);
@@ -426,7 +443,7 @@ void main() {
       await pumpApp(t);
       await openSettings(t);
       await t.enterText(_formField('Km-korvaus (€/km)'), '0,62');
-      await t.tap(find.widgetWithText(FilledButton, 'Tallenna'));
+      await saveSettings(t);
       await settle(t);
       await openSettings(t);
       expect(find.textContaining('0.62'), findsWidgets);
@@ -436,7 +453,7 @@ void main() {
       await pumpApp(t);
       await openSettings(t);
       await t.enterText(_formField('Kuljettajan nimi'), 'Matti M');
-      await t.tap(find.widgetWithText(FilledButton, 'Tallenna'));
+      await saveSettings(t);
       await settle(t);
       await openSettings(t);
       expect(find.text('Matti M'), findsOneWidget);
@@ -445,8 +462,10 @@ void main() {
     testWidgets('debug logging toggle reveals log actions', (t) async {
       await pumpApp(t);
       await openSettings(t);
+      await scrollIntoView(t, find.text('Virheloki'));
       await t.tap(find.text('Virheloki'));
       await settle(t);
+      await scrollIntoView(t, find.text('Jaa loki'));
       expect(find.text('Jaa loki'), findsOneWidget);
     });
 
@@ -454,7 +473,7 @@ void main() {
       await pumpApp(t);
       await openSettings(t);
       await t.enterText(_formField('Välilehden nimi'), 'Matkat2026');
-      await t.tap(find.widgetWithText(FilledButton, 'Tallenna'));
+      await saveSettings(t);
       await settle(t);
       await openSettings(t);
       expect(find.text('Matkat2026'), findsOneWidget);
@@ -468,7 +487,7 @@ void main() {
       await t.tap(find.ancestor(
           of: find.text('Töihin'), matching: find.byType(ListTile)));
       await settle(t);
-      expect(find.text('Aloita ajo'), findsOneWidget);
+      expect(find.textContaining('Reitti:'), findsOneWidget);
     });
 
     testWidgets('empty odometer blocks start', (t) async {
