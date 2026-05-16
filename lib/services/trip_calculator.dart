@@ -130,12 +130,10 @@ class TripCalculator {
     }
     LogService().info('Calc: finalizeDay ${updated.length} legs, allowance=$allowance€ ($mode)');
 
-    // Apply daily allowance to the last leg if returning home or override is set
-    if (last.isReturnHome || last.dailyAllowanceType != null) {
-      updated[updated.length - 1] = last.copyWith(
-        dailyAllowance: allowance,
-      );
-    }
+    // Apply daily allowance to the last leg
+    updated[updated.length - 1] = last.copyWith(
+      dailyAllowance: allowance,
+    );
 
     // Calculate total day hours and place on last leg
     if (last.endTime != null) {

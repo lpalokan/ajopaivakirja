@@ -177,13 +177,7 @@ class TripNotifier extends StateNotifier<TripState> {
       double grandTotal, double totalHours}) get daySummary {
     final legs = state.todayLegs;
     final summary = _calculator.summarizeDay(legs);
-    final totalHours = legs.isNotEmpty
-        ? legs.last.endTime
-                ?.difference(legs.first.startTime)
-                .inMinutes
-                .toDouble() ??
-            0 / 60.0
-        : 0.0;
+    final totalHours = legs.isNotEmpty ? legs.last.legDurationHours : 0.0;
 
     return (
       totalKm: summary.totalKm,
