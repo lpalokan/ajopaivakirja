@@ -211,6 +211,9 @@ Future<void> goBack(WidgetTester tester) async {
 
 Future<void> expectVisible(WidgetTester tester, String text) async {
   final f = find.text(text);
+  // Poll first (no scroll) so a transient/animating frame doesn't trigger
+  // a destructive scroll away from an already-present (e.g. top) widget.
+  await waitFor(tester, f, timeoutMs: 6000);
   if (f.evaluate().isEmpty) await scrollIntoView(tester, f);
   expect(f, findsWidgets);
 }
@@ -221,6 +224,7 @@ Future<void> expectAbsent(WidgetTester tester, String text) async {
 
 Future<void> expectContains(WidgetTester tester, String text) async {
   final f = find.textContaining(text);
+  await waitFor(tester, f, timeoutMs: 6000);
   if (f.evaluate().isEmpty) await scrollIntoView(tester, f);
   expect(f, findsWidgets);
 }
