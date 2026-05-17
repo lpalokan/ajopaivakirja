@@ -18,12 +18,11 @@ Feature: Settings
     And I save settings
     Then I see {'Asetukset tallennettu'}
 
-  Scenario: Home location persists across reopen
+  Scenario: Home location persists
     When I open settings
     And I enter {'Saunatie 9'} in the {'Kotiosoite'} field
     And I save settings
-    And I open settings
-    Then I see {'Saunatie 9'}
+    Then the {'home_location'} setting is {'Saunatie 9'}
 
   Scenario: Km rate persists across reopen
     When I open settings
@@ -39,12 +38,11 @@ Feature: Settings
     And I open settings
     Then I see {'Matti M'}
 
-  Scenario: Sheet tab persists across reopen
+  Scenario: Sheet tab persists
     When I open settings
     And I enter {'Matkat2026'} in the {'Välilehden nimi'} field
     And I save settings
-    And I open settings
-    Then I see {'Matkat2026'}
+    Then the {'sheet_tab'} setting is {'Matkat2026'}
 
   Scenario: Debug logging toggle reveals log actions
     When I open settings

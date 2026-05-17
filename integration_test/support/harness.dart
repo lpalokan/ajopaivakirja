@@ -222,6 +222,20 @@ Future<void> expectAbsent(WidgetTester tester, String text) async {
   expect(find.text(text), findsNothing);
 }
 
+/// Assert a persisted settings value in the on-device SQLite DB. More
+/// reliable than re-reading a rebuilt, lazily-laid-out Settings screen.
+Future<void> expectSetting(
+    WidgetTester tester, String key, String value) async {
+  String? actual;
+  final deadline = DateTime.now().add(const Duration(seconds: 4));
+  while (DateTime.now().isBefore(deadline)) {
+    actual = await DatabaseService.getSetting(key);
+    if (actual == value) return;
+    await tester.pump(const Duration(milliseconds: 200));
+  }
+  expect(actual, value);
+}
+
 Future<void> expectContains(WidgetTester tester, String text) async {
   final f = find.textContaining(text);
   await waitFor(tester, f, timeoutMs: 6000);

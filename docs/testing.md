@@ -95,6 +95,7 @@ feature). The suite is run via this aggregator. **When you add a new
 | `Then I see {string}` | Asserts text is visible (scrolls if needed) |
 | `Then I do not see {string}` | Asserts text is absent |
 | `Then I see text containing {string}` | Substring assertion |
+| `Then the {string} setting is {string}` | Asserts a persisted value in the SQLite settings table (deterministic; avoids re-reading a rebuilt screen) |
 
 ## Adding a new step
 
