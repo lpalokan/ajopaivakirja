@@ -273,25 +273,18 @@ Future<void> enterDialogField(
 }
 
 Future<void> saveSettings(WidgetTester tester) async {
-  // The Save button is the last child of a lazy ListView. Build it by
-  // scrolling the settings Scrollable until the button widget itself
-  // exists (not via the early-returning scrollIntoView helper), then
-  // ensureVisible so the tap actually lands on-screen.
-  final btn = find.widgetWithText(FilledButton, 'Tallenna');
+  // Deterministic: close the soft keyboard (it shrinks the list and
+  // fights drags), then jump the scroll position to the bottom so the
+  // Save button (last lazy ListView child) is built and on-screen.
+  FocusManager.instance.primaryFocus?.unfocus();
+  await tester.pump(const Duration(milliseconds: 250));
   final sc = find.byType(Scrollable).first;
-  if (btn.evaluate().isEmpty) {
-    try {
-      await tester.scrollUntilVisible(btn, 300.0,
-          scrollable: sc, maxScrolls: 40);
-    } catch (_) {
-      // Fallback: hard-drag the list to the bottom.
-      for (var i = 0; i < 12 && btn.evaluate().isEmpty; i++) {
-        await tester.drag(sc, const Offset(0, -400));
-        await tester.pump(const Duration(milliseconds: 100));
-      }
-    }
-  }
+  try {
+    final pos = tester.state<ScrollableState>(sc).position;
+    pos.jumpTo(pos.maxScrollExtent);
+  } catch (_) {}
   await settle(tester);
+  final btn = find.widgetWithText(FilledButton, 'Tallenna');
   if (btn.evaluate().isNotEmpty) {
     await tester.ensureVisible(btn);
     await settle(tester);
