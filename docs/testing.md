@@ -59,7 +59,11 @@ files are git-ignored and rebuilt on every run, so **never edit a
   external services (notifications/location/Sheets/OCR) faked, so no
   permission dialogs or network are hit. Debug builds then seed two
   routes: **Töihin** (Koti→Työ, 54 km) and **Kotiin** (Työ→Koti, 54 km).
-- Strings are double-quoted; whole numbers are bare (`{string}` / `{int}`).
+- **Parameter syntax (important):** string parameters are wrapped in
+  **single quotes** (`'Töihin'`), integer parameters in **curly braces**
+  (`{1054}`). Double quotes are treated as literal text and will make
+  `bdd_widget_test` generate a throwaway stub per literal — not what you
+  want. Example: `When I start the 'Töihin' route at {1000} km`.
 
 ## Step catalogue
 
@@ -118,6 +122,12 @@ attached, runs `build_runner`, runs the suite, and writes
 
 - **`build_runner` fails / wrong step name:** read its output; rename the
   step file/function to match, or fill the generated stub.
+- **Stub step files that `throw UnimplementedError()`:** the feature used
+  the wrong parameter syntax (double quotes / bare numbers), so
+  `bdd_widget_test` baked the literal into a new step. Fix the feature to
+  use `'single quotes'` / `{braces}`, then delete the stray untracked
+  step files: `git clean -fd integration_test/features/step`
+  (keeps the committed canonical steps, removes generated stubs).
 - **Flaky finder / timing:** prefer the harness `waitFor`, `settle`, and
   `scrollIntoView` helpers rather than bare `pump`. Transient SnackBars
   must be asserted right after a `pumpFor` step (e.g. `I save settings`),
