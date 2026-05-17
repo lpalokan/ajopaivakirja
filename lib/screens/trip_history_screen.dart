@@ -487,8 +487,8 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     }
   }
 
-  /// Let the user choose between sharing/opening the file with another app
-  /// or saving it to the device's Downloads folder.
+  /// Let the user choose between opening the file in an app of their choice,
+  /// sharing it, or saving it to the device's Downloads folder.
   Future<void> _shareOrSave(File file, String shareText) async {
     final choice = await showModalBottomSheet<String>(
       context: context,
@@ -497,14 +497,21 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.download),
-              title: const Text('Tallenna Lataukset-kansioon'),
-              onTap: () => Navigator.pop(ctx, 'save'),
+              leading: const Icon(Icons.open_in_new),
+              title: const Text('Avaa sovelluksessa'),
+              subtitle: const Text(
+                  'Valitse sovellus, esim. Sheets, Excel tai PDF-katselin'),
+              onTap: () => Navigator.pop(ctx, 'open'),
             ),
             ListTile(
               leading: const Icon(Icons.ios_share),
-              title: const Text('Jaa tai avaa sovelluksessa'),
+              title: const Text('Jaa'),
               onTap: () => Navigator.pop(ctx, 'share'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.download),
+              title: const Text('Tallenna Lataukset-kansioon'),
+              onTap: () => Navigator.pop(ctx, 'save'),
             ),
             ListTile(
               leading: const Icon(Icons.close),
@@ -516,13 +523,37 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
       ),
     );
 
-    if (choice == 'share') {
+    if (choice == 'open') {
+      await _openInApp(file);
+    } else if (choice == 'share') {
       await SharePlus.instance.share(ShareParams(
         files: [XFile(file.path)],
         text: shareText,
       ));
     } else if (choice == 'save') {
       await _saveToDownloads(file);
+    }
+  }
+
+  /// Hand the file to an external app via an ACTION_VIEW intent so the user
+  /// can pick e.g. Sheets/Excel (CSV) or a PDF viewer. The file is copied
+  /// into the cache dir first because that location is reliably served by
+  /// the bundled FileProvider across Android versions.
+  Future<void> _openInApp(File file) async {
+    String path = file.path;
+    try {
+      final tmp = await getTemporaryDirectory();
+      final name = file.path.split('/').last;
+      path = (await file.copy('${tmp.path}/$name')).path;
+    } catch (_) {
+      // Fall back to the original path if the copy fails.
+    }
+
+    final error = await ref.read(fileOpenerServiceProvider).open(path);
+    if (error != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error)),
+      );
     }
   }
 

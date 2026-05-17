@@ -19,6 +19,7 @@ import 'package:kilometrikorvaus/main.dart';
 import 'package:kilometrikorvaus/models/trip_leg.dart';
 import 'package:kilometrikorvaus/services/background_service.dart';
 import 'package:kilometrikorvaus/services/database_service.dart';
+import 'package:kilometrikorvaus/services/file_opener_service.dart';
 import 'package:kilometrikorvaus/services/location_service.dart';
 import 'package:kilometrikorvaus/services/notification_service.dart';
 import 'package:kilometrikorvaus/services/odometer_vision_service.dart';
@@ -98,6 +99,19 @@ class _FakeOdometerVisionService extends OdometerVisionService {
   Future<int?> extractOdometer(String imagePath, {int? expectedHint}) async =>
       null;
 }
+
+/// Records the "open in external app" call instead of firing a native
+/// ACTION_VIEW intent (which would leave the test on an app chooser).
+class _FakeFileOpenerService extends FileOpenerService {
+  String? openedPath;
+  @override
+  Future<String?> open(String path) async {
+    openedPath = path;
+    return null;
+  }
+}
+
+final _fakeFileOpener = _FakeFileOpenerService();
 
 // ─── Low-level helpers ─────────────────────────────────────────────────────
 
@@ -180,6 +194,7 @@ Finder _dialogField(String label) =>
 // ─── Step-level actions (called from step definitions) ─────────────────────
 
 Future<void> launchApp(WidgetTester tester) async {
+  _fakeFileOpener.openedPath = null;
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -190,6 +205,7 @@ Future<void> launchApp(WidgetTester tester) async {
         sheetsServiceProvider.overrideWithValue(_FakeSheetsService()),
         odometerVisionServiceProvider
             .overrideWithValue(_FakeOdometerVisionService()),
+        fileOpenerServiceProvider.overrideWithValue(_fakeFileOpener),
       ],
       child: const KilometrikorvausApp(),
     ),
@@ -409,6 +425,22 @@ Future<void> tapDialogButton(WidgetTester tester, String label) async {
 Future<void> syncToSheets(WidgetTester tester) async {
   await tester.tap(find.byIcon(Icons.cloud_upload));
   await pumpFor(tester, 800); // transient SnackBar
+}
+
+Future<void> exportCsv(WidgetTester tester) async {
+  await tester.tap(find.byIcon(Icons.table_chart));
+  await settle(tester);
+  await waitFor(tester, find.text('Avaa sovelluksessa'));
+}
+
+Future<void> expectFileOpened(WidgetTester tester) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 4));
+  while (DateTime.now().isBefore(deadline)) {
+    if (_fakeFileOpener.openedPath != null) break;
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+  expect(_fakeFileOpener.openedPath, isNotNull);
+  expect(_fakeFileOpener.openedPath, endsWith('.csv'));
 }
 
 Future<void> toggleDebugLogging(WidgetTester tester) async {
