@@ -107,10 +107,28 @@ DEVICE_PROPS="$(adb shell getprop ro.build.version.release 2>/dev/null | tr -d '
 } | tee "$REPORT"
 
 info "Running the Gherkin suite on the emulator (single install)"
+
+# Suppress Android 13+ POST_NOTIFICATIONS prompt: as soon as flutter
+# installs the app, grant the permission so the system dialog never
+# appears (the suite is a single install, so one grant lasts the run).
+APP_ID="fi.lpalokan.kilometrikorvaus"
+(
+  for _ in $(seq 1 120); do
+    if adb shell pm list packages 2>/dev/null | grep -q "$APP_ID"; then
+      adb shell pm grant "$APP_ID" android.permission.POST_NOTIFICATIONS \
+        >/dev/null 2>&1 || true
+      break
+    fi
+    sleep 1
+  done
+) &
+GRANT_PID=$!
+
 set -o pipefail
 flutter test integration_test/all_features_test.dart --reporter expanded 2>&1 \
   | tee -a "$REPORT"
 RESULT=${PIPESTATUS[0]}
+kill "$GRANT_PID" 2>/dev/null || true
 
 {
   echo

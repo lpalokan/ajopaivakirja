@@ -139,6 +139,10 @@ attached, runs `build_runner`, runs the suite, and writes
   `scrollIntoView` helpers rather than bare `pump`. Transient SnackBars
   must be asserted right after a `pumpFor` step (e.g. `I save settings`),
   never after a settle.
+- **Android notification permission dialog on screen:** the report
+  script pre-grants `POST_NOTIFICATIONS` via `adb` once the app installs,
+  so it shouldn't block the run. To grant it manually:
+  `adb shell pm grant fi.lpalokan.kilometrikorvaus android.permission.POST_NOTIFICATIONS`.
 - **Generated `*_test.dart` shows in git:** it's git-ignored; do not
   commit or edit it.
 - **Integration binding:** because features live under `integration_test/`,

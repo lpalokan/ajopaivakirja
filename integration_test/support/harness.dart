@@ -265,13 +265,16 @@ Future<void> startTrip(
 }
 
 Future<void> arrive(WidgetTester tester, int odometer) async {
+  // Let the route-screen pop finish so only Home's active card remains
+  // (both screens show an "Olen perillä" button mid-transition).
+  await settle(tester);
   await waitFor(tester, find.widgetWithText(FilledButton, 'Olen perillä'));
-  await tester.tap(find.widgetWithText(FilledButton, 'Olen perillä'));
+  await tester.tap(find.widgetWithText(FilledButton, 'Olen perillä').first);
   await settle(tester);
   await waitFor(tester, _arrivalOdoField);
   await tester.enterText(_arrivalOdoField, '$odometer');
   await waitFor(tester, find.widgetWithText(FilledButton, 'Lopeta ajo'));
-  await tester.tap(find.widgetWithText(FilledButton, 'Lopeta ajo'));
+  await tester.tap(find.widgetWithText(FilledButton, 'Lopeta ajo').first);
   await settle(tester);
 }
 
@@ -305,7 +308,17 @@ Future<void> swipeRight(WidgetTester tester, String text) async {
 }
 
 Future<void> tapDialogButton(WidgetTester tester, String label) async {
-  await tester.tap(find.widgetWithText(ButtonStyleButton, label));
+  // find.widgetWithText matches by exact type; ButtonStyleButton is
+  // abstract, so match its subtypes (FilledButton/TextButton/…) instead.
+  final btn = find.ancestor(
+    of: find.text(label),
+    matching: find.byWidgetPredicate((w) => w is ButtonStyleButton),
+  );
+  if (btn.evaluate().isNotEmpty) {
+    await tester.tap(btn.first);
+  } else {
+    await tester.tap(find.text(label).first);
+  }
   await settle(tester);
 }
 
