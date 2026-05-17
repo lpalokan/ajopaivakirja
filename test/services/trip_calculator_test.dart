@@ -136,7 +136,7 @@ void main() {
       expect(result.last.workingTimeHours, 0.5);
     });
 
-    test('return-home leg contributes no working time', () {
+    test('working time spans first arrival to last departure', () {
       final start = DateTime(2026, 5, 16, 8, 0);
       final legs = [
         leg(
@@ -152,7 +152,9 @@ void main() {
         ),
       ];
       final result = calc.calculateWorkingTimes(legs);
-      expect(result.last.workingTimeHours, 0);
+      // PR #36 definition: lastStart (11:00) - firstEnd (09:00) = 2.0h.
+      // The return-home flag does not reduce working time.
+      expect(result.last.workingTimeHours, 2.0);
     });
 
     test('single leg has zero working time', () {

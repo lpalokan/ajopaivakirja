@@ -252,7 +252,7 @@ void main() {
       expect(KmRate.finnishDefaults[2023], 0.53);
       expect(KmRate.finnishDefaults[2024], 0.57);
       expect(KmRate.finnishDefaults[2025], 0.57);
-      expect(KmRate.finnishDefaults[2026], 0.57);
+      expect(KmRate.finnishDefaults[2026], 0.55);
     });
   });
 
@@ -613,7 +613,7 @@ void main() {
       expect(summary.totalKm, 108.0);
       expect(summary.totalKmAllowance, closeTo(61.56, 0.01));
       expect(summary.totalDailyAllowance, 25.0);
-      expect(summary.grandTotal, closeTo(85.56, 0.01));
+      expect(summary.grandTotal, closeTo(86.56, 0.01));
     });
 
     test('summarizeDay with empty list', () {

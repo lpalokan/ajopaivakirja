@@ -30,8 +30,8 @@ void main() {
       final settings = AppSettings.fromMap({'km_rate': 'not-a-number'});
       expect(settings.kmRate, 0.57);
       expect(settings.homeLocation, 'Koti');
-      expect(settings.allowance6h, 24.0);
-      expect(settings.allowance10h, 48.0);
+      expect(settings.allowance6h, 25.0);
+      expect(settings.allowance10h, 54.0);
       expect(settings.sheetTab, 'Taulukko1');
       expect(settings.debugLogging, false);
     });
