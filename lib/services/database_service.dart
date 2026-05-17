@@ -3,6 +3,9 @@ import 'package:path/path.dart' as p;
 import '../models/route.dart';
 import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
+import '../models/km_rate.dart';
+import '../models/expense.dart';
+import '../models/location_zone.dart';
 import 'log_service.dart';
 
 class DatabaseService {
@@ -20,7 +23,7 @@ class DatabaseService {
 
     return openDatabase(
       path,
-      version: 3,
+      version: 6,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -80,6 +83,38 @@ class DatabaseService {
         deleted_at TEXT NOT NULL
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE km_rates (
+        year INTEGER PRIMARY KEY,
+        rate REAL NOT NULL
+      )
+    ''');
+
+    await _seedKmRates(db);
+
+    await db.execute('''
+      CREATE TABLE expenses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        trip_leg_id INTEGER,
+        type INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        description TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (trip_leg_id) REFERENCES trip_legs(id) ON DELETE SET NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE location_zones (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        latitude REAL NOT NULL,
+        longitude REAL NOT NULL,
+        radius_meters REAL NOT NULL DEFAULT 200,
+        created_at TEXT NOT NULL
+      )
+    ''');
   }
 
   static Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -96,6 +131,30 @@ class DatabaseService {
         )
       ''');
     }
+    if (oldVersion < 6) {
+      await db.execute('''
+        CREATE TABLE location_zones (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          latitude REAL NOT NULL,
+          longitude REAL NOT NULL,
+          radius_meters REAL NOT NULL DEFAULT 200,
+          created_at TEXT NOT NULL
+        )
+      ''');
+    }
+  }
+
+  static Future<void> _seedKmRates(Database db) async {
+    final batch = db.batch();
+    for (final entry in KmRate.finnishDefaults.entries) {
+      batch.insert(
+        'km_rates',
+        {'year': entry.key, 'rate': entry.value},
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+    await batch.commit(noResult: true);
   }
 
   // ── Routes ──
@@ -311,6 +370,43 @@ class DatabaseService {
     return TripLeg.fromMap(maps.first);
   }
 
+  // ── Km Rates ──
+
+  static Future<Map<int, double>> getAllKmRates() async {
+    final db = await database;
+    final maps = await db.query('km_rates', orderBy: 'year DESC');
+    final result = <int, double>{};
+    for (final m in maps) {
+      result[m['year'] as int] = (m['rate'] as num).toDouble();
+    }
+    return result;
+  }
+
+  static Future<double?> getKmRateForYear(int year) async {
+    final db = await database;
+    final maps = await db.query(
+      'km_rates',
+      where: 'year = ?',
+      whereArgs: [year],
+    );
+    if (maps.isEmpty) return null;
+    return (maps.first['rate'] as num).toDouble();
+  }
+
+  static Future<void> upsertKmRate(int year, double rate) async {
+    final db = await database;
+    await db.insert(
+      'km_rates',
+      {'year': year, 'rate': rate},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  static Future<void> deleteKmRate(int year) async {
+    final db = await database;
+    await db.delete('km_rates', where: 'year = ?', whereArgs: [year]);
+  }
+
   // ── Settings ──
 
   static Future<void> saveSettings(AppSettings settings) async {
@@ -345,5 +441,98 @@ class DatabaseService {
     );
     if (maps.isEmpty) return null;
     return maps.first['value'] as String;
+  }
+
+  // ── Expenses ──
+
+  static Future<Expense> insertExpense(Expense expense) async {
+    final db = await database;
+    final id = await db.insert('expenses', expense.toMap());
+    LogService().info('DB: inserted expense $id (${expense.type.displayName}, ${expense.amount}€)');
+    return expense.copyWith(id: id);
+  }
+
+  static Future<void> deleteExpense(int id) async {
+    final db = await database;
+    await db.delete('expenses', where: 'id = ?', whereArgs: [id]);
+    LogService().info('DB: deleted expense $id');
+  }
+
+  static Future<List<Expense>> getExpensesForLeg(int legId) async {
+    final db = await database;
+    final maps = await db.query(
+      'expenses',
+      where: 'trip_leg_id = ?',
+      whereArgs: [legId],
+      orderBy: 'created_at ASC',
+    );
+    return maps.map((m) => Expense.fromMap(m)).toList();
+  }
+
+  static Future<Map<int, List<Expense>>> getExpensesForLegs(List<int> legIds) async {
+    if (legIds.isEmpty) return {};
+    final db = await database;
+    final placeholders = legIds.map((_) => '?').join(',');
+    final maps = await db.query(
+      'expenses',
+      where: 'trip_leg_id IN ($placeholders)',
+      whereArgs: legIds,
+      orderBy: 'created_at ASC',
+    );
+    final result = <int, List<Expense>>{};
+    for (final legId in legIds) {
+      result[legId] = [];
+    }
+    for (final map in maps) {
+      final expense = Expense.fromMap(map);
+      final legId = expense.tripLegId;
+      if (legId != null) {
+        result[legId]?.add(expense);
+      }
+    }
+    return result;
+  }
+
+  static Future<List<Expense>> getExpensesForDate(String date) async {
+    final db = await database;
+    final maps = await db.rawQuery(
+      '''SELECT e.* FROM expenses e
+         INNER JOIN trip_legs tl ON e.trip_leg_id = tl.id
+         WHERE tl.date = ?
+         ORDER BY e.created_at ASC''',
+      [date],
+    );
+    return maps.map((m) => Expense.fromMap(m)).toList();
+  }
+
+  // ── Location Zones ──
+
+  static Future<LocationZone> insertLocationZone(LocationZone zone) async {
+    final db = await database;
+    final id = await db.insert('location_zones', zone.toMap());
+    LogService().info('DB: inserted location zone $id (${zone.name})');
+    return zone.copyWith(id: id);
+  }
+
+  static Future<void> updateLocationZone(LocationZone zone) async {
+    final db = await database;
+    await db.update(
+      'location_zones',
+      zone.toMap(),
+      where: 'id = ?',
+      whereArgs: [zone.id],
+    );
+  }
+
+  static Future<void> deleteLocationZone(int id) async {
+    final db = await database;
+    await db.delete('location_zones', where: 'id = ?', whereArgs: [id]);
+    LogService().info('DB: deleted location zone $id');
+  }
+
+  static Future<List<LocationZone>> getAllLocationZones() async {
+    final db = await database;
+    final maps = await db.query('location_zones', orderBy: 'name ASC');
+    return maps.map((m) => LocationZone.fromMap(m)).toList();
   }
 }

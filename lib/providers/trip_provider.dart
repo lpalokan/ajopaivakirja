@@ -39,12 +39,18 @@ class TripState {
 
 class TripNotifier extends StateNotifier<TripState> {
   final Ref _ref;
+  Map<int, double>? _kmRates;
 
   TripNotifier(this._ref) : super(const TripState());
 
   AppSettings get _settings => _ref.read(settingsProvider);
 
-  TripCalculator get _calculator => TripCalculator(_settings);
+  TripCalculator get _calculator =>
+      TripCalculator(_settings, kmRates: _kmRates);
+
+  Future<void> loadKmRates() async {
+    _kmRates = await DatabaseService.getAllKmRates();
+  }
 
   String get _today => DateFormat('yyyy-MM-dd').format(DateTime.now());
 
@@ -116,8 +122,8 @@ class TripNotifier extends StateNotifier<TripState> {
     if (leg.isReturnHome) {
       final dayLegs = await DatabaseService.getLegsForDate(_today);
       LogService().info('Trip: finalizing day with ${dayLegs.length} legs');
-      await _calculator.finalizeDay(dayLegs);
-      _syncToSheets(dayLegs);
+      final updatedDayLegs = await _calculator.finalizeDay(dayLegs);
+      _syncToSheets(updatedDayLegs);
     }
 
     final todayLegs = await DatabaseService.getLegsForDate(_today);
@@ -132,6 +138,18 @@ class TripNotifier extends StateNotifier<TripState> {
 
   Future<void> extendReminder() async {
     await load();
+  }
+
+  /// Cancel the active trip without recording it.
+  Future<void> cancelDriving() async {
+    final active = state.activeLeg;
+    if (active == null || active.id == null) return;
+
+    await DatabaseService.deleteTripLeg(active.id!);
+    LogService().info('Trip: cancelled leg ${active.id}');
+
+    final todayLegs = await DatabaseService.getLegsForDate(_today);
+    state = state.copyWith(activeLeg: null, todayLegs: todayLegs);
   }
 
   Future<void> _syncToSheets(List<TripLeg> legs) async {
@@ -171,13 +189,7 @@ class TripNotifier extends StateNotifier<TripState> {
       double grandTotal, double totalHours}) get daySummary {
     final legs = state.todayLegs;
     final summary = _calculator.summarizeDay(legs);
-    final totalHours = legs.isNotEmpty
-        ? legs.last.endTime
-                ?.difference(legs.first.startTime)
-                .inMinutes
-                .toDouble() ??
-            0 / 60.0
-        : 0.0;
+    final totalHours = legs.isNotEmpty ? legs.last.legDurationHours : 0.0;
 
     return (
       totalKm: summary.totalKm,
