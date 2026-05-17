@@ -13,8 +13,8 @@ class AppSettings {
   const AppSettings({
     this.homeLocation = 'Koti',
     this.kmRate = 0.57,
-    this.allowance6h = 24.0,
-    this.allowance10h = 48.0,
+    this.allowance6h = 25.0,
+    this.allowance10h = 54.0,
     this.sheetId = '',
     this.sheetTab = 'Taulukko1',
     this.driverName = kDebugMode ? 'Lapa' : '',
@@ -60,8 +60,8 @@ class AppSettings {
     return AppSettings(
       homeLocation: map['home_location'] ?? 'Koti',
       kmRate: double.tryParse(map['km_rate'] ?? '') ?? 0.57,
-      allowance6h: double.tryParse(map['allowance_6h'] ?? '') ?? 24.0,
-      allowance10h: double.tryParse(map['allowance_10h'] ?? '') ?? 48.0,
+      allowance6h: double.tryParse(map['allowance_6h'] ?? '') ?? 25.0,
+      allowance10h: double.tryParse(map['allowance_10h'] ?? '') ?? 54.0,
       sheetId: map['sheet_id'] ?? '',
       sheetTab: map['sheet_tab'] ?? 'Taulukko1',
       driverName: map['driver_name'] ?? '',

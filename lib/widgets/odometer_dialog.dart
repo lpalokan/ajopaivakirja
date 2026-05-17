@@ -14,6 +14,7 @@ Future<OdometerResult?> showOdometerDialog({
   String? label,
   required String actionLabel,
   String? relatedField,
+  String? initialPurpose,
   int? initialValue,
   int? expectedHint,
   bool showTime = false,
@@ -30,6 +31,7 @@ Future<OdometerResult?> showOdometerDialog({
       label: label,
       actionLabel: actionLabel,
       relatedField: relatedField,
+      initialPurpose: initialPurpose,
       initialValue: initialValue,
       expectedHint: expectedHint,
       showTime: showTime,
@@ -46,6 +48,7 @@ class _OdometerInput extends StatefulWidget {
   final String? label;
   final String actionLabel;
   final String? relatedField;
+  final String? initialPurpose;
   final int? initialValue;
   final int? expectedHint;
   final bool showTime;
@@ -59,6 +62,7 @@ class _OdometerInput extends StatefulWidget {
     this.label,
     required this.actionLabel,
     this.relatedField,
+    this.initialPurpose,
     this.initialValue,
     this.expectedHint,
     this.showTime = false,
@@ -85,6 +89,9 @@ class _OdometerInputState extends State<_OdometerInput> {
     _hasRelatedField = widget.relatedField != null;
     if (widget.initialValue != null) {
       _odometerController.text = widget.initialValue.toString();
+    }
+    if (widget.initialPurpose != null) {
+      _purposeController.text = widget.initialPurpose!;
     }
     _pickedTime = widget.initialTime ?? DateTime.now();
   }

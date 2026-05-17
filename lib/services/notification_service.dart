@@ -8,10 +8,15 @@ class NotificationService {
   static const _channelName = 'Ajo käynnissä';
   static const _arrivedActionId = 'arrived';
   static const _stillDrivingActionId = 'still_driving';
+  static const _startTripActionId = 'start_trip';
+  static const _dismissActionId = 'dismiss';
+  static const _endTripActionId = 'end_trip';
 
   final FlutterLocalNotificationsPlugin _plugin;
   void Function()? onArrived;
   void Function()? onStillDriving;
+  void Function()? onStartTrip;
+  void Function()? onEndTrip;
 
   NotificationService()
       : _plugin = FlutterLocalNotificationsPlugin();
@@ -47,6 +52,10 @@ class NotificationService {
       onArrived?.call();
     } else if (response.actionId == _stillDrivingActionId) {
       onStillDriving?.call();
+    } else if (response.actionId == _startTripActionId) {
+      onStartTrip?.call();
+    } else if (response.actionId == _endTripActionId) {
+      onEndTrip?.call();
     }
   }
 
@@ -171,6 +180,78 @@ class NotificationService {
   Future<void> cancelReminders() async {
     await _plugin.cancel(2);
     await _plugin.cancel(3);
+  }
+
+  /// Show notification when potential driving is detected.
+  Future<void> showTripDetectionNotification() async {
+    const androidDetails = AndroidNotificationDetails(
+      'kilometrikorvaus_detection',
+      'Ajontunnistus',
+      channelDescription: 'Ilmoittaa mahdollisesta ajosta',
+      importance: Importance.high,
+      priority: Priority.high,
+      actions: [
+        AndroidNotificationAction(
+          _startTripActionId,
+          'Aloita ajo',
+          showsUserInterface: true,
+        ),
+        AndroidNotificationAction(
+          _dismissActionId,
+          'Ei nyt',
+          showsUserInterface: false,
+        ),
+      ],
+    );
+
+    await _plugin.show(
+      4,
+      'Ajatko autoa?',
+      'GPS havaitsi liikettä. Aloitetaanko ajokirjanpito?',
+      const NotificationDetails(
+        android: androidDetails,
+        iOS: DarwinNotificationDetails(),
+      ),
+    );
+  }
+
+  /// Show notification when vehicle has stopped after driving.
+  Future<void> showTripEndDetectionNotification() async {
+    const androidDetails = AndroidNotificationDetails(
+      'kilometrikorvaus_detection',
+      'Ajontunnistus',
+      channelDescription: 'Ilmoittaa mahdollisesta saapumisesta',
+      importance: Importance.high,
+      priority: Priority.high,
+      actions: [
+        AndroidNotificationAction(
+          _endTripActionId,
+          'Lopeta ajo',
+          showsUserInterface: true,
+        ),
+        AndroidNotificationAction(
+          _dismissActionId,
+          'Ei nyt',
+          showsUserInterface: false,
+        ),
+      ],
+    );
+
+    await _plugin.show(
+      5,
+      'Saavuitko perille?',
+      'GPS havaitsee, että olet pysähtynyt. Lopetetaanko ajo?',
+      const NotificationDetails(
+        android: androidDetails,
+        iOS: DarwinNotificationDetails(),
+      ),
+    );
+  }
+
+  /// Cancel detection notifications.
+  Future<void> cancelDetectionNotifications() async {
+    await _plugin.cancel(4);
+    await _plugin.cancel(5);
   }
 
   String _formatTime(DateTime dt) {
