@@ -41,7 +41,7 @@ class TripDetectionService {
   Future<void> start() async {
     if (_state != DetectionState.idle) return;
 
-    final hasPerm = await _locationService.hasPermission();
+    final hasPerm = await _locationService.hasPermissionGranted();
     if (!hasPerm) {
       LogService().info('TripDetection: no location permission, skipping');
       return;

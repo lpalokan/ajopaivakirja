@@ -36,6 +36,19 @@ class LocationService {
     }
   }
 
+  /// Check whether location permission is already granted. Never shows a
+  /// dialog — use this from automatic/startup paths so the app does not
+  /// prompt on its own (which made the dialog reappear endlessly).
+  Future<bool> hasPermissionGranted() async {
+    if (!await Geolocator.isLocationServiceEnabled()) return false;
+    final permission = await Geolocator.checkPermission();
+    return permission == LocationPermission.whileInUse ||
+        permission == LocationPermission.always;
+  }
+
+  /// Check permission and, only if the user has not yet been asked this
+  /// session, show the OS dialog exactly once. Call this only in response
+  /// to an explicit user action that needs location.
   Future<bool> hasPermission() async {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) return false;
@@ -101,7 +114,7 @@ class LocationService {
 
     _targetLocation = destinationName;
 
-    final hasPerm = await hasPermission();
+    final hasPerm = await hasPermissionGranted();
     if (!hasPerm) return;
 
     _isMonitoring = true;

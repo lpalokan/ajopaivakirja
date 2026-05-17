@@ -47,6 +47,8 @@ class _FakeLocationService extends LocationService {
   @override
   Future<bool> hasPermission() async => false;
   @override
+  Future<bool> hasPermissionGranted() async => false;
+  @override
   Future<void> startMonitoringDestination(
       String d, settings, NotificationService n) async {}
   @override
