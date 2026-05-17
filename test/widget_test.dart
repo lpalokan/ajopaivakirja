@@ -865,5 +865,42 @@ void main() {
       expect(lines[2], contains('Pysäköinti'));
       expect(lines[2], contains('5.50'));
     });
+
+    test('generateContent starts with a UTF-8 BOM so Excel/Android detect encoding', () {
+      final legs = [
+        TripLeg(
+          id: 1,
+          date: '2025-05-15',
+          legOrder: 1,
+          startTime: now,
+          startOdometer: 10000,
+          startLocation: 'Koti',
+          driver: 'Lapa',
+        ),
+      ];
+
+      final content = CsvExportService.generateContent(legs);
+
+      expect(content.codeUnitAt(0), 0xFEFF);
+    });
+
+    test('generateContent uses RFC 4180 CRLF line endings', () {
+      final legs = [
+        TripLeg(
+          id: 1,
+          date: '2025-05-15',
+          legOrder: 1,
+          startTime: now,
+          startOdometer: 10000,
+          startLocation: 'Koti',
+          driver: 'Lapa',
+        ),
+      ];
+
+      final content = CsvExportService.generateContent(legs);
+
+      expect(content, contains('\r\n'));
+      expect(content.replaceAll('\r\n', '').contains('\n'), isFalse);
+    });
   });
 }

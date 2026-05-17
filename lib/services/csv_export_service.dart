@@ -5,15 +5,25 @@ import '../models/trip_leg.dart';
 import '../models/expense.dart';
 
 class CsvExportService {
+  /// UTF-8 BOM. Excel on Windows and many Android spreadsheet apps assume the
+  /// legacy locale codepage for BOM-less CSV, mangling Scandinavian characters;
+  /// Google Sheets rejects such files as corrupted. The BOM forces UTF-8.
+  static const String _bom = '\uFEFF';
+
+  /// RFC 4180 record separator. Maximises importer compatibility.
+  static const String _crlf = '\r\n';
+
   /// Generate CSV content string for the given legs and optional expenses.
   static String generateContent(
     List<TripLeg> legs, {
     Map<int, List<Expense>>? expensesByLegId,
   }) {
     final buf = StringBuffer();
+    buf.write(_bom);
 
     // Header
-    buf.writeln(_header());
+    buf.write(_header());
+    buf.write(_crlf);
 
     // Rows, sorted by date then leg order
     final sorted = List<TripLeg>.from(legs)
@@ -24,12 +34,14 @@ class CsvExportService {
       });
 
     for (final leg in sorted) {
-      buf.writeln(_row(leg));
+      buf.write(_row(leg));
+      buf.write(_crlf);
 
       // Append expense rows for this leg
       final legExpenses = expensesByLegId?[leg.id] ?? [];
       for (final exp in legExpenses) {
-        buf.writeln(_expenseRow(leg, exp));
+        buf.write(_expenseRow(leg, exp));
+        buf.write(_crlf);
       }
     }
 
