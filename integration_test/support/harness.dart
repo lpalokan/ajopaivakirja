@@ -144,11 +144,21 @@ Future<void> waitFor(WidgetTester tester, Finder f,
 /// Scroll [f] into view inside the first Scrollable (lazy lists don't build
 /// off-screen widgets). Swallows not-found so the caller's expect reports it.
 Future<void> scrollIntoView(WidgetTester tester, Finder f) async {
+  if (f.evaluate().isNotEmpty) return; // already present, don't scroll
   final sc = find.byType(Scrollable);
   if (sc.evaluate().isEmpty) return;
+  // If the list already fits the screen there is nothing to scroll —
+  // calling scrollUntilVisible here just overscroll-bounces repeatedly
+  // (looks like the screen "vibrating"). Skip it.
   try {
-    await tester.scrollUntilVisible(f, 120,
-        scrollable: sc.first, maxScrolls: 60);
+    final pos = tester.state<ScrollableState>(sc.first).position;
+    if (pos.maxScrollExtent <= 0.0) return;
+  } catch (_) {
+    return;
+  }
+  try {
+    await tester.scrollUntilVisible(f, 300,
+        scrollable: sc.first, maxScrolls: 15);
   } catch (_) {}
 }
 
