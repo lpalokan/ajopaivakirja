@@ -52,13 +52,23 @@ class TripDetectionService {
     _lowSpeedSeconds = 0;
     _wasDriving = false;
 
+    // No timeLimit: a stationary device produces no updates, and a
+    // timeLimit makes the stream throw TimeoutException every time that
+    // happens. onError tears monitoring down cleanly instead of leaking
+    // an unhandled async error.
     _positionStream = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,
         distanceFilter: 50,
-        timeLimit: Duration(seconds: 30),
       ),
-    ).listen(_onPosition);
+    ).listen(
+      _onPosition,
+      onError: (Object e) {
+        LogService().info('TripDetection: position stream error: $e');
+        stop();
+      },
+      cancelOnError: true,
+    );
 
     _speedCheckTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       _checkDrivingState();

@@ -124,9 +124,16 @@ class LocationService {
         accuracy: LocationAccuracy.high,
         distanceFilter: 100,
       ),
-    ).listen((position) {
-      _currentPosition = position;
-    });
+    ).listen(
+      (position) {
+        _currentPosition = position;
+      },
+      onError: (Object _) {
+        // A transient location error must not leak as an unhandled
+        // async error; monitoring simply pauses until the next fix.
+      },
+      cancelOnError: false,
+    );
 
     _proximityTimer =
         Timer.periodic(const Duration(seconds: 30), (_) async {
