@@ -43,7 +43,7 @@ class _ExpenseDialogState extends State<ExpenseDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             DropdownButtonFormField<ExpenseType>(
-              value: _type,
+              initialValue: _type,
               decoration: const InputDecoration(
                 labelText: 'Tyyppi',
                 border: OutlineInputBorder(),

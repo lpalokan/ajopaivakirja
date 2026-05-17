@@ -75,6 +75,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     if (!_hasUnsynced) {
       final deletedIds = await DatabaseService.getDeletedLegIds();
       if (deletedIds.isEmpty) {
+        if (!mounted) return;
         final confirm = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
