@@ -44,6 +44,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() => _loading = true);
     _kmRates = await DatabaseService.getAllKmRates();
     final dates = await DatabaseService.getDistinctDates();
