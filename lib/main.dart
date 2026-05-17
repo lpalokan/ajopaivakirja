@@ -8,6 +8,7 @@ import 'services/background_service.dart';
 import 'services/sheets_service.dart';
 import 'services/odometer_vision_service.dart';
 import 'services/trip_detection_service.dart';
+import 'services/file_opener_service.dart';
 
 final notificationServiceProvider = Provider<NotificationService>((ref) {
   return NotificationService();
@@ -32,6 +33,10 @@ final sheetsServiceProvider = Provider<SheetsService>((ref) {
 
 final odometerVisionServiceProvider = Provider<OdometerVisionService>((ref) {
   return OdometerVisionService();
+});
+
+final fileOpenerServiceProvider = Provider<FileOpenerService>((ref) {
+  return FileOpenerService();
 });
 
 final tripDetectionServiceProvider = Provider<TripDetectionService>((ref) {

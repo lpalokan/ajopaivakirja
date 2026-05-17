@@ -53,6 +53,21 @@ Feature: Trip history
     And I open history
     Then I see text containing {'100.0 km'}
 
+  Scenario: Exporting CSV offers opening it in an app
+    When I start the {'Töihin'} route at {1000} km
+    And I arrive at {1054} km
+    And I open history
+    And I export the CSV
+    Then I see {'Avaa sovelluksessa'}
+
+  Scenario: Opening an exported CSV launches an external app
+    When I start the {'Töihin'} route at {1000} km
+    And I arrive at {1054} km
+    And I open history
+    And I export the CSV
+    And I tap {'Avaa sovelluksessa'}
+    Then the file was opened in an external app
+
   Scenario: Sync without a sheet id shows a notice
     When I start the {'Töihin'} route at {1000} km
     And I arrive at {1054} km
