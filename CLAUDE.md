@@ -11,6 +11,13 @@ This file provides guidance to Claude Code when working with code in this reposi
 - Push the branch and create a PR targeting `main`.
 - Reference the issue number in the PR body (e.g., "Closes #2").
 
+## Shell command conventions
+
+- When giving the user shell commands to run, **do not put inline `#`
+  comments in the command blocks** (neither trailing nor standalone).
+  The user pastes blocks into zsh and the comments cause confusion.
+  Put any explanation in prose before or after the block instead.
+
 ## Project
 
 Flutter Android app for tracking work mileage and daily allowances (kilometrikorvaus / päiväraha).
