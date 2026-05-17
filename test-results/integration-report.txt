@@ -1,9 +1,9 @@
 ===================================================================
  Ajopäiväkirja — End-to-end use-case test report
 ===================================================================
-Timestamp     : 2026-05-17 15:57:51 +0300
+Timestamp     : 2026-05-17 16:04:41 +0300
 Git branch    : claude/android-automated-testing-K6ue8
-Git commit    : ef28b74
+Git commit    : a0617e4
 Flutter       : Flutter 3.41.9 • channel stable • https://github.com/flutter/flutter.git
 Emulator      : Android 14 / API 34 / arm64-v8a
 Suite         : integration_test/all_features_test.dart (Gherkin aggregator)
@@ -12,10 +12,10 @@ Suite         : integration_test/all_features_test.dart (Gherkin aggregator)
 ----- build_runner (Gherkin → Dart) -------------------------------
   0s bdd_widget_test:featureBuilder on 7 inputs; integration_test/features/calculations.feature
   0s bdd_widget_test:featureBuilder on 7 inputs: 1 skipped; integration_test/features/driving.feature
-  0s bdd_widget_test:featureBuilder on 7 inputs: 6 skipped, 1 output
+  0s bdd_widget_test:featureBuilder on 7 inputs: 7 skipped
   Running the post build.
   Writing the asset graph.
-  Built with build_runner in 2s; wrote 1 output.
+  Built with build_runner in 1s; wrote 0 outputs.
 
 ----- flutter analyze (advisory) ----------------------------------
 Analyzing ajopaivakirja...                                      
@@ -24,15 +24,15 @@ Analyzing ajopaivakirja...
    info • Don't use 'BuildContext's across async gaps • lib/screens/route_management_screen.dart:213:7 • use_build_context_synchronously
    info • Don't use 'BuildContext's across async gaps • lib/screens/trip_history_screen.dart:69:11 • use_build_context_synchronously
 
-3 issues found. (ran in 5.7s)
+3 issues found. (ran in 6.0s)
 
 ----- integration_test (emulator) ---------------------------------
 00:00 +0: loading /Users/lapa/Documents/ajopaivakirja/integration_test/all_features_test.dart
-Running Gradle task 'assembleDebug'...                             17.4s
+Running Gradle task 'assembleDebug'...                             18.1s
 ✓ Built build/app/outputs/flutter-apk/app-debug.apk
-Installing build/app/outputs/flutter-apk/app-debug.apk...          876ms
+Installing build/app/outputs/flutter-apk/app-debug.apk...          900ms
 00:00 +0: app boots on device and renders the home screen
-00:06 +1: App boot and navigation Home screen renders
+00:07 +1: App boot and navigation Home screen renders
 00:07 +2: App boot and navigation Navigate to Settings and back
 00:09 +3: App boot and navigation Navigate to Routes and back
 00:11 +4: App boot and navigation Navigate to History and back
@@ -44,177 +44,166 @@ Installing build/app/outputs/flutter-apk/app-debug.apk...          876ms
 00:17 +10: Route management Add a new route
 00:20 +11: Route management Empty route form blocks save
 00:23 +12: Route management Cancel the route dialog
-00:26 +13: Route management Editing a route opens the edit dialog
-00:28 +14: Route management Delete a route with confirmation
-00:29 +15: Route management Cancelling deletion keeps the route
-00:31 +16: Route management A new route appears on the home recent list
+00:25 +13: Route management Editing a route opens the edit dialog
+00:26 +14: Route management Delete a route with confirmation
+00:28 +15: Route management Cancelling deletion keeps the route
+00:30 +16: Route management A new route appears on the home recent list
 00:34 +17: Settings Settings shows default values
 00:36 +18: Settings Saving shows a confirmation
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following StateError was thrown running a test:
+Bad state: No element
 
-Warning: A call to tap() with finder "Found 1 widget with type "FilledButton" that are ancestors of widget with text "Tallenna": [
-  FilledButton(dependencies: [IconTheme, InheritedCupertinoTheme, MediaQuery, _InheritedTheme, _LocalizationsScope-[GlobalKey#80b31]], state: _ButtonStyleState#b5115),
-]" derived an Offset (Offset(205.7, 850.3)) that would not hit test on the specified widget.
-Maybe the widget is actually off-screen, or another widget is obscuring it, or the widget cannot receive pointer events.
-The finder corresponds to this RenderBox: RenderSemanticsAnnotations#588f3 relayoutBoundary=up5
-The hit test result at that offset is: HitTestResult(RenderPointerListener#4b29a@Offset(205.7, 745.5), RenderSemanticsGestureHandler#0dc37@Offset(205.7, 745.5), RenderPointerListener#7d66d@Offset(205.7, 745.5), _RenderScrollSemantics#c7fda@Offset(205.7, 745.5), RenderCustomPaint#4da36@Offset(205.7, 745.5), _ImageFilterRenderObject#a745b@Offset(205.7, 745.5), RenderClipRect#5688d@Offset(205.7, 745.5), RenderSemanticsAnnotations#f3897@Offset(205.7, 745.5), RenderCustomMultiChildLayoutBox#20071@Offset(205.7, 850.3), _RenderInkFeatures#6c96b@Offset(205.7, 850.3), RenderPhysicalModel#e6d10@Offset(205.7, 850.3), RenderSemanticsAnnotations#db908@Offset(205.7, 850.3), RenderRepaintBoundary#a4c74@Offset(205.7, 850.3), RenderIgnorePointer#b56ca@Offset(205.7, 850.3), RenderAnimatedOpacity#b6961@Offset(205.7, 850.3), RenderAnimatedOpacity#db841@Offset(205.7, 850.3), _RenderColoredBox#41832@Offset(205.7, 850.3), RenderAnimatedOpacity#f4b24@Offset(205.7, 850.3), RenderIgnorePointer#0ff2c@Offset(205.7, 850.3), RenderAnimatedOpacity#aad13@Offset(205.7, 850.3), RenderRepaintBoundary#4380a@Offset(205.7, 850.3), RenderSemanticsAnnotations#8a593@Offset(205.7, 850.3), RenderOffstage#72213@Offset(205.7, 850.3), RenderSemanticsAnnotations#5d666@Offset(205.7, 850.3), _RenderTheater#da02f@Offset(205.7, 850.3), RenderAbsorbPointer#9c92c@Offset(205.7, 850.3), RenderPointerListener#638e4@Offset(205.7, 850.3), RenderSemanticsAnnotations#35d56@Offset(205.7, 850.3), RenderSemanticsAnnotations#1ca75@Offset(205.7, 850.3), RenderSemanticsAnnotations#3aa97@Offset(205.7, 850.3), RenderSemanticsAnnotations#30296@Offset(205.7, 850.3), RenderTapRegionSurface#54bc4@Offset(205.7, 850.3), RenderSemanticsAnnotations#59ccb@Offset(205.7, 850.3), RenderSemanticsAnnotations#f8d40@Offset(205.7, 850.3), HitTestEntry<HitTestTarget>#9d14e(_ReusableRenderView#855e6 NEEDS-PAINT), HitTestEntry<HitTestTarget>#1f72d(<IntegrationTestWidgetsFlutterBinding>))
-#0      WidgetController._getElementPoint (package:flutter_test/src/controller.dart:2158:25)
-#1      WidgetController.getCenter (package:flutter_test/src/controller.dart:1942:12)
-#2      WidgetController.tap (package:flutter_test/src/controller.dart:1075:7)
-#3      saveSettings (file:///Users/lapa/Documents/ajopaivakirja/integration_test/support/harness.dart:277:16)
-<asynchronous suspension>
-#4      iSaveSettings (file:///Users/lapa/Documents/ajopaivakirja/integration_test/features/step/i_save_settings.dart:6:3)
-<asynchronous suspension>
-#5      main.<anonymous closure>.<anonymous closure> (file:///Users/lapa/Documents/ajopaivakirja/integration_test/features/settings_test.dart:37:7)
+When the exception was thrown, this was the stack:
+#0      Iterable.single (dart:core/iterable.dart:694:25)
+#1      WidgetController.element (package:flutter_test/src/controller.dart:883:30)
+#2      WidgetController.ensureVisible (package:flutter_test/src/controller.dart:2382:32)
+#3      saveSettings (file:///Users/lapa/Documents/ajopaivakirja/integration_test/support/harness.dart:280:16)
+#4      iSaveSettings (file:///Users/lapa/Documents/ajopaivakirja/integration_test/features/step/i_save_settings.dart:6:9)
+#5      main.<anonymous closure>.<anonymous closure> (file:///Users/lapa/Documents/ajopaivakirja/integration_test/features/settings_test.dart:37:13)
 <asynchronous suspension>
 #6      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
 <asynchronous suspension>
 #7      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
 <asynchronous suspension>
-#8      StackZoneSpecification._registerCallback.<anonymous closure> (package:stack_trace/src/stack_zone_specification.dart:114:42)
-<asynchronous suspension>
-To silence this warning, pass "warnIfMissed: false" to "tap()".
-To make this warning fatal, set WidgetController.hitTestWarningShouldBeFatal to true.
-
-══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
-The following TestFailure was thrown running a test:
-Expected: at least one matching candidate
-  Actual: _TextWidgetFinder:<Found 0 widgets with text "Asetukset tallennettu": []>
-   Which: means none were found but some were expected
-
-When the exception was thrown, this was the stack:
-#4      expectVisible (file:///Users/lapa/Documents/ajopaivakirja/integration_test/support/harness.dart:228:3)
-<asynchronous suspension>
-#5      iSee (file:///Users/lapa/Documents/ajopaivakirja/integration_test/features/step/i_see.dart:6:3)
-<asynchronous suspension>
-#6      main.<anonymous closure>.<anonymous closure> (file:///Users/lapa/Documents/ajopaivakirja/integration_test/features/settings_test.dart:38:7)
-<asynchronous suspension>
-#7      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
-<asynchronous suspension>
-#8      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
-<asynchronous suspension>
 <asynchronous suspension>
 (elided one frame from package:stack_trace)
 
-This was caught by the test expectation on the following line:
-  file:///Users/lapa/Documents/ajopaivakirja/integration_test/support/harness.dart line 228
 The test description was:
   Saving shows a confirmation
 ════════════════════════════════════════════════════════════════════════════════════════════════════
-00:48 +18 -1: Settings Saving shows a confirmation [E]
+00:38 +18 -1: Settings Saving shows a confirmation [E]
   Test failed. See exception logs above.
   The test description was: Saving shows a confirmation
   
-00:48 +18 -1: Settings Home location persists
+00:38 +18 -1: Settings Home location persists
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following StateError was thrown running a test:
+Bad state: No element
 
-Warning: A call to tap() with finder "Found 1 widget with type "FilledButton" that are ancestors of widget with text "Tallenna": [
-  FilledButton(dependencies: [IconTheme, InheritedCupertinoTheme, MediaQuery, _InheritedTheme, _LocalizationsScope-[GlobalKey#e58d5]], state: _ButtonStyleState#c922a),
-]" derived an Offset (Offset(205.7, 850.3)) that would not hit test on the specified widget.
-Maybe the widget is actually off-screen, or another widget is obscuring it, or the widget cannot receive pointer events.
-The finder corresponds to this RenderBox: RenderSemanticsAnnotations#3e056 relayoutBoundary=up5
-The hit test result at that offset is: HitTestResult(RenderPointerListener#f36ba@Offset(205.7, 745.5), RenderSemanticsGestureHandler#31e02@Offset(205.7, 745.5), RenderPointerListener#93925@Offset(205.7, 745.5), _RenderScrollSemantics#201c2@Offset(205.7, 745.5), RenderCustomPaint#62619@Offset(205.7, 745.5), _ImageFilterRenderObject#5dfd0@Offset(205.7, 745.5), RenderClipRect#705f2@Offset(205.7, 745.5), RenderSemanticsAnnotations#0b255@Offset(205.7, 745.5), RenderCustomMultiChildLayoutBox#d1e39@Offset(205.7, 850.3), _RenderInkFeatures#2fba9@Offset(205.7, 850.3), RenderPhysicalModel#35e66@Offset(205.7, 850.3), RenderSemanticsAnnotations#67ec0@Offset(205.7, 850.3), RenderRepaintBoundary#8df93@Offset(205.7, 850.3), RenderIgnorePointer#361ee@Offset(205.7, 850.3), RenderAnimatedOpacity#a941d@Offset(205.7, 850.3), RenderAnimatedOpacity#baf2d@Offset(205.7, 850.3), _RenderColoredBox#79e3e@Offset(205.7, 850.3), RenderAnimatedOpacity#228b4@Offset(205.7, 850.3), RenderIgnorePointer#913c9@Offset(205.7, 850.3), RenderAnimatedOpacity#22e4e@Offset(205.7, 850.3), RenderRepaintBoundary#829dc@Offset(205.7, 850.3), RenderSemanticsAnnotations#a36fc@Offset(205.7, 850.3), RenderOffstage#d9040@Offset(205.7, 850.3), RenderSemanticsAnnotations#ed2c9@Offset(205.7, 850.3), _RenderTheater#45dc7@Offset(205.7, 850.3), RenderAbsorbPointer#987e9@Offset(205.7, 850.3), RenderPointerListener#43328@Offset(205.7, 850.3), RenderSemanticsAnnotations#8f164@Offset(205.7, 850.3), RenderSemanticsAnnotations#2bfd7@Offset(205.7, 850.3), RenderSemanticsAnnotations#9ac8e@Offset(205.7, 850.3), RenderSemanticsAnnotations#00bd5@Offset(205.7, 850.3), RenderTapRegionSurface#c706d@Offset(205.7, 850.3), RenderSemanticsAnnotations#65c13@Offset(205.7, 850.3), RenderSemanticsAnnotations#a6771@Offset(205.7, 850.3), HitTestEntry<HitTestTarget>#2c2e1(_ReusableRenderView#855e6 NEEDS-PAINT), HitTestEntry<HitTestTarget>#ae314(<IntegrationTestWidgetsFlutterBinding>))
-#0      WidgetController._getElementPoint (package:flutter_test/src/controller.dart:2158:25)
-#1      WidgetController.getCenter (package:flutter_test/src/controller.dart:1942:12)
-#2      WidgetController.tap (package:flutter_test/src/controller.dart:1075:7)
-#3      saveSettings (file:///Users/lapa/Documents/ajopaivakirja/integration_test/support/harness.dart:277:16)
-<asynchronous suspension>
-#4      iSaveSettings (file:///Users/lapa/Documents/ajopaivakirja/integration_test/features/step/i_save_settings.dart:6:3)
-<asynchronous suspension>
-#5      main.<anonymous closure>.<anonymous closure> (file:///Users/lapa/Documents/ajopaivakirja/integration_test/features/settings_test.dart:44:7)
+When the exception was thrown, this was the stack:
+#0      Iterable.single (dart:core/iterable.dart:694:25)
+#1      WidgetController.element (package:flutter_test/src/controller.dart:883:30)
+#2      WidgetController.ensureVisible (package:flutter_test/src/controller.dart:2382:32)
+#3      saveSettings (file:///Users/lapa/Documents/ajopaivakirja/integration_test/support/harness.dart:280:16)
+#4      iSaveSettings (file:///Users/lapa/Documents/ajopaivakirja/integration_test/features/step/i_save_settings.dart:6:9)
+#5      main.<anonymous closure>.<anonymous closure> (file:///Users/lapa/Documents/ajopaivakirja/integration_test/features/settings_test.dart:44:13)
 <asynchronous suspension>
 #6      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
 <asynchronous suspension>
 #7      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
 <asynchronous suspension>
-#8      StackZoneSpecification._registerCallback.<anonymous closure> (package:stack_trace/src/stack_zone_specification.dart:114:42)
-<asynchronous suspension>
-To silence this warning, pass "warnIfMissed: false" to "tap()".
-To make this warning fatal, set WidgetController.hitTestWarningShouldBeFatal to true.
-
-══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
-The following TestFailure was thrown running a test:
-Expected: 'Saunatie 9'
-  Actual: <null>
-   Which: not an <Instance of 'String'>
-
-When the exception was thrown, this was the stack:
-#4      expectSetting (file:///Users/lapa/Documents/ajopaivakirja/integration_test/support/harness.dart:246:3)
-<asynchronous suspension>
-#5      theSettingIs (file:///Users/lapa/Documents/ajopaivakirja/integration_test/features/step/the_setting_is.dart:7:3)
-<asynchronous suspension>
-#6      main.<anonymous closure>.<anonymous closure> (file:///Users/lapa/Documents/ajopaivakirja/integration_test/features/settings_test.dart:45:7)
-<asynchronous suspension>
-#7      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
-<asynchronous suspension>
-#8      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
-<asynchronous suspension>
 <asynchronous suspension>
 (elided one frame from package:stack_trace)
 
-This was caught by the test expectation on the following line:
-  file:///Users/lapa/Documents/ajopaivakirja/integration_test/support/harness.dart line 246
 The test description was:
   Home location persists
 ════════════════════════════════════════════════════════════════════════════════════════════════════
-00:56 +18 -2: Settings Home location persists [E]
+00:41 +18 -2: Settings Home location persists [E]
   Test failed. See exception logs above.
   The test description was: Home location persists
   
-00:56 +18 -2: Settings Km rate persists across reopen
-01:01 +19 -2: Settings Driver name persists across reopen
-01:04 +20 -2: Settings Sheet tab persists
+00:41 +18 -2: Settings Km rate persists across reopen
 ══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
-The following TestFailure was thrown running a test:
-Expected: 'Matkat2026'
-  Actual: 'Taulukko1'
-   Which: is different.
-          Expected: Matkat2026 ...
-            Actual: Taulukko1
-                    ^
-           Differ at offset 0
+The following StateError was thrown running a test:
+Bad state: No element
 
 When the exception was thrown, this was the stack:
-#4      expectSetting (file:///Users/lapa/Documents/ajopaivakirja/integration_test/support/harness.dart:246:3)
+#0      Iterable.single (dart:core/iterable.dart:694:25)
+#1      WidgetController.element (package:flutter_test/src/controller.dart:883:30)
+#2      WidgetController.ensureVisible (package:flutter_test/src/controller.dart:2382:32)
+#3      saveSettings (file:///Users/lapa/Documents/ajopaivakirja/integration_test/support/harness.dart:280:16)
+#4      iSaveSettings (file:///Users/lapa/Documents/ajopaivakirja/integration_test/features/step/i_save_settings.dart:6:9)
+#5      main.<anonymous closure>.<anonymous closure> (file:///Users/lapa/Documents/ajopaivakirja/integration_test/features/settings_test.dart:51:13)
 <asynchronous suspension>
-#5      theSettingIs (file:///Users/lapa/Documents/ajopaivakirja/integration_test/features/step/the_setting_is.dart:7:3)
+#6      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
 <asynchronous suspension>
-#6      main.<anonymous closure>.<anonymous closure> (file:///Users/lapa/Documents/ajopaivakirja/integration_test/features/settings_test.dart:68:7)
-<asynchronous suspension>
-#7      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
-<asynchronous suspension>
-#8      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
+#7      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
 <asynchronous suspension>
 <asynchronous suspension>
 (elided one frame from package:stack_trace)
 
-This was caught by the test expectation on the following line:
-  file:///Users/lapa/Documents/ajopaivakirja/integration_test/support/harness.dart line 246
+The test description was:
+  Km rate persists across reopen
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:44 +18 -3: Settings Km rate persists across reopen [E]
+  Test failed. See exception logs above.
+  The test description was: Km rate persists across reopen
+  
+00:44 +18 -3: Settings Driver name persists across reopen
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following StateError was thrown running a test:
+Bad state: No element
+
+When the exception was thrown, this was the stack:
+#0      Iterable.single (dart:core/iterable.dart:694:25)
+#1      WidgetController.element (package:flutter_test/src/controller.dart:883:30)
+#2      WidgetController.ensureVisible (package:flutter_test/src/controller.dart:2382:32)
+#3      saveSettings (file:///Users/lapa/Documents/ajopaivakirja/integration_test/support/harness.dart:280:16)
+#4      iSaveSettings (file:///Users/lapa/Documents/ajopaivakirja/integration_test/features/step/i_save_settings.dart:6:9)
+#5      main.<anonymous closure>.<anonymous closure> (file:///Users/lapa/Documents/ajopaivakirja/integration_test/features/settings_test.dart:59:13)
+<asynchronous suspension>
+#6      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#7      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+The test description was:
+  Driver name persists across reopen
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:47 +18 -4: Settings Driver name persists across reopen [E]
+  Test failed. See exception logs above.
+  The test description was: Driver name persists across reopen
+  
+00:47 +18 -4: Settings Sheet tab persists
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following StateError was thrown running a test:
+Bad state: No element
+
+When the exception was thrown, this was the stack:
+#0      Iterable.single (dart:core/iterable.dart:694:25)
+#1      WidgetController.element (package:flutter_test/src/controller.dart:883:30)
+#2      WidgetController.ensureVisible (package:flutter_test/src/controller.dart:2382:32)
+#3      saveSettings (file:///Users/lapa/Documents/ajopaivakirja/integration_test/support/harness.dart:280:16)
+#4      iSaveSettings (file:///Users/lapa/Documents/ajopaivakirja/integration_test/features/step/i_save_settings.dart:6:9)
+#5      main.<anonymous closure>.<anonymous closure> (file:///Users/lapa/Documents/ajopaivakirja/integration_test/features/settings_test.dart:67:13)
+<asynchronous suspension>
+#6      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#7      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1682:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
 The test description was:
   Sheet tab persists
 ════════════════════════════════════════════════════════════════════════════════════════════════════
-01:11 +20 -3: Settings Sheet tab persists [E]
+00:49 +18 -5: Settings Sheet tab persists [E]
   Test failed. See exception logs above.
   The test description was: Sheet tab persists
   
-01:11 +20 -3: Settings Debug logging toggle reveals log actions
-01:19 +21 -3: Driving flow Start dialog appears from a route
-01:21 +22 -3: Driving flow Empty odometer blocks start
-01:25 +23 -3: Driving flow Starting a trip shows the active-trip card
-01:28 +24 -3: Driving flow A completed trip shows in today's summary
-01:36 +25 -3: Driving flow Stopping a trip clears the active card
-01:42 +26 -3: Driving flow Km allowance is reflected in the grand total
-01:48 +27 -3: Driving flow A return-home day accumulates total distance
-02:00 +28 -3: Trip history A completed trip appears in history
-02:07 +29 -3: Trip history The edit-leg dialog opens from history
-02:15 +30 -3: Trip history Editing a leg purpose and saving
-02:23 +31 -3: Trip history Delete a leg via swipe
-02:31 +32 -3: Trip history Cancelling leg deletion keeps the leg
-02:38 +33 -3: Trip history History shows a per-day total
-02:45 +34 -3: Trip history Sync without a sheet id shows a notice
-02:52 +35 -3: Reimbursement calculations end-to-end A zero-distance trip yields zero allowance
-02:59 +36 -3: Reimbursement calculations end-to-end Two legs accumulate total distance
-03:11 +37 -3: Reimbursement calculations end-to-end Grand total combines the km allowance
-03:17 +38 -3: (tearDownAll)
-03:19 +38 -3: Some tests failed.
+00:49 +18 -5: Settings Debug logging toggle reveals log actions
+00:58 +19 -5: Driving flow Start dialog appears from a route
+01:00 +20 -5: Driving flow Empty odometer blocks start
+01:04 +21 -5: Driving flow Starting a trip shows the active-trip card
+01:09 +22 -5: Driving flow A completed trip shows in today's summary
+01:16 +23 -5: Driving flow Stopping a trip clears the active card
+01:22 +24 -5: Driving flow Km allowance is reflected in the grand total
+01:29 +25 -5: Driving flow A return-home day accumulates total distance
+01:41 +26 -5: Trip history A completed trip appears in history
+01:47 +27 -5: Trip history The edit-leg dialog opens from history
+01:55 +28 -5: Trip history Editing a leg purpose and saving
+02:03 +29 -5: Trip history Delete a leg via swipe
+02:11 +30 -5: Trip history Cancelling leg deletion keeps the leg
+02:18 +31 -5: Trip history History shows a per-day total
+02:25 +32 -5: Trip history Sync without a sheet id shows a notice
+02:32 +33 -5: Reimbursement calculations end-to-end A zero-distance trip yields zero allowance
+02:39 +34 -5: Reimbursement calculations end-to-end Two legs accumulate total distance
+02:51 +35 -5: Reimbursement calculations end-to-end Grand total combines the km allowance
+02:57 +36 -5: (tearDownAll)
+02:59 +36 -5: Some tests failed.
 
 ----- result ------------------------------------------------------
 STATUS: FAIL (exit 1) — see per-test output above
