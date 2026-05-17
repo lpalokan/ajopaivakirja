@@ -27,6 +27,7 @@ integration_test/
   support/
     harness.dart           # the engine: fakes + reusable actions
   app_smoke_test.dart      # standalone device boot check
+  all_features_test.dart   # AGGREGATOR — runs everything as one suite
 build.yaml                 # bdd_widget_test configuration
 ```
 
@@ -34,6 +35,11 @@ build.yaml                 # bdd_widget_test configuration
 `*_test.dart`, and looks up each step in `features/step/`. The generated
 files are git-ignored and rebuilt on every run, so **never edit a
 `*_test.dart`** — edit the `.feature` or the step/harness instead.
+
+`all_features_test.dart` imports every generated test and runs them under
+one binding so the app is built/installed **once** (not once per
+feature). The suite is run via this aggregator. **When you add a new
+`.feature`, add one `import` + one `main()` call to the aggregator.**
 
 ## The BDD-first loop (mandatory — see CLAUDE.md)
 
@@ -59,11 +65,12 @@ files are git-ignored and rebuilt on every run, so **never edit a
   external services (notifications/location/Sheets/OCR) faked, so no
   permission dialogs or network are hit. Debug builds then seed two
   routes: **Töihin** (Koti→Työ, 54 km) and **Kotiin** (Työ→Koti, 54 km).
-- **Parameter syntax (important):** string parameters are wrapped in
-  **single quotes** (`'Töihin'`), integer parameters in **curly braces**
-  (`{1054}`). Double quotes are treated as literal text and will make
-  `bdd_widget_test` generate a throwaway stub per literal — not what you
-  want. Example: `When I start the 'Töihin' route at {1000} km`.
+- **Parameter syntax (important):** `bdd_widget_test` parameters are
+  **Dart expressions inside curly braces**. A string parameter is a Dart
+  string literal in braces: `{'Töihin'}`. An integer is bare in braces:
+  `{1000}`. Quotes *without* braces are literal text and make the
+  generator bake a throwaway stub per value — not what you want.
+  Example: `When I start the {'Töihin'} route at {1000} km`.
 
 ## Step catalogue
 
