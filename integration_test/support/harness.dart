@@ -273,12 +273,17 @@ Future<void> enterDialogField(
 }
 
 Future<void> saveSettings(WidgetTester tester) async {
-  // The Save button sits at the bottom of a long ListView. It is built
-  // (so finders match) but off-screen, so a plain tap() misses it.
-  // ensureVisible scrolls it into the viewport so the tap actually lands.
+  // The Save button is the last child of a lazy ListView. It must be
+  // (1) BUILT — scrollUntilVisible scrolls/builds it (ensureVisible alone
+  // throws "No element" on an unbuilt child), then (2) fully ON-SCREEN —
+  // ensureVisible, else a plain tap() lands off-screen and is silently
+  // missed.
   final btn = find.widgetWithText(FilledButton, 'Tallenna');
-  await tester.ensureVisible(btn);
-  await settle(tester);
+  await scrollIntoView(tester, find.text('Tallenna'));
+  if (btn.evaluate().isNotEmpty) {
+    await tester.ensureVisible(btn);
+    await settle(tester);
+  }
   await tester.tap(btn);
   await pumpFor(tester, 1000); // keep the transient SnackBar visible
 }
