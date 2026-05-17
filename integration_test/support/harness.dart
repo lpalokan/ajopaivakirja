@@ -273,18 +273,30 @@ Future<void> enterDialogField(
 }
 
 Future<void> saveSettings(WidgetTester tester) async {
-  // The Save button is the last child of a lazy ListView. It must be
-  // (1) BUILT — scrollUntilVisible scrolls/builds it (ensureVisible alone
-  // throws "No element" on an unbuilt child), then (2) fully ON-SCREEN —
-  // ensureVisible, else a plain tap() lands off-screen and is silently
-  // missed.
+  // The Save button is the last child of a lazy ListView. Build it by
+  // scrolling the settings Scrollable until the button widget itself
+  // exists (not via the early-returning scrollIntoView helper), then
+  // ensureVisible so the tap actually lands on-screen.
   final btn = find.widgetWithText(FilledButton, 'Tallenna');
-  await scrollIntoView(tester, find.text('Tallenna'));
+  final sc = find.byType(Scrollable).first;
+  if (btn.evaluate().isEmpty) {
+    try {
+      await tester.scrollUntilVisible(btn, 300.0,
+          scrollable: sc, maxScrolls: 40);
+    } catch (_) {
+      // Fallback: hard-drag the list to the bottom.
+      for (var i = 0; i < 12 && btn.evaluate().isEmpty; i++) {
+        await tester.drag(sc, const Offset(0, -400));
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+    }
+  }
+  await settle(tester);
   if (btn.evaluate().isNotEmpty) {
     await tester.ensureVisible(btn);
     await settle(tester);
   }
-  await tester.tap(btn);
+  await tester.tap(btn, warnIfMissed: false);
   await pumpFor(tester, 1000); // keep the transient SnackBar visible
 }
 
