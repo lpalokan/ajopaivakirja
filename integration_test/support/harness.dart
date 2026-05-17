@@ -307,6 +307,37 @@ Future<void> startTrip(
   await waitFor(tester, find.widgetWithText(FilledButton, 'Olen perillä'));
 }
 
+Future<void> startAdHoc(
+    WidgetTester tester, String from, int odometer) async {
+  // The home "Aloita ajo" button (no predefined route) — distinct from the
+  // per-route "Aloita" buttons and the dialog's own "Aloita ajo" action.
+  final homeBtn = find.widgetWithText(FilledButton, 'Aloita ajo');
+  await scrollIntoView(tester, homeBtn);
+  await tester.tap(homeBtn.first);
+  await settle(tester);
+  await waitFor(tester, _dialogField('Lähtöpaikka'));
+  await tester.enterText(_dialogField('Lähtöpaikka'), from);
+  await tester.enterText(_odometerField, '$odometer');
+  // .last: the dialog action button (home button still in the tree behind).
+  await tester.tap(find.widgetWithText(FilledButton, 'Aloita ajo').last);
+  await settle(tester);
+  await waitFor(tester, find.widgetWithText(FilledButton, 'Olen perillä'));
+}
+
+Future<void> arriveAdHoc(
+    WidgetTester tester, String to, int odometer) async {
+  await settle(tester);
+  await waitFor(tester, find.widgetWithText(FilledButton, 'Olen perillä'));
+  await tester.tap(find.widgetWithText(FilledButton, 'Olen perillä').first);
+  await settle(tester);
+  await waitFor(tester, _dialogField('Määränpää'));
+  await tester.enterText(_dialogField('Määränpää'), to);
+  await tester.enterText(_arrivalOdoField, '$odometer');
+  await waitFor(tester, find.widgetWithText(FilledButton, 'Lopeta ajo'));
+  await tester.tap(find.widgetWithText(FilledButton, 'Lopeta ajo').first);
+  await settle(tester);
+}
+
 Future<void> arrive(WidgetTester tester, int odometer) async {
   // Let the route-screen pop finish so only Home's active card remains
   // (both screens show an "Olen perillä" button mid-transition).

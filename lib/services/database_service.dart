@@ -23,7 +23,7 @@ class DatabaseService {
 
     return openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -142,6 +142,31 @@ class DatabaseService {
           created_at TEXT NOT NULL
         )
       ''');
+    }
+    if (oldVersion < 7) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS km_rates (
+          year INTEGER PRIMARY KEY,
+          rate REAL NOT NULL
+        )
+      ''');
+      // Backfill any default years missing from existing installs without
+      // overwriting rates the user has customised...
+      for (final entry in KmRate.finnishDefaults.entries) {
+        await db.insert(
+          'km_rates',
+          {'year': entry.key, 'rate': entry.value},
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      }
+      // ...except 2026, which shipped with a wrong default (0.57) that the
+      // settings-sync may have persisted; force it to the official 0.55.
+      await db.update(
+        'km_rates',
+        {'rate': KmRate.finnishDefaults[2026]},
+        where: 'year = ?',
+        whereArgs: [2026],
+      );
     }
   }
 

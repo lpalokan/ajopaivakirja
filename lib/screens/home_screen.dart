@@ -140,8 +140,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final routes = ref.watch(routeProvider);
     final tripState = ref.watch(tripProvider);
     final settings = ref.watch(settingsProvider);
-    final recentRoutes = ref.read(routeProvider.notifier).getRecentRoutes();
     final tripNotifier = ref.read(tripProvider.notifier);
+    final allRecent =
+        ref.read(routeProvider.notifier).getRecentRoutes(limit: 1000);
+    final recentRoutes = allRecent
+        .take(_recentRoutesToShow(
+          context,
+          total: allRecent.length,
+          hasActiveTrip: tripState.activeLeg != null,
+          todayLegCount: tripState.todayLegs.length,
+        ))
+        .toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -163,8 +172,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           if (tripState.activeLeg != null) ...[
             ActiveTripCard(
               leg: tripState.activeLeg!,
-              onStopDriving: (odometer, {endTime}) async {
-                await tripNotifier.stopDriving(odometer, endTime: endTime);
+              onStopDriving: (odometer, {endTime, endLocation, purpose}) async {
+                await tripNotifier.stopDriving(odometer,
+                    endTime: endTime,
+                    endLocation: endLocation,
+                    purpose: purpose);
                 await ref.read(backgroundServiceProvider).onDrivingStopped();
                 // Restart auto-detection
                 ref.read(tripDetectionServiceProvider).stop();
@@ -179,6 +191,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               visionService: ref.read(odometerVisionServiceProvider),
             ),
             const SizedBox(height: 24),
+          ],
+          if (tripState.activeLeg == null) ...[
+            FilledButton.icon(
+              onPressed: () => _startAdHocDriving(context),
+              icon: const Icon(Icons.play_circle_outline),
+              label: const Text('Aloita ajo'),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(48),
+              ),
+            ),
+            const SizedBox(height: 20),
           ],
           _buildRecentRoutes(
               recentRoutes, settings, tripNotifier, context),
@@ -219,6 +242,41 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
 
+
+  /// How many recent-route cards fit on screen alongside the other home
+  /// content (start button, today summary, history). Estimate-based since
+  /// the body is an unbounded scrolling list.
+  int _recentRoutesToShow(
+    BuildContext context, {
+    required int total,
+    required bool hasActiveTrip,
+    required int todayLegCount,
+  }) {
+    if (total <= 0) return 0;
+    final media = MediaQuery.of(context);
+    final screen = media.size.height -
+        media.padding.top -
+        media.padding.bottom -
+        kToolbarHeight;
+
+    double reserved = 32; // list padding
+    reserved += 28 + 8; // "Viimeisimmät reitit" header
+    reserved += 44 + 8; // "Kaikki reitit" button
+    reserved += 52 + 16; // "Historia" button
+    if (hasActiveTrip) {
+      reserved += 250 + 24; // active trip card
+    } else {
+      reserved += 48 + 20; // "Aloita ajo" button
+    }
+    if (todayLegCount > 0) {
+      reserved += 120 + todayLegCount * 24 + 24; // today summary card
+    }
+
+    const cardHeight = 84.0;
+    final available = screen - reserved;
+    final fits = (available / cardHeight).floor();
+    return fits.clamp(1, total);
+  }
 
   Widget _buildRecentRoutes(
     List<model.Route> recentRoutes,
@@ -281,6 +339,47 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _startAdHocDriving(BuildContext context) async {
+    final tripNotifier = ref.read(tripProvider.notifier);
+    final settings = ref.read(settingsProvider);
+
+    final lastLeg = await DatabaseService.getLastLeg();
+    final initialOdometer = lastLeg?.endOdometer;
+
+    List<String> suggestions = const [];
+    try {
+      suggestions = await DatabaseService.getUniqueLocations();
+    } catch (_) {}
+
+    if (!context.mounted) return;
+    final result = await showOdometerDialog(
+      context: context,
+      title: 'Aloita ajo',
+      label: 'Matkamittari (km)',
+      actionLabel: 'Aloita ajo',
+      locationLabel: 'Lähtöpaikka',
+      locationSuggestions: suggestions,
+      initialValue: initialOdometer,
+      showTime: true,
+      initialTime: DateTime.now(),
+      timeLabel: 'Alkamisaika',
+      visionService: ref.read(odometerVisionServiceProvider),
+    );
+
+    if (result == null) return;
+
+    final backgroundService = ref.read(backgroundServiceProvider);
+    ref.read(tripDetectionServiceProvider).stop();
+    backgroundService.updateSettings(settings);
+    final leg = await tripNotifier.startAdHocDriving(
+      startOdometer: result.odometer,
+      startLocation: result.location ?? '',
+      driver: settings.driverName,
+      startTime: result.time,
+    );
+    await backgroundService.onDrivingStarted(leg);
   }
 
   Future<void> _startDriving(model.Route route, BuildContext context) async {
@@ -377,9 +476,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       children: [
                         const Icon(Icons.circle, size: 8),
                         const SizedBox(width: 8),
-                        Text(
-                          '${leg.startLocation} → ${leg.endLocation ?? '...'}  ',
+                        Expanded(
+                          child: Text(
+                            '${leg.startLocation} → ${leg.endLocation ?? '...'}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
+                        const SizedBox(width: 8),
                         Text(
                           '${leg.kmDriven.toStringAsFixed(1)} km',
                           style: TextStyle(

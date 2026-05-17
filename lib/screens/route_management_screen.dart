@@ -8,6 +8,7 @@ import '../providers/settings_provider.dart';
 import '../services/database_service.dart';
 import '../widgets/odometer_dialog.dart';
 import '../widgets/active_trip_card.dart';
+import '../widgets/location_autocomplete.dart';
 
 class RouteManagementScreen extends ConsumerStatefulWidget {
   const RouteManagementScreen({super.key});
@@ -32,8 +33,11 @@ class _RouteManagementScreenState
           if (tripState.activeLeg != null)
             ActiveTripCard(
               leg: tripState.activeLeg!,
-              onStopDriving: (odometer, {endTime}) async {
-                await tripNotifier.stopDriving(odometer, endTime: endTime);
+              onStopDriving: (odometer, {endTime, endLocation, purpose}) async {
+                await tripNotifier.stopDriving(odometer,
+                    endTime: endTime,
+                    endLocation: endLocation,
+                    purpose: purpose);
                 await ref.read(backgroundServiceProvider).onDrivingStopped();
               },
               onCancel: () async {
@@ -154,13 +158,13 @@ class _RouteManagementScreenState
                 ),
               ),
               const SizedBox(height: 12),
-              _LocationField(
+              LocationAutocomplete(
                 controller: startController,
                 label: 'Lähtöpaikka',
                 suggestions: knownLocations,
               ),
               const SizedBox(height: 12),
-              _LocationField(
+              LocationAutocomplete(
                 controller: endController,
                 label: 'Määränpää',
                 suggestions: knownLocations,
@@ -318,49 +322,3 @@ class _RouteManagementScreenState
   }
 }
 
-class _LocationField extends StatelessWidget {
-  final TextEditingController controller;
-  final String label;
-  final List<String> suggestions;
-
-  const _LocationField({
-    required this.controller,
-    required this.label,
-    required this.suggestions,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Autocomplete<String>(
-      optionsBuilder: (textEditingValue) {
-        final text = textEditingValue.text.toLowerCase();
-        if (text.isEmpty) return suggestions;
-        return suggestions.where((s) => s.toLowerCase().contains(text));
-      },
-      onSelected: (value) {
-        controller.text = value;
-        controller.selection = TextSelection.fromPosition(
-          TextPosition(offset: value.length),
-        );
-      },
-      fieldViewBuilder: (context, autocompleteCtrl, focusNode, onSubmitted) {
-        autocompleteCtrl.text = controller.text;
-        return TextField(
-          controller: autocompleteCtrl,
-          focusNode: focusNode,
-          decoration: InputDecoration(
-            labelText: label,
-            border: const OutlineInputBorder(),
-            suffixIcon: GestureDetector(
-              onTap: () => focusNode.requestFocus(),
-              child: const Icon(Icons.arrow_drop_down),
-            ),
-          ),
-          onChanged: (v) {
-            controller.text = v;
-          },
-        );
-      },
-    );
-  }
-}

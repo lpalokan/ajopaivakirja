@@ -11,6 +11,7 @@
 // When you add a new .feature, add one import + one main() call below.
 
 import 'app_smoke_test.dart' as smoke;
+import 'features/ad_hoc_driving_test.dart' as ad_hoc_driving;
 import 'features/calculations_test.dart' as calculations;
 import 'features/driving_test.dart' as driving;
 import 'features/history_test.dart' as history;
@@ -21,6 +22,7 @@ import 'features/settings_test.dart' as settings;
 
 void main() {
   smoke.main();
+  ad_hoc_driving.main();
   navigation.main();
   seeded_routes.main();
   route_management.main();

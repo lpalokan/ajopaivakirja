@@ -36,7 +36,7 @@ Feature: Driving flow
   Scenario: Km allowance is reflected in the grand total
     When I start the {'Töihin'} route at {1000} km
     And I arrive at {1100} km
-    Then I see text containing {'€57.00'}
+    Then I see text containing {'€55.00'}
 
   Scenario: A return-home day accumulates total distance
     When I start the {'Töihin'} route at {1000} km

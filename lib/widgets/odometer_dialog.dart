@@ -4,8 +4,14 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../services/odometer_vision_service.dart';
+import 'location_autocomplete.dart';
 
-typedef OdometerResult = ({int odometer, String? purpose, DateTime? time});
+typedef OdometerResult = ({
+  int odometer,
+  String? purpose,
+  DateTime? time,
+  String? location,
+});
 
 Future<OdometerResult?> showOdometerDialog({
   required BuildContext context,
@@ -20,6 +26,9 @@ Future<OdometerResult?> showOdometerDialog({
   bool showTime = false,
   DateTime? initialTime,
   String? timeLabel,
+  String? locationLabel,
+  String? initialLocation,
+  List<String> locationSuggestions = const [],
   OdometerVisionService? visionService,
 }) {
   return showDialog<OdometerResult>(
@@ -37,6 +46,9 @@ Future<OdometerResult?> showOdometerDialog({
       showTime: showTime,
       initialTime: initialTime,
       timeLabel: timeLabel,
+      locationLabel: locationLabel,
+      initialLocation: initialLocation,
+      locationSuggestions: locationSuggestions,
       visionService: visionService,
     ),
   );
@@ -54,6 +66,9 @@ class _OdometerInput extends StatefulWidget {
   final bool showTime;
   final DateTime? initialTime;
   final String? timeLabel;
+  final String? locationLabel;
+  final String? initialLocation;
+  final List<String> locationSuggestions;
   final OdometerVisionService? visionService;
 
   const _OdometerInput({
@@ -68,6 +83,9 @@ class _OdometerInput extends StatefulWidget {
     this.showTime = false,
     this.initialTime,
     this.timeLabel,
+    this.locationLabel,
+    this.initialLocation,
+    this.locationSuggestions = const [],
     this.visionService,
   });
 
@@ -78,8 +96,10 @@ class _OdometerInput extends StatefulWidget {
 class _OdometerInputState extends State<_OdometerInput> {
   final _odometerController = TextEditingController();
   final _purposeController = TextEditingController();
+  final _locationController = TextEditingController();
   late DateTime _pickedTime;
   bool _hasRelatedField = false;
+  bool _hasLocationField = false;
   String? _errorText;
   bool _isProcessingOcr = false;
 
@@ -87,6 +107,10 @@ class _OdometerInputState extends State<_OdometerInput> {
   void initState() {
     super.initState();
     _hasRelatedField = widget.relatedField != null;
+    _hasLocationField = widget.locationLabel != null;
+    if (widget.initialLocation != null) {
+      _locationController.text = widget.initialLocation!;
+    }
     if (widget.initialValue != null) {
       _odometerController.text = widget.initialValue.toString();
     }
@@ -100,6 +124,7 @@ class _OdometerInputState extends State<_OdometerInput> {
   void dispose() {
     _odometerController.dispose();
     _purposeController.dispose();
+    _locationController.dispose();
     super.dispose();
   }
 
@@ -147,6 +172,14 @@ class _OdometerInputState extends State<_OdometerInput> {
                   ),
                   child: Text(timeFmt.format(_pickedTime)),
                 ),
+              ),
+              const SizedBox(height: 16),
+            ],
+            if (_hasLocationField) ...[
+              LocationAutocomplete(
+                controller: _locationController,
+                label: widget.locationLabel!,
+                suggestions: widget.locationSuggestions,
               ),
               const SizedBox(height: 16),
             ],
@@ -223,12 +256,20 @@ class _OdometerInputState extends State<_OdometerInput> {
       return;
     }
 
+    final location =
+        _hasLocationField ? _locationController.text.trim() : null;
+    if (_hasLocationField && (location == null || location.isEmpty)) {
+      setState(() => _errorText = 'Syötä ${widget.locationLabel?.toLowerCase()}');
+      return;
+    }
+
     setState(() => _errorText = null);
     final purpose =
         _hasRelatedField ? _purposeController.text.trim() : null;
     final time = widget.showTime ? _pickedTime : null;
 
-    Navigator.pop(context, (odometer: value, purpose: purpose, time: time));
+    Navigator.pop(context,
+        (odometer: value, purpose: purpose, time: time, location: location));
   }
 
   Future<void> _captureAndOcr() async {

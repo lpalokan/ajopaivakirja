@@ -16,7 +16,7 @@ void main() {
     test('default values', () {
       const settings = AppSettings();
       expect(settings.homeLocation, 'Koti');
-      expect(settings.kmRate, 0.57);
+      expect(settings.kmRate, 0.55);
       expect(settings.allowance6h, 25.0);
       expect(settings.allowance10h, 54.0);
       expect(settings.sheetId, '');
@@ -62,7 +62,7 @@ void main() {
     test('fromMap handles empty map', () {
       final settings = AppSettings.fromMap({});
       expect(settings.homeLocation, 'Koti');
-      expect(settings.kmRate, 0.57);
+      expect(settings.kmRate, 0.55);
     });
 
     test('fromMap handles invalid numbers', () {
@@ -70,7 +70,7 @@ void main() {
         'km_rate': 'not-a-number',
         'allowance_6h': '',
       });
-      expect(settings.kmRate, 0.57); // fallback to default
+      expect(settings.kmRate, 0.55); // fallback to default
       expect(settings.allowance6h, 25.0);
     });
   });

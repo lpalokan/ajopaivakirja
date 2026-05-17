@@ -23,4 +23,9 @@ Feature: Reimbursement calculations end-to-end
   Scenario: Grand total combines the km allowance
     When I start the {'Töihin'} route at {1000} km
     And I arrive at {1200} km
-    Then I see text containing {'€114.00'}
+    Then I see text containing {'€110.00'}
+
+  Scenario: 2026 uses the 0,55 euro per km rate
+    When I start the {'Töihin'} route at {1000} km
+    And I arrive at {1100} km
+    Then I see text containing {'€55.00'}

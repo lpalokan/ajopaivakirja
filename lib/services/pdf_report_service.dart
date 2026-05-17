@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:intl/intl.dart';
@@ -17,7 +18,19 @@ class PdfReportService {
     required DateTime endDate,
     required Map<String, List<TripLeg>> legsByDate,
   }) async {
-    final doc = pw.Document();
+    // Embed a Unicode TTF so Finnish characters (ä ö å), the euro sign and
+    // the en-dash render instead of the built-in font's missing-glyph box.
+    final theme = pw.ThemeData.withFont(
+      base: pw.Font.ttf(
+          await rootBundle.load('assets/fonts/LiberationSans-Regular.ttf')),
+      bold: pw.Font.ttf(
+          await rootBundle.load('assets/fonts/LiberationSans-Bold.ttf')),
+      italic: pw.Font.ttf(
+          await rootBundle.load('assets/fonts/LiberationSans-Italic.ttf')),
+      boldItalic: pw.Font.ttf(
+          await rootBundle.load('assets/fonts/LiberationSans-BoldItalic.ttf')),
+    );
+    final doc = pw.Document(theme: theme);
     final dateFmt = DateFormat('d.M.yyyy', 'fi');
     final timeFmt = DateFormat('HH:mm', 'fi');
     final calculator = TripCalculator(settings);
