@@ -693,7 +693,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       // Sync current year rate to km_rates table
       final currentYear = DateTime.now().year;
       final parsedRate =
-          double.tryParse(kmRateStr) ?? 0.57;
+          double.tryParse(kmRateStr) ?? 0.55;
       await notifier.saveKmRate(currentYear, parsedRate);
 
       if (mounted) {

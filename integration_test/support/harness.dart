@@ -47,6 +47,8 @@ class _FakeLocationService extends LocationService {
   @override
   Future<bool> hasPermission() async => false;
   @override
+  Future<bool> hasPermissionGranted() async => false;
+  @override
   Future<void> startMonitoringDestination(
       String d, settings, NotificationService n) async {}
   @override
@@ -273,23 +275,31 @@ Future<void> enterDialogField(
 }
 
 Future<void> saveSettings(WidgetTester tester) async {
-  // Deterministic: close the soft keyboard (it shrinks the list and
-  // fights drags), then jump the scroll position to the bottom so the
-  // Save button (last lazy ListView child) is built and on-screen.
+  // Close the soft keyboard (it shrinks the list and fights scrolling).
   FocusManager.instance.primaryFocus?.unfocus();
-  await tester.pump(const Duration(milliseconds: 250));
-  final sc = find.byType(Scrollable).first;
-  try {
-    final pos = tester.state<ScrollableState>(sc).position;
-    pos.jumpTo(pos.maxScrollExtent);
-  } catch (_) {}
-  await settle(tester);
+  await tester.pump(const Duration(milliseconds: 300));
+
+  // The Save button is the last child of a lazy ListView, so its
+  // maxScrollExtent grows as more rows build. A single jumpTo can land
+  // short and never build the button — re-jump to the (growing) bottom
+  // until the button is actually in the tree.
   final btn = find.widgetWithText(FilledButton, 'Tallenna');
+  for (var i = 0; i < 12 && btn.evaluate().isEmpty; i++) {
+    final sc = find.byType(Scrollable);
+    if (sc.evaluate().isNotEmpty) {
+      try {
+        final pos = tester.state<ScrollableState>(sc.first).position;
+        pos.jumpTo(pos.maxScrollExtent);
+      } catch (_) {}
+    }
+    await tester.pump(const Duration(milliseconds: 200));
+  }
+  await settle(tester);
   if (btn.evaluate().isNotEmpty) {
-    await tester.ensureVisible(btn);
+    await tester.ensureVisible(btn.first);
     await settle(tester);
   }
-  await tester.tap(btn, warnIfMissed: false);
+  await tester.tap(btn.first, warnIfMissed: false);
   await pumpFor(tester, 1000); // keep the transient SnackBar visible
 }
 
@@ -305,6 +315,37 @@ Future<void> startTrip(
   await tester.tap(find.widgetWithText(FilledButton, 'Aloita ajo'));
   await settle(tester);
   await waitFor(tester, find.widgetWithText(FilledButton, 'Olen perillä'));
+}
+
+Future<void> startAdHoc(
+    WidgetTester tester, String from, int odometer) async {
+  // The home "Aloita ajo" button (no predefined route) — distinct from the
+  // per-route "Aloita" buttons and the dialog's own "Aloita ajo" action.
+  final homeBtn = find.widgetWithText(FilledButton, 'Aloita ajo');
+  await scrollIntoView(tester, homeBtn);
+  await tester.tap(homeBtn.first);
+  await settle(tester);
+  await waitFor(tester, _dialogField('Lähtöpaikka'));
+  await tester.enterText(_dialogField('Lähtöpaikka'), from);
+  await tester.enterText(_odometerField, '$odometer');
+  // .last: the dialog action button (home button still in the tree behind).
+  await tester.tap(find.widgetWithText(FilledButton, 'Aloita ajo').last);
+  await settle(tester);
+  await waitFor(tester, find.widgetWithText(FilledButton, 'Olen perillä'));
+}
+
+Future<void> arriveAdHoc(
+    WidgetTester tester, String to, int odometer) async {
+  await settle(tester);
+  await waitFor(tester, find.widgetWithText(FilledButton, 'Olen perillä'));
+  await tester.tap(find.widgetWithText(FilledButton, 'Olen perillä').first);
+  await settle(tester);
+  await waitFor(tester, _dialogField('Määränpää'));
+  await tester.enterText(_dialogField('Määränpää'), to);
+  await tester.enterText(_arrivalOdoField, '$odometer');
+  await waitFor(tester, find.widgetWithText(FilledButton, 'Lopeta ajo'));
+  await tester.tap(find.widgetWithText(FilledButton, 'Lopeta ajo').first);
+  await settle(tester);
 }
 
 Future<void> arrive(WidgetTester tester, int odometer) async {

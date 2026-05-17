@@ -11,7 +11,12 @@ import '../services/odometer_vision_service.dart';
 /// Used by both [HomeScreen] and [RouteManagementScreen].
 class ActiveTripCard extends StatelessWidget {
   final TripLeg leg;
-  final Future<void> Function(int odometer, {DateTime? endTime}) onStopDriving;
+  final Future<void> Function(
+    int odometer, {
+    DateTime? endTime,
+    String? endLocation,
+    String? purpose,
+  }) onStopDriving;
   final VoidCallback? onCancel;
   final OdometerVisionService? visionService;
 
@@ -133,22 +138,43 @@ class ActiveTripCard extends StatelessWidget {
   }
 
   Future<void> _stopDriving(BuildContext context) async {
+    final isAdHoc = leg.routeId == null && leg.routeDescription == null;
     final expectedOdometer = leg.startOdometer + leg.kmDriven.toInt();
+
+    List<String> suggestions = const [];
+    if (isAdHoc) {
+      try {
+        suggestions = await DatabaseService.getUniqueLocations();
+      } catch (_) {}
+    }
+    if (!context.mounted) return;
+
     final result = await showOdometerDialog(
       context: context,
       title: 'Olen perillä',
-      subtitle: 'Kohde: ${leg.endLocation ?? leg.routeDescription}',
+      subtitle: isAdHoc
+          ? 'Lähtö: ${leg.startLocation}'
+          : 'Kohde: ${leg.endLocation ?? leg.routeDescription}',
       label: 'Matkamittari perillä (km)',
       actionLabel: 'Lopeta ajo',
-      initialValue: expectedOdometer,
-      expectedHint: expectedOdometer,
+      initialValue: isAdHoc ? null : expectedOdometer,
+      expectedHint: isAdHoc ? null : expectedOdometer,
       showTime: true,
       initialTime: DateTime.now(),
       timeLabel: 'Päättymisaika',
+      locationLabel: isAdHoc ? 'Määränpää' : null,
+      locationSuggestions: suggestions,
+      relatedField: isAdHoc ? 'Tarkoitus' : null,
+      initialPurpose: isAdHoc ? leg.purpose : null,
       visionService: visionService,
     );
     if (result != null) {
-      await onStopDriving(result.odometer, endTime: result.time);
+      await onStopDriving(
+        result.odometer,
+        endTime: result.time,
+        endLocation: result.location,
+        purpose: result.purpose,
+      );
     }
   }
 

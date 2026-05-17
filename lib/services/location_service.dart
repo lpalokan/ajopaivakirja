@@ -10,6 +10,12 @@ class LocationService {
   Position? _currentPosition;
   StreamSubscription<Position>? _positionStream;
 
+  // At most one native permission dialog per session: concurrent callers
+  // share the in-flight request, and once the user has answered we never
+  // auto-prompt again (which previously stacked dialogs permanently).
+  bool _permissionRequested = false;
+  Future<bool>? _pendingPermission;
+
   bool _isMonitoring = false;
   Timer? _proximityTimer;
   String? _targetLocation;
@@ -30,18 +36,43 @@ class LocationService {
     }
   }
 
+  /// Check whether location permission is already granted. Never shows a
+  /// dialog — use this from automatic/startup paths so the app does not
+  /// prompt on its own (which made the dialog reappear endlessly).
+  Future<bool> hasPermissionGranted() async {
+    if (!await Geolocator.isLocationServiceEnabled()) return false;
+    final permission = await Geolocator.checkPermission();
+    return permission == LocationPermission.whileInUse ||
+        permission == LocationPermission.always;
+  }
+
+  /// Check permission and, only if the user has not yet been asked this
+  /// session, show the OS dialog exactly once. Call this only in response
+  /// to an explicit user action that needs location.
   Future<bool> hasPermission() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) return false;
 
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) return false;
+    final permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.whileInUse ||
+        permission == LocationPermission.always) {
+      return true;
     }
     if (permission == LocationPermission.deniedForever) return false;
 
-    return true;
+    // Permission is `denied`. Ask the OS exactly once per session; if a
+    // request is already on screen, await that same one instead of
+    // spawning another dialog on top of it.
+    if (_permissionRequested) return false;
+    _pendingPermission ??= _requestPermissionOnce();
+    return _pendingPermission!;
+  }
+
+  Future<bool> _requestPermissionOnce() async {
+    _permissionRequested = true;
+    final permission = await Geolocator.requestPermission();
+    return permission == LocationPermission.whileInUse ||
+        permission == LocationPermission.always;
   }
 
   /// Find the nearest known location zone within its radius.
@@ -83,7 +114,7 @@ class LocationService {
 
     _targetLocation = destinationName;
 
-    final hasPerm = await hasPermission();
+    final hasPerm = await hasPermissionGranted();
     if (!hasPerm) return;
 
     _isMonitoring = true;
@@ -93,9 +124,16 @@ class LocationService {
         accuracy: LocationAccuracy.high,
         distanceFilter: 100,
       ),
-    ).listen((position) {
-      _currentPosition = position;
-    });
+    ).listen(
+      (position) {
+        _currentPosition = position;
+      },
+      onError: (Object _) {
+        // A transient location error must not leak as an unhandled
+        // async error; monitoring simply pauses until the next fix.
+      },
+      cancelOnError: false,
+    );
 
     _proximityTimer =
         Timer.periodic(const Duration(seconds: 30), (_) async {

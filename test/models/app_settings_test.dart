@@ -28,7 +28,7 @@ void main() {
 
     test('fromMap applies defaults for missing or invalid values', () {
       final settings = AppSettings.fromMap({'km_rate': 'not-a-number'});
-      expect(settings.kmRate, 0.57);
+      expect(settings.kmRate, 0.55);
       expect(settings.homeLocation, 'Koti');
       expect(settings.allowance6h, 25.0);
       expect(settings.allowance10h, 54.0);

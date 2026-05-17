@@ -8,6 +8,7 @@ import '../services/trip_calculator.dart';
 import '../services/log_service.dart';
 import '../main.dart';
 import 'settings_provider.dart';
+import 'route_provider.dart';
 
 class _Sentinel {
   const _Sentinel();
@@ -59,6 +60,7 @@ class TripNotifier extends StateNotifier<TripState> {
   Future<void> load() async {
     final legs = await DatabaseService.getLegsForDate(_today);
     final activeLeg = await DatabaseService.getActiveLeg();
+    if (!mounted) return;
 
     state = TripState(
       activeLeg: activeLeg,
@@ -96,6 +98,7 @@ class TripNotifier extends StateNotifier<TripState> {
     await DatabaseService.updateRouteTimestamp(route.id!);
 
     final todayLegs = await DatabaseService.getLegsForDate(_today);
+    if (!mounted) return saved;
 
     state = state.copyWith(
       activeLeg: saved,
@@ -105,7 +108,48 @@ class TripNotifier extends StateNotifier<TripState> {
     return saved;
   }
 
-  Future<TripLeg> stopDriving(int endOdometer, {DateTime? endTime}) async {
+  /// Start an ad-hoc trip that is not based on a predefined route.
+  Future<TripLeg> startAdHocDriving({
+    required int startOdometer,
+    required String startLocation,
+    String purpose = '',
+    String? driver,
+    DateTime? startTime,
+  }) async {
+    final driverName = driver ?? _settings.driverName;
+    final time = startTime ?? DateTime.now();
+    final legOrder = await DatabaseService.getNextLegOrder(_today);
+
+    final leg = TripLeg(
+      date: _today,
+      legOrder: legOrder,
+      routeId: null,
+      startTime: time,
+      startOdometer: startOdometer,
+      startLocation: startLocation,
+      endLocation: null,
+      kmDriven: 0,
+      routeDescription: null,
+      purpose: purpose,
+      driver: driverName,
+    );
+
+    final saved = await DatabaseService.insertTripLeg(leg);
+    LogService().info(
+        'Trip: started ad-hoc from $startLocation (odo: $startOdometer, leg #$legOrder)');
+
+    final todayLegs = await DatabaseService.getLegsForDate(_today);
+    if (!mounted) return saved;
+    state = state.copyWith(activeLeg: saved, todayLegs: todayLegs);
+    return saved;
+  }
+
+  Future<TripLeg> stopDriving(
+    int endOdometer, {
+    DateTime? endTime,
+    String? endLocation,
+    String? purpose,
+  }) async {
     final active = state.activeLeg;
     if (active == null) throw Exception('Ei aktiivista ajoa');
 
@@ -113,11 +157,32 @@ class TripNotifier extends StateNotifier<TripState> {
     var leg = active.copyWith(
       endTime: time,
       endOdometer: endOdometer,
+      endLocation: (endLocation != null && endLocation.isNotEmpty)
+          ? endLocation
+          : active.endLocation,
+      purpose: (purpose != null && purpose.isNotEmpty)
+          ? purpose
+          : active.purpose,
     );
+
+    final wasAdHoc = active.routeId == null && active.routeDescription == null;
 
     leg = _calculator.calculateLeg(leg);
     LogService().info('Trip: stopped (odo: $endOdometer, km: ${leg.kmDriven}, returnHome: ${leg.isReturnHome})');
     await DatabaseService.updateTripLeg(leg);
+
+    // The trip may have stopped while the screen/provider was being torn
+    // down (e.g. test teardown); don't touch providers/state after dispose.
+    if (!mounted) return leg;
+
+    // Persist an ad-hoc journey as a reusable route (also makes its start
+    // and end locations available as suggestions next time).
+    if (wasAdHoc &&
+        leg.endLocation != null &&
+        leg.endLocation!.isNotEmpty &&
+        leg.startLocation.isNotEmpty) {
+      await _saveAdHocRoute(leg);
+    }
 
     if (leg.isReturnHome) {
       final dayLegs = await DatabaseService.getLegsForDate(_today);
@@ -127,6 +192,7 @@ class TripNotifier extends StateNotifier<TripState> {
     }
 
     final todayLegs = await DatabaseService.getLegsForDate(_today);
+    if (!mounted) return leg;
 
     state = state.copyWith(
       activeLeg: null,
@@ -149,7 +215,32 @@ class TripNotifier extends StateNotifier<TripState> {
     LogService().info('Trip: cancelled leg ${active.id}');
 
     final todayLegs = await DatabaseService.getLegsForDate(_today);
+    if (!mounted) return;
     state = state.copyWith(activeLeg: null, todayLegs: todayLegs);
+  }
+
+  Future<void> _saveAdHocRoute(TripLeg leg) async {
+    final start = leg.startLocation.trim();
+    final end = leg.endLocation!.trim();
+    final routeNotifier = _ref.read(routeProvider.notifier);
+
+    final exists = _ref.read(routeProvider).any((r) =>
+        r.startLocation.trim().toLowerCase() == start.toLowerCase() &&
+        r.endLocation.trim().toLowerCase() == end.toLowerCase());
+    if (exists) return;
+
+    final now = DateTime.now();
+    await routeNotifier.add(model.Route(
+      name: '$start → $end',
+      startLocation: start,
+      endLocation: end,
+      distanceKm: leg.kmDriven,
+      lastPurpose:
+          (leg.purpose != null && leg.purpose!.isNotEmpty) ? leg.purpose : null,
+      createdAt: now,
+      updatedAt: now,
+    ));
+    LogService().info('Trip: saved ad-hoc route $start -> $end (${leg.kmDriven} km)');
   }
 
   Future<void> _syncToSheets(List<TripLeg> legs) async {

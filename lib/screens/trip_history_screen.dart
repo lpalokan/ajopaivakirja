@@ -1,7 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../main.dart';
 import '../models/trip_leg.dart';
@@ -42,6 +44,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() => _loading = true);
     _kmRates = await DatabaseService.getAllKmRates();
     final dates = await DatabaseService.getDistinctDates();
@@ -473,10 +476,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
       );
 
       if (mounted) {
-        await SharePlus.instance.share(ShareParams(
-          files: [XFile(file.path)],
-          text: 'Ajopäiväkirja CSV-vienti',
-        ));
+        await _shareOrSave(file, 'Ajopäiväkirja CSV-vienti');
       }
     } catch (e) {
       if (mounted) {
@@ -485,6 +485,82 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
         );
       }
     }
+  }
+
+  /// Let the user choose between sharing/opening the file with another app
+  /// or saving it to the device's Downloads folder.
+  Future<void> _shareOrSave(File file, String shareText) async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.download),
+              title: const Text('Tallenna Lataukset-kansioon'),
+              onTap: () => Navigator.pop(ctx, 'save'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.ios_share),
+              title: const Text('Jaa tai avaa sovelluksessa'),
+              onTap: () => Navigator.pop(ctx, 'share'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.close),
+              title: const Text('Peruuta'),
+              onTap: () => Navigator.pop(ctx),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (choice == 'share') {
+      await SharePlus.instance.share(ShareParams(
+        files: [XFile(file.path)],
+        text: shareText,
+      ));
+    } else if (choice == 'save') {
+      await _saveToDownloads(file);
+    }
+  }
+
+  Future<void> _saveToDownloads(File file) async {
+    final name = file.path.split('/').last;
+    File? saved;
+    String? error;
+    try {
+      var target = Directory('/storage/emulated/0/Download');
+      if (!await target.exists()) {
+        final ext = await getExternalStorageDirectory();
+        final fallback =
+            ext?.path ?? (await getApplicationDocumentsDirectory()).path;
+        target = Directory(fallback);
+      }
+      if (!await target.exists()) {
+        await target.create(recursive: true);
+      }
+      saved = await file.copy('${target.path}/$name');
+    } catch (e) {
+      error = '$e';
+      try {
+        final docs = await getApplicationDocumentsDirectory();
+        saved = await file.copy('${docs.path}/$name');
+        error = null;
+      } catch (e2) {
+        error = '$e2';
+      }
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(saved != null
+            ? 'Tallennettu: ${saved.path}'
+            : 'Tallennus epäonnistui: $error'),
+      ),
+    );
   }
 
   Future<void> _exportPdf() async {
@@ -533,10 +609,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
 
       if (mounted) {
         Navigator.of(context).pop(); // close loading
-        await SharePlus.instance.share(ShareParams(
-          files: [XFile(file.path)],
-          text: 'Ajopäiväkirja PDF-raportti',
-        ));
+        await _shareOrSave(file, 'Ajopäiväkirja PDF-raportti');
       }
     } catch (e) {
       if (mounted) {

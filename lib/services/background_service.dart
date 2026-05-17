@@ -36,7 +36,7 @@ class BackgroundService {
 
     await _notificationService.showDrivingNotification(leg);
 
-    final hasLocation = await _locationService.hasPermission();
+    final hasLocation = await _locationService.hasPermissionGranted();
     if (hasLocation) {
       await _locationService.startMonitoringDestination(
         leg.endLocation ?? leg.routeDescription ?? 'määränpää',
