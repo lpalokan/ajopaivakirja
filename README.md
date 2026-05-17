@@ -171,6 +171,61 @@ flutter pub get
 flutter run          # Vaatii puhelimen kytkettynä USB:llä (developeri-tila)
 ```
 
+## Automaattitestaus
+
+Projekti on **BDD-first**: jokainen ominaisuus alkaa selkokielisellä
+Gherkin-skenaariolla (`integration_test/features/*.feature`), joka ajetaan
+Android-emulaattorilla. Testit jakautuvat: nopeat host-testit (yksikkö- ja
+widget-testit, Dart-VM, ilman emulaattoria) ja Gherkin-päästä-päähän-testit
+emulaattorilla. Täysi ohje ja ylläpito: `docs/testing.md`.
+
+Gherkin-paketin ajo ja raportti:
+
+```bash
+./scripts/integration-report.sh   # build_runner + emulaattoriajo + raportti
+```
+
+Helpoin tapa on apuskripti (idempotentti, turvallinen ajaa uudelleen):
+
+```bash
+./scripts/test.sh              # host-testit (pub get, analyze, flutter test)
+./scripts/test.sh --emulator   # luo myös AVD:n ja ajaa emulaattoritestin
+```
+
+Skripti ei asenna Flutter- tai Android-SDK:ta, vaan tarkistaa ne ja
+kertoo mitä puuttuu. Alla manuaaliset vaiheet samoihin asioihin.
+
+### Host-testit (ilman emulaattoria)
+
+```bash
+flutter pub get
+flutter analyze
+flutter test          # test/ – TripCalculator, mallit, OdometerDialog
+```
+
+### Emulaattoritesti (macOS)
+
+Vaatii Android SDK:n ja emulaattorin (vakio Android-emulaattori,
+QEMU/HVF-pohjainen). Esivalmistelu kerran:
+
+```bash
+# Apple Silicon: arm64-v8a, Intel: x86_64
+sdkmanager "platform-tools" "emulator" \
+  "system-images;android-34;google_apis;arm64-v8a"
+avdmanager create avd -n test_pixel \
+  -k "system-images;android-34;google_apis;arm64-v8a" -d pixel_6
+```
+
+Aja integraatiotesti käynnissä olevalla emulaattorilla:
+
+```bash
+flutter emulators --launch test_pixel      # tai käynnistä Android Studiosta
+flutter test integration_test/app_smoke_test.dart
+```
+
+Smoke-testi varmistaa, että sovellus kääntyy ja käynnistyy laitteella
+(sqflite ja pluginit alustuvat) ennen kuin testikattavuutta laajennetaan.
+
 ## Asennus puhelimeen (ilman kehittäjätilaa)
 
 Puhelinta ei tarvitse laittaa kehittäjätilaan. APK-tiedoston voi asentaa suoraan.

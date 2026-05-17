@@ -398,6 +398,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final nameCtrl = TextEditingController();
     final radiusCtrl = TextEditingController(text: '200');
 
+    if (!mounted) return;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(

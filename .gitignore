@@ -32,6 +32,10 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+/reports/
+
+# bdd_widget_test generates these from integration_test/features/*.feature
+integration_test/features/*_test.dart
 
 # Symbolication related
 app.*.symbols
@@ -43,3 +47,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Generated integration test artifacts
+test-results/

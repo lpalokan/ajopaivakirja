@@ -88,9 +88,12 @@ class TripCalculator {
     final firstEnd = legs.first.endTime;
     final lastStart = legs.last.startTime;
 
+    // A single leg has no span between first arrival and last departure;
+    // and a negative span (clock skew / unordered legs) is not real work.
     double totalWorkingTime = 0;
-    if (firstEnd != null) {
-      totalWorkingTime = lastStart.difference(firstEnd).inMinutes / 60.0;
+    if (legs.length >= 2 && firstEnd != null) {
+      final hours = lastStart.difference(firstEnd).inMinutes / 60.0;
+      totalWorkingTime = hours < 0 ? 0 : hours;
     }
 
     // Put total working time on the last leg

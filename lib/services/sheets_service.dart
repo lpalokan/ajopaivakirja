@@ -219,7 +219,7 @@ class SheetsService {
 
     if (idToRow != null && legId.isNotEmpty && idToRow.containsKey(legId)) {
       final rowNum = idToRow[legId]!;
-      final range = "'$sheetTab'!A${rowNum}:Q${rowNum}";
+      final range = "'$sheetTab'!A$rowNum:Q$rowNum";
       await _sheetsApi!.spreadsheets.values.update(
         sheets.ValueRange()..range = range..values = [row],
         sheetId,

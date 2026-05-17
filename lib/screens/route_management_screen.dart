@@ -137,6 +137,7 @@ class _RouteManagementScreenState
       knownLocations = await DatabaseService.getUniqueLocations();
     } catch (_) {}
 
+    if (!mounted) return;
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(

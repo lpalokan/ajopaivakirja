@@ -313,6 +313,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       subtitle.writeln('📍 Sijaintisi: $locationHint');
     }
 
+    if (!context.mounted) return;
     final result = await showOdometerDialog(
       context: context,
       title: 'Aloita ajo',
