@@ -60,6 +60,7 @@ class TripNotifier extends StateNotifier<TripState> {
   Future<void> load() async {
     final legs = await DatabaseService.getLegsForDate(_today);
     final activeLeg = await DatabaseService.getActiveLeg();
+    if (!mounted) return;
 
     state = TripState(
       activeLeg: activeLeg,
@@ -97,6 +98,7 @@ class TripNotifier extends StateNotifier<TripState> {
     await DatabaseService.updateRouteTimestamp(route.id!);
 
     final todayLegs = await DatabaseService.getLegsForDate(_today);
+    if (!mounted) return saved;
 
     state = state.copyWith(
       activeLeg: saved,
@@ -137,6 +139,7 @@ class TripNotifier extends StateNotifier<TripState> {
         'Trip: started ad-hoc from $startLocation (odo: $startOdometer, leg #$legOrder)');
 
     final todayLegs = await DatabaseService.getLegsForDate(_today);
+    if (!mounted) return saved;
     state = state.copyWith(activeLeg: saved, todayLegs: todayLegs);
     return saved;
   }
@@ -168,6 +171,10 @@ class TripNotifier extends StateNotifier<TripState> {
     LogService().info('Trip: stopped (odo: $endOdometer, km: ${leg.kmDriven}, returnHome: ${leg.isReturnHome})');
     await DatabaseService.updateTripLeg(leg);
 
+    // The trip may have stopped while the screen/provider was being torn
+    // down (e.g. test teardown); don't touch providers/state after dispose.
+    if (!mounted) return leg;
+
     // Persist an ad-hoc journey as a reusable route (also makes its start
     // and end locations available as suggestions next time).
     if (wasAdHoc &&
@@ -185,6 +192,7 @@ class TripNotifier extends StateNotifier<TripState> {
     }
 
     final todayLegs = await DatabaseService.getLegsForDate(_today);
+    if (!mounted) return leg;
 
     state = state.copyWith(
       activeLeg: null,
@@ -207,6 +215,7 @@ class TripNotifier extends StateNotifier<TripState> {
     LogService().info('Trip: cancelled leg ${active.id}');
 
     final todayLegs = await DatabaseService.getLegsForDate(_today);
+    if (!mounted) return;
     state = state.copyWith(activeLeg: null, todayLegs: todayLegs);
   }
 
