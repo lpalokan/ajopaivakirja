@@ -124,11 +124,38 @@ APP_ID="fi.lpalokan.kilometrikorvaus"
 ) &
 GRANT_PID=$!
 
+# Screen-record the whole run in ≤170s chunks (screenrecord caps at 180s).
+REC_DIR="$REPORT_DIR/video"
+mkdir -p "$REC_DIR"
+RECORD_FLAG="/tmp/ajopaivakirja-recording.on"
+: > "$RECORD_FLAG"
+(
+  i=0
+  while [ -f "$RECORD_FLAG" ]; do
+    adb shell screenrecord --time-limit 170 --bit-rate 1500000 \
+      --size 540x1140 "/sdcard/ajo-rec-$i.mp4" >/dev/null 2>&1 || true
+    i=$((i + 1))
+  done
+) &
+REC_PID=$!
+
 set -o pipefail
 flutter test integration_test/all_features_test.dart --reporter expanded 2>&1 \
   | tee -a "$REPORT"
 RESULT=${PIPESTATUS[0]}
 kill "$GRANT_PID" 2>/dev/null || true
+
+# Stop recording, finalize the current segment, pull everything.
+rm -f "$RECORD_FLAG"
+adb shell pkill -INT screenrecord >/dev/null 2>&1 || true
+sleep 3
+kill "$REC_PID" 2>/dev/null || true
+for seg in $(adb shell ls /sdcard/ 2>/dev/null | tr -d '\r' \
+    | grep -E '^ajo-rec-[0-9]+\.mp4$' || true); do
+  adb pull "/sdcard/$seg" "$REC_DIR/$seg" >/dev/null 2>&1 || true
+  adb shell rm "/sdcard/$seg" >/dev/null 2>&1 || true
+done
+adb exec-out screencap -p > "$REPORT_DIR/last-screen.png" 2>/dev/null || true
 
 {
   echo
@@ -142,6 +169,45 @@ kill "$GRANT_PID" 2>/dev/null || true
 } | tee -a "$REPORT"
 
 info "Report written to: $REPORT"
-echo "Pass this file back for analysis:"
-echo "  $REPORT"
+
+# Publish artifacts to the repo so they can be examined remotely without a
+# manual upload: the text report (small — fetched via GitHub tools), the
+# final screenshot, and the latest recording segment.
+info "Publishing artifacts to GitHub"
+PUB_DIR="$REPO_ROOT/test-results"
+mkdir -p "$PUB_DIR"
+cp "$REPORT" "$PUB_DIR/integration-report.txt" 2>/dev/null || true
+[ -f "$REPORT_DIR/last-screen.png" ] \
+  && cp "$REPORT_DIR/last-screen.png" "$PUB_DIR/last-screen.png" || true
+# Only publish video on failure (binary in git is heavy); keep all
+# segments locally regardless. Always publish report + screenshot.
+LATEST_VID=""
+rm -f "$PUB_DIR/integration-latest.mp4"
+if [ "$RESULT" -ne 0 ]; then
+  LATEST_VID="$(ls -1t "$REC_DIR"/*.mp4 2>/dev/null | head -1 || true)"
+  [ -n "$LATEST_VID" ] \
+    && cp "$LATEST_VID" "$PUB_DIR/integration-latest.mp4" || true
+fi
+
+BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"
+if git add test-results 2>/dev/null \
+   && ! git diff --cached --quiet 2>/dev/null; then
+  git -c core.hooksPath=/dev/null commit -q \
+    -m "test-results: integration report + recording ($TS) [skip ci]" \
+    2>/dev/null || true
+  for attempt in 1 2 3 4; do
+    git push origin "$BRANCH" 2>/dev/null && break
+    sleep $((attempt * 2))
+  done
+  echo "  ✓ pushed test-results/ to origin/$BRANCH"
+else
+  echo "  (no artifact changes to push)"
+fi
+
+echo
+echo "Artifacts:"
+echo "  report : test-results/integration-report.txt (pushed)"
+echo "  screen : test-results/last-screen.png (pushed)"
+[ -n "$LATEST_VID" ] && echo "  video  : test-results/integration-latest.mp4 (pushed)"
+echo "  full video segments (local only): $REC_DIR"
 exit "$RESULT"
