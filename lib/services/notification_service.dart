@@ -3,6 +3,16 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 import '../models/trip_leg.dart';
 
+/// Handles notification action taps delivered to the background isolate.
+///
+/// flutter_local_notifications only dispatches action-button taps to Dart at
+/// all when this callback is registered. Actions that need app state/UI use
+/// `showsUserInterface: true`, so they launch the app and are re-delivered to
+/// the foreground handler; this entry point just needs to exist so the
+/// plugin's action receiver is wired up (and to swallow no-UI actions).
+@pragma('vm:entry-point')
+void notificationTapBackground(NotificationResponse response) {}
+
 class NotificationService {
   static const _channelId = 'kilometrikorvaus_driving';
   static const _channelName = 'Ajo käynnissä';
@@ -35,7 +45,29 @@ class NotificationService {
     await _plugin.initialize(
       settings,
       onDidReceiveNotificationResponse: _onNotificationResponse,
+      onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
     );
+
+    // When an action button with showsUserInterface: true is tapped while the
+    // app is terminated, it cold-launches the app instead of hitting the
+    // foreground handler. Capture that response so it can be replayed once the
+    // app's callbacks are wired up (see flushPendingLaunchAction).
+    final launchDetails = await _plugin.getNotificationAppLaunchDetails();
+    if (launchDetails?.didNotificationLaunchApp ?? false) {
+      _pendingLaunchResponse = launchDetails!.notificationResponse;
+    }
+  }
+
+  NotificationResponse? _pendingLaunchResponse;
+
+  /// Replays a notification action that cold-launched the app. Call this once,
+  /// after onArrived/onStillDriving/etc. have been assigned.
+  void flushPendingLaunchAction() {
+    final pending = _pendingLaunchResponse;
+    if (pending != null) {
+      _pendingLaunchResponse = null;
+      _onNotificationResponse(pending);
+    }
   }
 
   Future<bool> requestPermission() async {
@@ -119,7 +151,7 @@ class NotificationService {
         AndroidNotificationAction(
           _stillDrivingActionId,
           'Ajan yhä',
-          showsUserInterface: false,
+          showsUserInterface: true,
         ),
       ],
     );
@@ -156,7 +188,7 @@ class NotificationService {
         AndroidNotificationAction(
           _stillDrivingActionId,
           'Ajan yhä',
-          showsUserInterface: false,
+          showsUserInterface: true,
         ),
       ],
     );
