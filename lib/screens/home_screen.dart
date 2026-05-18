@@ -127,6 +127,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         }
       };
 
+      // Replay a notification action that cold-launched the app, now that
+      // every action callback above is wired up.
+      ns.flushPendingLaunchAction();
+
       // Start auto-detection if not already driving
       if (!ref.read(tripProvider.notifier).isDriving) {
         detectionService.updateSettings(settings);
