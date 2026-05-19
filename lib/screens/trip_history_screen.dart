@@ -792,7 +792,9 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                     style: Theme.of(context)
                         .extension<NumeralTypography>()!
                         .small
-                        .copyWith(color: Theme.of(context).colorScheme.tertiary),
+                        .copyWith(
+                          color: Theme.of(context).colorScheme.tertiary,
+                        ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
