@@ -177,22 +177,24 @@ Future<void> scrollIntoView(WidgetTester tester, Finder f) async {
   if (count == 0) return;
   // Neither `.first` nor `.last` is reliable: the tree holds many
   // Scrollables that are not the one we want — every EditableText wraps
-  // one (single-line, maxScrollExtent == 0), and a pushed route leaves
-  // the previous screen's scrollables (e.g. a horizontal RouteChipRow)
-  // behind it in the Navigator stack. Probe every Scrollable, skip the
-  // ones that cannot scroll, and stop as soon as the target is built.
+  // one (single-line, often horizontal / maxScrollExtent == 0), and a
+  // pushed route leaves the previous screen's scrollables (e.g. the
+  // horizontal RouteChipRow, or Home's lists behind a dialog/route) in
+  // the tree. Probe each vertical, scrollable candidate, but RESTORE its
+  // offset if it didn't reveal the target — otherwise an over-eager probe
+  // leaves unrelated lists (e.g. the Settings ListView) scrolled away and
+  // breaks later steps in the same scenario.
   for (var i = 0; i < count; i++) {
     final candidate = sc.at(i);
-    double maxExtent;
+    ScrollPosition pos;
     try {
-      maxExtent = tester
-          .state<ScrollableState>(candidate)
-          .position
-          .maxScrollExtent;
+      pos = tester.state<ScrollableState>(candidate).position;
     } catch (_) {
       continue;
     }
-    if (maxExtent <= 0.0) continue;
+    if (pos.axis != Axis.vertical) continue;
+    if (pos.maxScrollExtent <= 0.0) continue;
+    final original = pos.pixels;
     try {
       await tester.scrollUntilVisible(
         f,
@@ -202,6 +204,12 @@ Future<void> scrollIntoView(WidgetTester tester, Finder f) async {
       );
     } catch (_) {}
     if (f.evaluate().isNotEmpty) return;
+    // Wrong scrollable — undo the probe so we don't displace it for
+    // subsequent finders.
+    try {
+      tester.state<ScrollableState>(candidate).position.jumpTo(original);
+      await tester.pump();
+    } catch (_) {}
   }
 }
 
