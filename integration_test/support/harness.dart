@@ -173,20 +173,36 @@ Future<void> waitFor(
 Future<void> scrollIntoView(WidgetTester tester, Finder f) async {
   if (f.evaluate().isNotEmpty) return; // already present, don't scroll
   final sc = find.byType(Scrollable);
-  if (sc.evaluate().isEmpty) return;
-  // Try scrollables from last to first so the topmost route's
-  // vertical ListView is used, not a stale horizontal Scrollable
-  // from the previous screen still in the Navigator stack.
-  try {
-    final pos = tester.state<ScrollableState>(sc.last).position;
-    if (pos.maxScrollExtent <= 0.0) return;
-    await tester.scrollUntilVisible(
-      f,
-      300,
-      scrollable: sc.last,
-      maxScrolls: 15,
-    );
-  } catch (_) {}
+  final count = sc.evaluate().length;
+  if (count == 0) return;
+  // Neither `.first` nor `.last` is reliable: the tree holds many
+  // Scrollables that are not the one we want — every EditableText wraps
+  // one (single-line, maxScrollExtent == 0), and a pushed route leaves
+  // the previous screen's scrollables (e.g. a horizontal RouteChipRow)
+  // behind it in the Navigator stack. Probe every Scrollable, skip the
+  // ones that cannot scroll, and stop as soon as the target is built.
+  for (var i = 0; i < count; i++) {
+    final candidate = sc.at(i);
+    double maxExtent;
+    try {
+      maxExtent = tester
+          .state<ScrollableState>(candidate)
+          .position
+          .maxScrollExtent;
+    } catch (_) {
+      continue;
+    }
+    if (maxExtent <= 0.0) continue;
+    try {
+      await tester.scrollUntilVisible(
+        f,
+        300,
+        scrollable: candidate,
+        maxScrolls: 15,
+      );
+    } catch (_) {}
+    if (f.evaluate().isNotEmpty) return;
+  }
 }
 
 Finder get _odometerField => find.ancestor(
@@ -373,28 +389,58 @@ Future<void> startTrip(WidgetTester tester, String route, int odometer) async {
 Future<void> startAdHoc(WidgetTester tester, String from, int odometer) async {
   // The LocationChip auto-resolves GPS; in the test suite the fake
   // LocationService returns no permission, so the chip shows a fallback.
-  // Tap the chip to open the autocomplete dialog and manually enter the
-  // start location, matching the pre-redesign workflow.
+  // Tap the chip to open the override dialog and set the start location.
+  //
+  // This step MUST set the location: if it silently no-ops, the trip
+  // starts from AppSettings.homeLocation ('Koti') and the saved ad-hoc
+  // route becomes 'Koti -> ...' instead of '<from> -> ...', which only
+  // surfaces much later as a confusing "0 widgets" on the routes page.
+  // So every stage asserts, failing loudly at the real point of breakage.
   final chip = find.byType(InputChip);
-  if (chip.evaluate().isNotEmpty) {
-    await tester.tap(chip.first);
-    await settle(tester);
-    // The autocomplete dialog should now be visible.
-    final autoField = find.byType(TextField);
-    if (autoField.evaluate().isNotEmpty) {
-      await tester.enterText(autoField.last, from);
-      await tester.pump(const Duration(milliseconds: 300));
-    }
-    // Dismiss the Autocomplete overlay and soft keyboard so the
-    // dialog action buttons are not shifted behind the scrim.
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tester.pump(const Duration(milliseconds: 300));
-    final useBtn = find.widgetWithText(FilledButton, 'Käytä');
-    if (useBtn.evaluate().isNotEmpty) {
-      await tester.tap(useBtn.first);
-      await settle(tester);
-    }
-  }
+  await scrollIntoView(tester, chip);
+  await waitFor(tester, chip);
+  await tester.ensureVisible(chip.first);
+  await tester.tap(chip.first);
+  await settle(tester);
+
+  // Confirm the override dialog actually opened.
+  await waitFor(tester, find.text('Muuta sijainti'));
+  expect(
+    find.text('Muuta sijainti'),
+    findsOneWidget,
+    reason: 'LocationChip override dialog did not open after tapping the '
+        'chip; the ad-hoc start location would silently fall back to '
+        "AppSettings.homeLocation ('Koti').",
+  );
+
+  // Target the dialog's autocomplete field by its label, not by tree
+  // position (the StartCard odometer field is also a TextField).
+  final locField = find.ancestor(
+    of: find.text('Sijainti'),
+    matching: find.byType(TextField),
+  );
+  await tester.enterText(locField.first, from);
+  await tester.pump(const Duration(milliseconds: 300));
+  // Dismiss the Autocomplete overlay and soft keyboard so the dialog
+  // action buttons are not shifted behind the scrim.
+  await tester.testTextInput.receiveAction(TextInputAction.done);
+  await tester.pump(const Duration(milliseconds: 300));
+
+  final useBtn = find.widgetWithText(FilledButton, 'Käytä');
+  await tester.tap(useBtn.first);
+  await settle(tester);
+
+  // The chip now renders the chosen label; if it doesn't, the location
+  // never propagated and the rest of the scenario would silently run
+  // from 'Koti'. Fail here instead.
+  await waitFor(tester, find.text(from));
+  expect(
+    find.text(from),
+    findsWidgets,
+    reason: "Start location '$from' was not applied to the LocationChip; "
+        "the ad-hoc trip would start from 'Koti' and the saved route "
+        "would be 'Koti -> ...' instead of '$from -> ...'.",
+  );
 
   await tester.enterText(_odometerField, '$odometer');
   final startBtn = find.widgetWithText(FilledButton, 'Aloita ajo');
