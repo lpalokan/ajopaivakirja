@@ -7,10 +7,13 @@ import 'odometer_dialog.dart';
 import 'expense_dialog.dart';
 import '../services/odometer_vision_service.dart';
 
-/// Shared widget showing the currently active (in-progress) trip.
-/// Used by both [HomeScreen] and [RouteManagementScreen].
+/// Full-bleed hero card for an active (in-progress) trip.
+///
+/// Renders a gradient surface, oversized live distance counter, and a
+/// pulse dot. An overflow menu houses _Kulu_ and _Peru matka_.
 class ActiveTripCard extends StatelessWidget {
   final TripLeg leg;
+  final double liveDistanceKm;
   final Future<void> Function(
     int odometer, {
     DateTime? endTime,
@@ -23,6 +26,7 @@ class ActiveTripCard extends StatelessWidget {
   const ActiveTripCard({
     super.key,
     required this.leg,
+    this.liveDistanceKm = 0,
     required this.onStopDriving,
     this.onCancel,
     this.visionService,
@@ -36,93 +40,137 @@ class ActiveTripCard extends StatelessWidget {
     final hours = duration.inHours;
     final minutes = duration.inMinutes.remainder(60);
     final durationStr = '$hours h ${minutes.toString().padLeft(2, '0')} min';
-    final expectedOdometer = leg.startOdometer + leg.kmDriven.toInt();
+    final routeLabel =
+        leg.routeDescription ?? '${leg.startLocation} → ${leg.endLocation ?? '...'}';
 
-    return Card(
-      color: colorScheme.primaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.directions_car,
-                    color: colorScheme.onPrimaryContainer),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Ajo käynnissä',
-                        style: Theme.of(context).textTheme.titleMedium,
+    final numeralLarge = Theme.of(context)
+        .textTheme
+        .displayLarge
+        ?.copyWith(
+          fontSize: 56,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.02,
+        );
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            colorScheme.primary,
+            Color.lerp(colorScheme.primary, Colors.black, 0.2)!,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header row with route label + overflow menu
+          Row(
+            children: [
+              _LivePulse(),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Ajo käynnissä',
+                      style: TextStyle(
+                        color: colorScheme.onPrimary.withAlpha(200),
+                        fontSize: 12,
                       ),
-                      Text(
-                        leg.routeDescription ??
-                            '${leg.startLocation} → ${leg.endLocation}',
-                        style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    Text(
+                      routeLabel,
+                      style: TextStyle(
+                        color: colorScheme.onPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
                       ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Lähtö: $startTime'),
-                Text('Kesto: $durationStr'),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Mittari lähtiessä: ${leg.startOdometer} km'),
-                Text('Arvioitu perillä: $expectedOdometer km'),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: () => _stopDriving(context),
-                    icon: const Icon(Icons.flag),
-                    label: const Text('Olen perillä'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: () => _addExpense(context),
-                  icon: const Icon(Icons.receipt_long, size: 20),
-                  label: const Text('Kulu'),
-                ),
-              ],
-            ),
-            if (onCancel != null) ...[
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: TextButton.icon(
-                  onPressed: () => _cancelDriving(context),
-                  icon: const Icon(Icons.close, size: 18),
-                  label: const Text('Peru matka'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: colorScheme.error,
-                  ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
               ),
+              PopupMenuButton<String>(
+                iconColor: colorScheme.onPrimary.withAlpha(200),
+                onSelected: (value) {
+                  if (value == 'expense') {
+                    _addExpense(context);
+                  } else if (value == 'cancel') {
+                    _cancelDriving(context);
+                  }
+                },
+                itemBuilder: (ctx) => [
+                  const PopupMenuItem(
+                    value: 'expense',
+                    child: ListTile(
+                      leading: Icon(Icons.receipt_long),
+                      title: Text('Kulu'),
+                      dense: true,
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'cancel',
+                    child: ListTile(
+                      leading: Icon(Icons.close, color: Colors.red),
+                      title: Text('Peru matka',
+                          style: TextStyle(color: Colors.red)),
+                      dense: true,
+                    ),
+                  ),
+                ],
+              ),
             ],
-          ],
-        ),
+          ),
+          const SizedBox(height: 16),
+          // Live distance counter
+          Center(
+            child: Text(
+              '${(leg.kmDriven + liveDistanceKm).toStringAsFixed(1)} km',
+              style: numeralLarge?.copyWith(
+                color: colorScheme.onPrimary,
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          // Start time + duration
+          Center(
+            child: Text(
+              'Lähtö $startTime · $durationStr',
+              style: TextStyle(
+                color: colorScheme.onPrimary.withAlpha(180),
+                fontSize: 13,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // In-card CTA
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonal(
+              onPressed: () => _stopDriving(context),
+              style: FilledButton.styleFrom(
+                backgroundColor: colorScheme.onPrimary.withAlpha(30),
+                foregroundColor: colorScheme.onPrimary,
+              ),
+              child: const Text('Olen perillä'),
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Future<void> _addExpense(BuildContext context) async {
-    final result = await showDialog<({ExpenseType type, double amount, String? description})>(
+    final result = await showDialog<
+        ({ExpenseType type, double amount, String? description})>(
       context: context,
       builder: (ctx) => const ExpenseDialog(),
     );
@@ -183,7 +231,8 @@ class ActiveTripCard extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Peru matka'),
-        content: const Text('Haluatko varmasti peruuttaa käynnissä olevan matkan?'),
+        content: const Text(
+            'Haluatko varmasti peruuttaa käynnissä olevan matkan?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -199,5 +248,48 @@ class ActiveTripCard extends StatelessWidget {
     if (confirm == true) {
       onCancel?.call();
     }
+  }
+}
+
+/// Animated pulse dot indicating a live trip.
+class _LivePulse extends StatefulWidget {
+  @override
+  State<_LivePulse> createState() => _LivePulseState();
+}
+
+class _LivePulseState extends State<_LivePulse>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(seconds: 1),
+      vsync: this,
+    )..repeat(reverse: true);
+    _animation = Tween<double>(begin: 0.4, end: 1.0).animate(_controller);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _animation,
+      child: Container(
+        width: 8,
+        height: 8,
+        decoration: const BoxDecoration(
+          color: Colors.greenAccent,
+          shape: BoxShape.circle,
+        ),
+      ),
+    );
   }
 }

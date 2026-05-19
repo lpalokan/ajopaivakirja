@@ -73,8 +73,51 @@ class KilometrikorvausApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF1565C0),
           brightness: Brightness.light,
+        ).copyWith(
+          tertiary: const Color(0xFFB7793A),
+          tertiaryContainer: const Color(0xFFFFDCBE),
+          onTertiary: Colors.white,
         ),
         useMaterial3: true,
+      ).copyWith(
+        textTheme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF1565C0),
+            brightness: Brightness.light,
+          ),
+          useMaterial3: true,
+        ).textTheme.copyWith(
+          // Numeral typography — tabular figures for km/€ values
+          displayLarge: const TextStyle(
+            fontSize: 56,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.02,
+            fontFeatures: [FontFeature.tabularFigures()],
+          ),
+          displayMedium: const TextStyle(
+            fontSize: 32,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.02,
+            fontFeatures: [FontFeature.tabularFigures()],
+          ),
+          displaySmall: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.01,
+            fontFeatures: [FontFeature.tabularFigures()],
+          ),
+          headlineSmall: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0,
+            fontFeatures: [FontFeature.tabularFigures()],
+          ),
+        ),
+        iconTheme: const IconThemeData(
+          weight: 400,
+          fill: 0,
+          opticalSize: 24,
+        ),
       ),
       darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(

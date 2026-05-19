@@ -89,75 +89,116 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            _sectionHeader('Perustiedot'),
-            TextFormField(
-              controller: _homeController,
-              decoration: const InputDecoration(
-                labelText: 'Kotiosoite',
-                hintText: 'Esim. Koti',
-                border: OutlineInputBorder(),
+            // Perustiedot
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Perustiedot',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .primary)),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _homeController,
+                      decoration: const InputDecoration(
+                        labelText: 'Kotiosoite',
+                        hintText: 'Esim. Koti',
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _driverController,
+                      decoration: const InputDecoration(
+                        labelText: 'Kuljettajan nimi',
+                        hintText: 'Oma nimi',
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 16),
-            TextFormField(
-              controller: _driverController,
-              decoration: const InputDecoration(
-                labelText: 'Kuljettajan nimi',
-                hintText: 'Oma nimi',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 24),
-            _sectionHeader('Korvaukset'),
-            TextFormField(
-              controller: _kmRateController,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
-              ],
-              decoration: const InputDecoration(
-                labelText: 'Km-korvaus (€/km)',
-                suffixText: '€/km',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _allowance6hController,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
-              ],
-              decoration: const InputDecoration(
-                labelText: 'Päiväraha (yli 6h)',
-                suffixText: '€',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _allowance10hController,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
-              ],
-              decoration: const InputDecoration(
-                labelText: 'Päiväraha (yli 10h)',
-                suffixText: '€',
-                border: OutlineInputBorder(),
+            // Korvaukset
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Korvaukset',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .primary)),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _kmRateController,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(
+                              decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(
+                            RegExp(r'[\d.,]')),
+                      ],
+                      decoration: const InputDecoration(
+                        labelText: 'Km-korvaus (€/km)',
+                        suffixText: '€/km',
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _allowance6hController,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(
+                              decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(
+                            RegExp(r'[\d.,]')),
+                      ],
+                      decoration: const InputDecoration(
+                        labelText: 'Päiväraha (yli 6h)',
+                        suffixText: '€',
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _allowance10hController,
+                      keyboardType:
+                          const TextInputType.numberWithOptions(
+                              decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(
+                            RegExp(r'[\d.,]')),
+                      ],
+                      decoration: const InputDecoration(
+                        labelText: 'Päiväraha (yli 10h)',
+                        suffixText: '€',
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 8),
             ExpansionTile(
               title: const Text('Aiemmat km-korvaukset'),
-              subtitle: Text('${_kmRates.length} vuodelle tallennettu'),
+              subtitle: Text(
+                  '${_kmRates.length} vuodelle tallennettu'),
               initiallyExpanded: _kmRatesExpanded,
               onExpansionChanged: (v) => _kmRatesExpanded = v,
               children: [
-                ..._kmRates.entries.map((e) => _buildKmRateRow(e.key, e.value)),
+                ..._kmRates.entries
+                    .map((e) => _buildKmRateRow(e.key, e.value)),
                 Padding(
                   padding: const EdgeInsets.all(16),
                   child: OutlinedButton.icon(
@@ -168,115 +209,172 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 24),
-            _sectionHeader('Sijaintialueet'),
-            ExpansionTile(
-              title: const Text('Tallennetut sijainnit'),
-              subtitle: Text('${_locationZones.length} aluetta — auttaa automaattisessa nimeämisessä'),
-              initiallyExpanded: _zonesExpanded,
-              onExpansionChanged: (v) => _zonesExpanded = v,
-              children: [
-                ..._locationZones.map((z) => ListTile(
-                  dense: true,
-                  title: Text(z.name),
-                  subtitle: Text('${z.radiusMeters.toStringAsFixed(0)} m'),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete, size: 18),
-                    onPressed: () => _deleteZone(z),
-                  ),
-                )),
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: OutlinedButton.icon(
-                    onPressed: _addZone,
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('Lisää nykyinen sijainti'),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            _sectionHeader('Google Sheets'),
-            _buildSheetsAuthButton(),
             const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: _sheetIdController,
-                    decoration: const InputDecoration(
-                      labelText: 'Sheets-tiedoston ID',
-                      hintText: 'URL:stä löytyvä tunniste',
-                      border: OutlineInputBorder(),
+            // Sijaintialueet
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Sijaintialueet',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .primary)),
+                    const SizedBox(height: 4),
+                    ExpansionTile(
+                      title: const Text('Tallennetut sijainnit'),
+                      subtitle: Text(
+                          '${_locationZones.length} aluetta'),
+                      initiallyExpanded: _zonesExpanded,
+                      onExpansionChanged: (v) => _zonesExpanded = v,
+                      children: [
+                        ..._locationZones.map((z) => ListTile(
+                              dense: true,
+                              title: Text(z.name),
+                              subtitle: Text(
+                                  '${z.radiusMeters.toStringAsFixed(0)} m'),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.delete,
+                                    size: 18),
+                                onPressed: () => _deleteZone(z),
+                              ),
+                            )),
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: OutlinedButton.icon(
+                            onPressed: _addZone,
+                            icon:
+                                const Icon(Icons.add, size: 18),
+                            label: const Text(
+                                'Lisää nykyinen sijainti'),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                SizedBox(
-                  height: 56,
-                  child: OutlinedButton(
-                    onPressed: _signedIn ? _showFilePicker : null,
-                    child: const Icon(Icons.folder_open),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _sheetTabController,
-              decoration: const InputDecoration(
-                labelText: 'Välilehden nimi',
-                hintText: 'Esim. Taulukko1',
-                border: OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 16),
-            _sectionHeader('Vianmääritys'),
-            SwitchListTile(
-              title: const Text('Virheloki'),
-              subtitle: const Text('Tallentaa lokitiedoston puhelimeen'),
-              value: ref.watch(settingsProvider).debugLogging,
-              onChanged: (v) async {
-                await ref.read(settingsProvider.notifier).update({
-                  'debug_logging': v ? '1' : '0',
-                });
-                LogService().setEnabled(v);
-                if (v) {
-                  await LogService().init(enabled: true);
-                }
-                setState(() {});
-              },
-            ),
-            if (ref.watch(settingsProvider).debugLogging)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Row(
+            // Google Sheets
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _shareLogs,
-                        icon: const Icon(Icons.share),
-                        label: const Text('Jaa loki'),
-                      ),
+                    Text('Google Sheets',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .primary)),
+                    const SizedBox(height: 12),
+                    _buildSheetsAuthButton(),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _sheetIdController,
+                            decoration: const InputDecoration(
+                              labelText: 'Sheets-tiedoston ID',
+                              hintText: 'URL:stä löytyvä tunniste',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          height: 56,
+                          child: OutlinedButton(
+                            onPressed:
+                                _signedIn ? _showFilePicker : null,
+                            child:
+                                const Icon(Icons.folder_open),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _copyLogsToDownloads,
-                        icon: const Icon(Icons.download),
-                        label: const Text('Tallenna tiedot'),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _sheetTabController,
+                      decoration: const InputDecoration(
+                        labelText: 'Välilehden nimi',
+                        hintText: 'Esim. Taulukko1',
                       ),
                     ),
                   ],
                 ),
               ),
+            ),
             const SizedBox(height: 16),
-            _sectionHeader('Tietoja'),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Sovelluksen versio'),
-              subtitle: Text(appVersion),
-              leading: const Icon(Icons.info_outline),
+            // Vianmääritys
+            Card(
+              child: Column(
+                children: [
+                  SwitchListTile(
+                    title: const Text('Virheloki'),
+                    subtitle: const Text(
+                        'Tallentaa lokitiedoston puhelimeen'),
+                    value:
+                        ref.watch(settingsProvider).debugLogging,
+                    onChanged: (v) async {
+                      await ref
+                          .read(settingsProvider.notifier)
+                          .update({
+                        'debug_logging': v ? '1' : '0',
+                      });
+                      LogService().setEnabled(v);
+                      if (v) {
+                        await LogService().init(enabled: true);
+                      }
+                      setState(() {});
+                    },
+                  ),
+                  if (ref.watch(settingsProvider).debugLogging)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                          16, 0, 16, 12),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _shareLogs,
+                              icon: const Icon(Icons.share),
+                              label: const Text('Jaa loki'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _copyLogsToDownloads,
+                              icon:
+                                  const Icon(Icons.download),
+                              label: const Text(
+                                  'Tallenna tiedot'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Tietoja
+            Card(
+              child: ListTile(
+                title: const Text('Sovelluksen versio'),
+                subtitle: Text(appVersion),
+                leading: const Icon(Icons.info_outline),
+              ),
             ),
             const SizedBox(height: 24),
             FilledButton.icon(
@@ -285,25 +383,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ? const SizedBox(
                       width: 16,
                       height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child:
+                          CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.save),
               label: Text(_saving ? 'Tallennetaan...' : 'Tallenna'),
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _sectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Text(
-        title,
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-            ),
       ),
     );
   }

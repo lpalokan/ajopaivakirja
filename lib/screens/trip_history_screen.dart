@@ -13,6 +13,7 @@ import '../services/trip_calculator.dart';
 import '../services/pdf_report_service.dart';
 import '../services/csv_export_service.dart';
 import '../models/expense.dart';
+import '../widgets/status_chip_row.dart';
 
 class TripHistoryScreen extends ConsumerStatefulWidget {
   const TripHistoryScreen({super.key});
@@ -29,6 +30,8 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
   bool _loading = true;
   bool _syncing = false;
   Map<int, double> _kmRates = {};
+  int _draftCount = 0;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -55,10 +58,12 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     // Load expenses for all legs
     final allLegIds = legsByDate.values.expand((l) => l).map((l) => l.id).whereType<int>().toList();
     _expensesByLegId = await DatabaseService.getExpensesForLegs(allLegIds);
+    final draftCount = await DatabaseService.getDraftCount();
     if (mounted) {
       setState(() {
         _dates = dates;
         _legsByDate = legsByDate;
+        _draftCount = draftCount;
         _loading = false;
       });
     }
@@ -144,6 +149,18 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     final endLocCtrl = TextEditingController(text: leg.endLocation ?? '');
     final purposeCtrl = TextEditingController(text: leg.purpose ?? '');
     final driverCtrl = TextEditingController(text: leg.driver);
+
+    // For drafts, determine which field to auto-focus (first null field)
+    String? draftFocusField;
+    if (leg.isDraft) {
+      if (leg.endOdometer == null) {
+        draftFocusField = 'endOdometer';
+      } else if (leg.endLocation == null || leg.endLocation!.isEmpty) {
+        draftFocusField = 'endLocation';
+      } else if (leg.purpose == null || leg.purpose!.isEmpty) {
+        draftFocusField = 'purpose';
+      }
+    }
 
     var pickedStartTime = leg.startTime;
     var pickedEndTime = leg.endTime;
@@ -243,6 +260,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: endLocCtrl,
+                  autofocus: draftFocusField == 'endLocation',
                   decoration: const InputDecoration(
                     labelText: 'Määränpää',
                     border: OutlineInputBorder(),
@@ -261,6 +279,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: endOdoCtrl,
+                  autofocus: draftFocusField == 'endOdometer',
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   decoration: const InputDecoration(
@@ -271,6 +290,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: purposeCtrl,
+                  autofocus: draftFocusField == 'purpose',
                   decoration: const InputDecoration(
                     labelText: 'Tarkoitus',
                     border: OutlineInputBorder(),
@@ -450,14 +470,50 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
           ? const Center(child: CircularProgressIndicator())
           : _dates.isEmpty
               ? const Center(child: Text('Ei ajohistoriaa'))
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _dates.length,
-                  itemBuilder: (context, index) {
-                    final date = _dates[index];
-                    final legs = _legsByDate[date]!;
-                    return _buildDateGroup(date, legs);
-                  },
+              : Column(
+                  children: [
+                    StatusChipRow(
+                      draftCount: _draftCount,
+                      unsyncedCount: _hasUnsynced
+                          ? _legsByDate.values
+                              .expand((l) => l)
+                              .where((l) => !l.synced)
+                              .length
+                          : 0,
+                      onDraftsTap: () {
+                        // Scroll to first draft
+                        var draftIdx = 0;
+                        for (final date in _dates) {
+                          final legs = _legsByDate[date]!;
+                          for (final leg in legs) {
+                            if (leg.isDraft) {
+                              _scrollController.animateTo(
+                                draftIdx * 200.0,
+                                // approximate offset
+                                duration:
+                                    const Duration(milliseconds: 300),
+                                curve: Curves.easeInOut,
+                              );
+                              return;
+                            }
+                          }
+                        }
+                      },
+                      onUnsyncedTap: _syncAll,
+                    ),
+                    Expanded(
+                      child: ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.all(16),
+                        itemCount: _dates.length,
+                        itemBuilder: (context, index) {
+                          final date = _dates[index];
+                          final legs = _legsByDate[date]!;
+                          return _buildDateGroup(date, legs);
+                        },
+                      ),
+                    ),
+                  ],
                 ),
     );
   }
@@ -656,6 +712,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     final totalKm = legs.fold<double>(0, (s, l) => s + l.kmDriven);
     final totalAllowance =
         legs.fold<double>(0, (s, l) => s + l.kmAllowance + l.dailyAllowance);
+    final hasDrafts = legs.any((l) => l.isDraft);
     final displayDate = _formatDisplayDate(date);
 
     return Card(
@@ -671,7 +728,8 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                 Text(displayDate,
                     style: Theme.of(context).textTheme.titleSmall),
                 Text(
-                  '${totalKm.toStringAsFixed(1)} km · €${totalAllowance.toStringAsFixed(2)}',
+                  '${totalKm.toStringAsFixed(1)} km · €${totalAllowance.toStringAsFixed(2)}'
+                  '${hasDrafts ? " ± luonnos" : ""}',
                   style: TextStyle(
                       color: Theme.of(context).colorScheme.primary,
                       fontWeight: FontWeight.bold),
@@ -680,48 +738,94 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
             ),
           ),
           for (final leg in legs) ...[
-            Dismissible(
-              key: Key('leg_${leg.id}'),
-              direction: DismissDirection.endToStart,
-              confirmDismiss: (_) async {
-                return await _deleteLeg(leg);
-              },
-              background: Container(
-                alignment: Alignment.centerRight,
-                padding: const EdgeInsets.only(right: 20),
-                color: Theme.of(context).colorScheme.error,
-                child: const Icon(Icons.delete, color: Colors.white),
-              ),
-              child: ListTile(
-                dense: true,
-                onTap: () => _showEditDialog(leg),
-                title: Text(
-                    leg.routeDescription ?? '${leg.startLocation} → ${leg.endLocation ?? "-"}'),
-                subtitle: Text(
-                  '${_formatTime(leg.startTime)}–${leg.endTime != null ? _formatTime(leg.endTime!) : "..."} · '
-                  '${leg.kmDriven.toStringAsFixed(1)} km',
+            if (leg.isDraft)
+              _buildDraftRow(leg)
+            else
+              Dismissible(
+                key: Key('leg_${leg.id}'),
+                direction: DismissDirection.endToStart,
+                confirmDismiss: (_) async {
+                  return await _deleteLeg(leg);
+                },
+                background: Container(
+                  alignment: Alignment.centerRight,
+                  padding: const EdgeInsets.only(right: 20),
+                  color: Theme.of(context).colorScheme.error,
+                  child: const Icon(Icons.delete, color: Colors.white),
                 ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('€${leg.totalAllowance.toStringAsFixed(2)}'),
-                    if (!leg.synced)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 8),
-                        child: Icon(Icons.cloud_off,
-                            size: 16,
-                            color: Theme.of(context).colorScheme.outline),
-                      ),
-                    const Icon(Icons.chevron_right, size: 18),
-                  ],
+                child: ListTile(
+                  dense: true,
+                  onTap: () => _showEditDialog(leg),
+                  title: Text(
+                      leg.routeDescription ?? '${leg.startLocation} → ${leg.endLocation ?? "-"}'),
+                  subtitle: Text(
+                    '${_formatTime(leg.startTime)}–${leg.endTime != null ? _formatTime(leg.endTime!) : "..."} · '
+                    '${leg.kmDriven.toStringAsFixed(1)} km',
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('€${leg.totalAllowance.toStringAsFixed(2)}'),
+                      const Icon(Icons.chevron_right, size: 18),
+                    ],
+                  ),
                 ),
               ),
-            ),
             // Show expenses for this leg
             if (leg.id != null)
               ..._buildExpenseRows(leg.id!),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildDraftRow(TripLeg leg) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      decoration: BoxDecoration(
+        border: Border(
+          left: BorderSide(
+            color: Colors.amber.shade700,
+            width: 4,
+          ),
+        ),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ListTile(
+        dense: true,
+        onTap: () => _showEditDialog(leg),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                  leg.routeDescription ?? '${leg.startLocation} → ${leg.endLocation ?? "-"}'),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.amber.shade100,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                'Luonnos',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.amber.shade900,
+                ),
+              ),
+            ),
+          ],
+        ),
+        subtitle: Text(
+          '${_formatTime(leg.startTime)}–${leg.endTime != null ? _formatTime(leg.endTime!) : "..."} · '
+          '${leg.kmDriven.toStringAsFixed(1)} km',
+        ),
+        trailing: TextButton(
+          onPressed: () => _showEditDialog(leg),
+          child: const Text('Täydennä'),
+        ),
       ),
     );
   }

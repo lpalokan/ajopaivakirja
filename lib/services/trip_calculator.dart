@@ -157,13 +157,15 @@ class TripCalculator {
   }
 
   /// Calculate a day summary: total km, total allowances.
+  /// Returns [estimated] = true if any leg in the day is a draft.
   ({double totalKm, double totalKmAllowance, double totalDailyAllowance,
-      double grandTotal}) summarizeDay(List<TripLeg> legs) {
+      double grandTotal, bool estimated}) summarizeDay(List<TripLeg> legs) {
     final totalKm = legs.fold<double>(0, (sum, l) => sum + l.kmDriven);
     final totalKmAllowance =
         legs.fold<double>(0, (sum, l) => sum + l.kmAllowance);
     final totalDailyAllowance =
         legs.fold<double>(0, (sum, l) => sum + l.dailyAllowance);
+    final hasDraft = legs.any((l) => l.isDraft);
 
     return (
       totalKm: double.parse(totalKm.toStringAsFixed(2)),
@@ -172,6 +174,7 @@ class TripCalculator {
           double.parse(totalDailyAllowance.toStringAsFixed(2)),
       grandTotal: double.parse(
           (totalKmAllowance + totalDailyAllowance).toStringAsFixed(2)),
+      estimated: hasDraft,
     );
   }
 }

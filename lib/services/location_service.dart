@@ -85,7 +85,7 @@ class LocationService {
     double nearestDist = double.infinity;
 
     for (final zone in zones) {
-      final dist = _haversineDistance(
+      final dist = haversineDistance(
         position.latitude, position.longitude,
         zone.latitude, zone.longitude,
       );
@@ -152,7 +152,7 @@ class LocationService {
       bool nearHome = false;
       for (final zone in zones) {
         if (zone.name.trim().toLowerCase() == homeLocation) {
-          final dist = _haversineDistance(
+          final dist = haversineDistance(
             pos.latitude, pos.longitude,
             zone.latitude, zone.longitude,
           );
@@ -183,7 +183,7 @@ class LocationService {
   }
 
   /// Haversine distance in meters between two lat/lon points.
-  static double _haversineDistance(
+  static double haversineDistance(
     double lat1, double lon1, double lat2, double lon2,
   ) {
     const double earthRadius = 6371000;

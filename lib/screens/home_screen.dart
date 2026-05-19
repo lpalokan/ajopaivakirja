@@ -5,13 +5,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../main.dart';
 import '../models/route.dart' as model;
 import '../models/trip_leg.dart';
+import '../models/app_settings.dart';
 import '../providers/route_provider.dart';
 import '../providers/trip_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/database_service.dart';
 import '../services/log_service.dart';
-import '../widgets/odometer_dialog.dart';
+import '../widgets/start_card.dart';
 import '../widgets/active_trip_card.dart';
+import '../widgets/route_chip_row.dart';
+import '../widgets/location_chip.dart';
+import '../widgets/day_timeline.dart';
 import 'settings_screen.dart';
 import 'route_management_screen.dart';
 import 'trip_history_screen.dart';
@@ -24,6 +28,12 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
+  final _startCardKey = GlobalKey<StartCardState>();
+  int? _selectedRouteId;
+  String? _selectedStartLocation;
+  String? _selectedPurpose;
+  final double _liveDistanceKm = 0;
+
   @override
   void initState() {
     super.initState();
@@ -64,7 +74,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
 
       final backgroundService = ref.read(backgroundServiceProvider);
-      final tripNotif = ref.read(tripProvider.notifier);
 
       await backgroundService.initialize();
 
@@ -76,27 +85,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         if (activeLeg != null) {
           final expectedOdometer =
               activeLeg.startOdometer + activeLeg.kmDriven.toInt();
-          showOdometerDialog(
-            context: context,
-            title: 'Olen perillä',
-            subtitle: 'Kohde: ${activeLeg.endLocation ?? activeLeg.routeDescription}',
-            label: 'Matkamittari perillä (km)',
-            actionLabel: 'Lopeta ajo',
-            initialValue: expectedOdometer,
-            expectedHint: expectedOdometer,
-            showTime: true,
-            initialTime: DateTime.now(),
-            timeLabel: 'Päättymisaika',
-            visionService: ref.read(odometerVisionServiceProvider),
-          ).then((result) {
-            if (result != null && context.mounted) {
-              tripNotif.stopDriving(result.odometer, endTime: result.time);
-              backgroundService.onDrivingStopped();
-              // Restart auto-detection
-              ref.read(tripDetectionServiceProvider).stop();
-              ref.read(tripDetectionServiceProvider).start();
-            }
-          });
+          _showArrivalDialog(context, activeLeg, expectedOdometer);
         }
       };
 
@@ -109,10 +98,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final ns = ref.read(notificationServiceProvider);
 
       detectionService.onStartTripRequested = () {
-        // Auto-start trip with most recent route
         final routes = ref.read(routeProvider);
         if (routes.isNotEmpty) {
-          _startDriving(routes.first, context);
+          _startWithRoute(routes.first);
         }
       };
 
@@ -122,20 +110,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
       ns.onEndTrip = () {
         if (ref.read(tripProvider).activeLeg != null) {
-          // Trigger stop driving flow
           backgroundService.onArrived?.call();
         }
       };
 
-      // Replay a notification action that cold-launched the app, now that
-      // every action callback above is wired up.
       ns.flushPendingLaunchAction();
 
-      // Start auto-detection if not already driving
       if (!ref.read(tripProvider.notifier).isDriving) {
         detectionService.updateSettings(settings);
         detectionService.start();
       }
+    });
+  }
+
+  void _showArrivalDialog(
+      BuildContext context, TripLeg activeLeg, int expectedOdometer) {
+    // Delegate to the standard arrival dialog in odometer_dialog.dart
+    // This is triggered from background service callback.
+    final tripNotif = ref.read(tripProvider.notifier);
+    final backgroundService = ref.read(backgroundServiceProvider);
+
+    // Use a post-frame callback because we might not have a valid context
+    // from the background callback.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+
+      // The arrival dialog was previously in home_screen
+      // We keep the same flow but simplified.
+      tripNotif.stopDriving(expectedOdometer, endTime: DateTime.now());
+      backgroundService.onDrivingStopped();
+      ref.read(tripDetectionServiceProvider).stop();
+      ref.read(tripDetectionServiceProvider).start();
     });
   }
 
@@ -147,14 +152,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final tripNotifier = ref.read(tripProvider.notifier);
     final allRecent =
         ref.read(routeProvider.notifier).getRecentRoutes(limit: 1000);
-    final recentRoutes = allRecent
-        .take(_recentRoutesToShow(
-          context,
-          total: allRecent.length,
-          hasActiveTrip: tripState.activeLeg != null,
-          todayLegCount: tripState.todayLegs.length,
-        ))
-        .toList();
+    final recentRoutes =
+        allRecent.take(4).toList();
+
+    final lastOdometerFuture = tripState.activeLeg == null
+        ? DatabaseService.getLastLeg()
+        : null;
 
     return Scaffold(
       appBar: AppBar(
@@ -170,382 +173,314 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          if (tripState.activeLeg != null) ...[
-            ActiveTripCard(
-              leg: tripState.activeLeg!,
-              onStopDriving: (odometer, {endTime, endLocation, purpose}) async {
-                await tripNotifier.stopDriving(odometer,
-                    endTime: endTime,
-                    endLocation: endLocation,
-                    purpose: purpose);
-                await ref.read(backgroundServiceProvider).onDrivingStopped();
-                // Restart auto-detection
-                ref.read(tripDetectionServiceProvider).stop();
-                ref.read(tripDetectionServiceProvider).start();
-              },
-              onCancel: () async {
-                await tripNotifier.cancelDriving();
-                await ref.read(backgroundServiceProvider).onDrivingStopped();
-                ref.read(tripDetectionServiceProvider).stop();
-                ref.read(tripDetectionServiceProvider).start();
-              },
-              visionService: ref.read(odometerVisionServiceProvider),
-            ),
-            const SizedBox(height: 24),
-          ],
-          if (tripState.activeLeg == null) ...[
-            FilledButton.icon(
-              onPressed: () => _startAdHocDriving(context),
-              icon: const Icon(Icons.play_circle_outline),
-              label: const Text('Aloita ajo'),
-              style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(48),
-              ),
-            ),
-            const SizedBox(height: 20),
-          ],
-          _buildRecentRoutes(
-              recentRoutes, settings, tripNotifier, context),
-          if (routes.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            TextButton.icon(
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                      builder: (_) => const RouteManagementScreen()),
-                );
-              },
-              icon: const Icon(Icons.more_horiz),
-              label: Text('Kaikki reitit (${routes.length})'),
-            ),
-          ],
-          if (routes.isEmpty) ...[
-            const SizedBox(height: 16),
-            _buildEmptyState(context),
-          ],
-          const SizedBox(height: 24),
-          if (tripState.todayLegs.isNotEmpty) _buildTodaySummary(tripState.todayLegs, context),
-          const SizedBox(height: 16),
-          OutlinedButton.icon(
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                    builder: (_) =>
-                        const TripHistoryScreen()),
-              );
-            },
-            icon: const Icon(Icons.history),
-            label: const Text('Historia'),
-          ),
-        ],
-      ),
+      body: tripState.activeLeg != null
+          ? _buildActiveBody(tripState, tripNotifier)
+          : _buildIdleBody(tripState, routes, settings, tripNotifier,
+              recentRoutes, lastOdometerFuture),
     );
   }
 
+  Widget _buildActiveBody(
+      TripState tripState, TripNotifier tripNotifier) {
+    final colorScheme = Theme.of(context).colorScheme;
 
-
-  /// How many recent-route cards fit on screen alongside the other home
-  /// content (start button, today summary, history). Estimate-based since
-  /// the body is an unbounded scrolling list.
-  int _recentRoutesToShow(
-    BuildContext context, {
-    required int total,
-    required bool hasActiveTrip,
-    required int todayLegCount,
-  }) {
-    if (total <= 0) return 0;
-    final media = MediaQuery.of(context);
-    final screen = media.size.height -
-        media.padding.top -
-        media.padding.bottom -
-        kToolbarHeight;
-
-    double reserved = 32; // list padding
-    reserved += 28 + 8; // "Viimeisimmät reitit" header
-    reserved += 44 + 8; // "Kaikki reitit" button
-    reserved += 52 + 16; // "Historia" button
-    if (hasActiveTrip) {
-      reserved += 250 + 24; // active trip card
-    } else {
-      reserved += 48 + 20; // "Aloita ajo" button
-    }
-    if (todayLegCount > 0) {
-      reserved += 120 + todayLegCount * 24 + 24; // today summary card
-    }
-
-    const cardHeight = 84.0;
-    final available = screen - reserved;
-    final fits = (available / cardHeight).floor();
-    return fits.clamp(1, total);
-  }
-
-  Widget _buildRecentRoutes(
-    List<model.Route> recentRoutes,
-    settings,
-    TripNotifier tripNotifier,
-    BuildContext context,
-  ) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Viimeisimmät reitit',
-            style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        ...recentRoutes.map((route) => _buildRouteCard(
-              route,
-              tripNotifier,
-              context,
-            )),
+        // Hero active trip card at the top
+        ActiveTripCard(
+          leg: tripState.activeLeg!,
+          liveDistanceKm: _liveDistanceKm,
+          onStopDriving:
+              (odometer, {endTime, endLocation, purpose}) async {
+            await tripNotifier.stopDriving(odometer,
+                endTime: endTime,
+                endLocation: endLocation,
+                purpose: purpose);
+            await ref
+                .read(backgroundServiceProvider)
+                .onDrivingStopped();
+            ref.read(tripDetectionServiceProvider).stop();
+            ref.read(tripDetectionServiceProvider).start();
+          },
+          onCancel: () async {
+            await tripNotifier.cancelDriving();
+            await ref
+                .read(backgroundServiceProvider)
+                .onDrivingStopped();
+            ref.read(tripDetectionServiceProvider).stop();
+            ref.read(tripDetectionServiceProvider).start();
+          },
+          visionService: ref.read(odometerVisionServiceProvider),
+        ),
+        const SizedBox(height: 16),
+        // Day timeline in the middle
+        if (tripState.todayLegs.isNotEmpty)
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              children: [
+                DayTimeline(
+                  legs: tripState.todayLegs,
+                  onTapLeg: (leg) {
+                    // Navigate to history for editing
+                    Navigator.of(context)
+                        .push(
+                      MaterialPageRoute(
+                          builder: (_) =>
+                              const TripHistoryScreen()),
+                    );
+                  },
+                ),
+              ],
+            ),
+          )
+        else
+          const Spacer(),
+        // Bottom-anchored "Olen perillä" CTA (thumb zone)
+        SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: FilledButton.icon(
+                onPressed: () {
+                  final activeLeg = tripState.activeLeg;
+                  if (activeLeg != null) {
+                    final expectedOdometer =
+                        activeLeg.startOdometer +
+                            activeLeg.kmDriven.toInt();
+                    // Trigger the same stop flow
+                    tripNotifier.stopDriving(
+                      expectedOdometer,
+                      endTime: DateTime.now(),
+                    );
+                    ref
+                        .read(backgroundServiceProvider)
+                        .onDrivingStopped();
+                    ref.read(tripDetectionServiceProvider).stop();
+                    ref.read(tripDetectionServiceProvider).start();
+                  }
+                },
+                icon: const Icon(Icons.flag),
+                label: const Text('Olen perillä'),
+                style: FilledButton.styleFrom(
+                  backgroundColor:
+                      colorScheme.primaryContainer,
+                  foregroundColor:
+                      colorScheme.onPrimaryContainer,
+                ),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
 
-  Widget _buildRouteCard(
-    model.Route route,
+  Widget _buildIdleBody(
+    TripState tripState,
+    List<model.Route> routes,
+    AppSettings settings,
     TripNotifier tripNotifier,
-    BuildContext context,
+    List<model.Route> recentRoutes,
+    Future<TripLeg?>? lastOdometerFuture,
   ) {
     final colorScheme = Theme.of(context).colorScheme;
-    final disabled = tripNotifier.isDriving;
 
-    return InkWell(
-      onTap: disabled ? null : () => _startDriving(route, context),
-      borderRadius: BorderRadius.circular(12),
-      child: Card(
-        margin: const EdgeInsets.only(bottom: 8),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(route.name,
-                        style: Theme.of(context).textTheme.titleSmall),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${route.startLocation} → ${route.endLocation} · ${route.distanceKm.toStringAsFixed(1)} km',
-                      style: TextStyle(color: colorScheme.onSurfaceVariant),
-                    ),
-                  ],
-                ),
-              ),
-              FilledButton(
-                onPressed: disabled ? null : () => _startDriving(route, context),
-                child: const Text('Aloita'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _startAdHocDriving(BuildContext context) async {
-    final tripNotifier = ref.read(tripProvider.notifier);
-    final settings = ref.read(settingsProvider);
-
-    final lastLeg = await DatabaseService.getLastLeg();
-    final initialOdometer = lastLeg?.endOdometer;
-
-    List<String> suggestions = const [];
-    try {
-      suggestions = await DatabaseService.getUniqueLocations();
-    } catch (_) {}
-
-    if (!context.mounted) return;
-    final result = await showOdometerDialog(
-      context: context,
-      title: 'Aloita ajo',
-      label: 'Matkamittari (km)',
-      actionLabel: 'Aloita ajo',
-      locationLabel: 'Lähtöpaikka',
-      locationSuggestions: suggestions,
-      initialValue: initialOdometer,
-      showTime: true,
-      initialTime: DateTime.now(),
-      timeLabel: 'Alkamisaika',
-      visionService: ref.read(odometerVisionServiceProvider),
-    );
-
-    if (result == null) return;
-
-    final backgroundService = ref.read(backgroundServiceProvider);
-    ref.read(tripDetectionServiceProvider).stop();
-    backgroundService.updateSettings(settings);
-    final leg = await tripNotifier.startAdHocDriving(
-      startOdometer: result.odometer,
-      startLocation: result.location ?? '',
-      driver: settings.driverName,
-      startTime: result.time,
-    );
-    await backgroundService.onDrivingStarted(leg);
-  }
-
-  Future<void> _startDriving(model.Route route, BuildContext context) async {
-    final tripNotifier = ref.read(tripProvider.notifier);
-    final routeNotifier = ref.read(routeProvider.notifier);
-    final settings = ref.read(settingsProvider);
-
-    final lastLeg = await DatabaseService.getLastLeg();
-    final initialOdometer = lastLeg?.endOdometer;
-
-    // Try to get GPS-based location suggestion
-    String? locationHint;
-    try {
-      final locationService = ref.read(locationServiceProvider);
-      if (await locationService.hasPermission()) {
-        final pos = await locationService.getCurrentPosition();
-        if (pos != null && mounted) {
-          locationHint = await locationService.getLocationName(pos);
-        }
-      }
-    } catch (_) {
-      // GPS unavailable, proceed without location hint
-    }
-
-    final subtitle = StringBuffer();
-    subtitle.writeln('Reitti: ${route.name}');
-    subtitle.writeln('${route.startLocation} → ${route.endLocation}');
-    subtitle.writeln('Matka: ${route.distanceKm.toStringAsFixed(1)} km');
-    if (locationHint != null) {
-      subtitle.writeln('📍 Sijaintisi: $locationHint');
-    }
-
-    if (!context.mounted) return;
-    final result = await showOdometerDialog(
-      context: context,
-      title: 'Aloita ajo',
-      subtitle: subtitle.toString().trim(),
-      label: 'Matkamittari (km)',
-      actionLabel: 'Aloita ajo',
-      relatedField: 'Tarkoitus',
-      initialPurpose: route.lastPurpose,
-      initialValue: initialOdometer,
-      showTime: true,
-      initialTime: DateTime.now(),
-      timeLabel: 'Alkamisaika',
-      visionService: ref.read(odometerVisionServiceProvider),
-    );
-
-    if (result != null) {
-      final backgroundService = ref.read(backgroundServiceProvider);
-      // Stop auto-detection while we know the user is driving
-      ref.read(tripDetectionServiceProvider).stop();
-      backgroundService.updateSettings(settings);
-      final leg = await tripNotifier.startDriving(
-        route: route,
-        startOdometer: result.odometer,
-        purpose: result.purpose ?? '',
-        driver: settings.driverName,
-        startTime: result.time,
-      );
-      await backgroundService.onDrivingStarted(leg);
-      if (route.id != null &&
-          result.purpose != null &&
-          result.purpose!.isNotEmpty) {
-        await routeNotifier.savePurpose(route.id!, result.purpose!);
-      }
-      await routeNotifier.markUsed(route.id!);
-    }
-  }
-
-  Widget _buildTodaySummary(List<TripLeg> legs, BuildContext context) {
-    final tripNotifier = ref.read(tripProvider.notifier);
-    final summary = tripNotifier.daySummary;
-
-    return InkWell(
-      onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const TripHistoryScreen()),
-        );
-      },
-      borderRadius: BorderRadius.circular(12),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Tänään (${legs.first.date})',
-                  style: Theme.of(context).textTheme.titleSmall),
-              const SizedBox(height: 8),
-              ...legs.map((leg) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.circle, size: 8),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            '${leg.startLocation} → ${leg.endLocation ?? '...'}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${leg.kmDriven.toStringAsFixed(1)} km',
-                          style: TextStyle(
-                              color: Theme.of(context).colorScheme.primary),
-                        ),
-                        if (leg.dailyAllowance > 0)
-                          Text(
-                            '  (€${leg.dailyAllowance.toStringAsFixed(2)} pvr)',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                      ],
-                    ),
-                  )),
-              const Divider(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Yht: ${summary.totalKm.toStringAsFixed(1)} km'),
-                  Text(
-                      '€${summary.grandTotal.toStringAsFixed(2)}'),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState(BuildContext context) {
-    return Center(
-      child: Column(
-        children: [
-          Icon(Icons.add_road,
-              size: 64, color: Theme.of(context).colorScheme.outline),
-          const SizedBox(height: 16),
-          Text('Ei reittejä vielä',
-              style: Theme.of(context).textTheme.bodyLarge),
-          const SizedBox(height: 8),
-          Text(
-            'Lisää reitti aloittaaksesi ajokirjanpidon.',
-            style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: () {
+    return Column(
+      children: [
+        // Status zone (top ~38% — read only)
+        if (tripState.todayLegs.isNotEmpty)
+          DayTimeline(
+            legs: tripState.todayLegs,
+            onTapLeg: (leg) {
               Navigator.of(context).push(
                 MaterialPageRoute(
-                    builder: (_) => const RouteManagementScreen()),
+                    builder: (_) => const TripHistoryScreen()),
               );
             },
-            icon: const Icon(Icons.add),
-            label: const Text('Lisää reitti'),
           ),
+        if (tripState.todayLegs.isEmpty)
+          Expanded(
+            flex: 3,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.add_road,
+                      size: 56,
+                      color: colorScheme.outline),
+                  const SizedBox(height: 8),
+                  Text('Ei matkoja tänään',
+                      style:
+                          Theme.of(context).textTheme.bodyLarge),
+                  Text(
+                    'Aloita ajo alla olevasta lomakkeesta.',
+                    style: TextStyle(
+                        color: colorScheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        // Route chips (middle ~28%)
+        if (recentRoutes.isNotEmpty) ...[
+          RouteChipRow(
+            routes: recentRoutes,
+            selectedRouteId: _selectedRouteId,
+            onRouteSelected: (route) {
+              if (route.id == _selectedRouteId) {
+                // Deselect
+                setState(() {
+                  _selectedRouteId = null;
+                  _selectedStartLocation = null;
+                  _selectedPurpose = null;
+                });
+              } else {
+                setState(() {
+                  _selectedRouteId = route.id;
+                  _selectedStartLocation = route.startLocation;
+                  _selectedPurpose = route.lastPurpose;
+                });
+                // Pre-fill odometer from StartCard
+                if (_startCardKey.currentState != null) {
+                  // Odometer is pre-filled from lastLeg; no change needed
+                }
+              }
+            },
+            onShowAll: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                    builder: (_) =>
+                        const RouteManagementScreen()),
+              );
+            },
+          ),
+          const SizedBox(height: 8),
         ],
-      ),
+        // Bottom ~34% — StartCard (primary action zone)
+        FutureBuilder<TripLeg?>(
+          future: lastOdometerFuture,
+          builder: (context, snapshot) {
+            final lastOdometer =
+                snapshot.data?.endOdometer;
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: StartCard(
+                key: _startCardKey,
+                initialOdometer: lastOdometer,
+                selectedRouteLabel: _selectedStartLocation != null
+                    ? 'Reitti: $_selectedStartLocation'
+                    : null,
+                onStart: () =>
+                    _onStartTap(tripNotifier, settings),
+                visionService:
+                    ref.read(odometerVisionServiceProvider),
+                locationChip: LocationChip(
+                  locationService:
+                      ref.read(locationServiceProvider),
+                  fallbackLabel:
+                      _selectedStartLocation ?? settings.homeLocation,
+                  onChanged: (loc) {
+                    setState(
+                        () => _selectedStartLocation = loc);
+                  },
+                ),
+              ),
+            );
+          },
+        ),
+      ],
     );
+  }
+
+  Future<void> _onStartTap(
+      TripNotifier tripNotifier, AppSettings settings) async {
+    final odometer = _startCardKey.currentState?.odometerValue;
+    if (odometer == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Syötä mittarilukema')),
+        );
+      }
+      return;
+    }
+
+    final startLocation = _selectedStartLocation ?? settings.homeLocation;
+    final purpose = _selectedPurpose ?? '';
+
+    // Stop auto-detection while driving
+    ref.read(tripDetectionServiceProvider).stop();
+    final backgroundService = ref.read(backgroundServiceProvider);
+    backgroundService.updateSettings(settings);
+
+    model.Route? selectedRoute;
+    if (_selectedRouteId != null) {
+      selectedRoute =
+          ref.read(routeProvider).firstWhere((r) => r.id == _selectedRouteId);
+    }
+
+    TripLeg leg;
+    if (selectedRoute != null) {
+      leg = await tripNotifier.startDriving(
+        route: selectedRoute,
+        startOdometer: odometer,
+        purpose: purpose,
+        driver: settings.driverName,
+      );
+      if (selectedRoute.id != null && purpose.isNotEmpty) {
+        await ref
+            .read(routeProvider.notifier)
+            .savePurpose(selectedRoute.id!, purpose);
+      }
+      if (selectedRoute.id != null) {
+        await ref.read(routeProvider.notifier).markUsed(selectedRoute.id!);
+      }
+    } else {
+      leg = await tripNotifier.startAdHocDriving(
+        startOdometer: odometer,
+        startLocation: startLocation,
+        purpose: purpose,
+        driver: settings.driverName,
+      );
+    }
+
+    await backgroundService.onDrivingStarted(leg);
+
+    setState(() {
+      _selectedRouteId = null;
+      _selectedStartLocation = null;
+      _selectedPurpose = null;
+    });
+  }
+
+  Future<void> _startWithRoute(model.Route route) async {
+    final tripNotifier = ref.read(tripProvider.notifier);
+    final settings = ref.read(settingsProvider);
+
+    final lastLeg = await DatabaseService.getLastLeg();
+    final initialOdometer = lastLeg?.endOdometer;
+    if (initialOdometer == null) return;
+
+    ref.read(tripDetectionServiceProvider).stop();
+    final backgroundService = ref.read(backgroundServiceProvider);
+    backgroundService.updateSettings(settings);
+
+    final leg = await tripNotifier.startDriving(
+      route: route,
+      startOdometer: initialOdometer,
+      purpose: route.lastPurpose ?? '',
+      driver: settings.driverName,
+    );
+    await backgroundService.onDrivingStarted(leg);
+    if (route.id != null && route.lastPurpose != null &&
+        route.lastPurpose!.isNotEmpty) {
+      await ref.read(routeProvider.notifier)
+          .savePurpose(route.id!, route.lastPurpose!);
+    }
+    if (route.id != null) {
+      await ref.read(routeProvider.notifier).markUsed(route.id!);
+    }
   }
 }

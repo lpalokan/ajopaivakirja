@@ -33,6 +33,7 @@ dependencies:
   image_picker: ^1.1.2
   pdf: ^3.11.2
   printing: ^5.14.2
+  material_symbols_icons: ^4.2830.0
 
 dev_dependencies:
   flutter_test:

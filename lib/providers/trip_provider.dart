@@ -277,7 +277,7 @@ class TripNotifier extends StateNotifier<TripState> {
 
   /// Get today's day summary for display.
   ({double totalKm, double totalKmAllowance, double totalDailyAllowance,
-      double grandTotal, double totalHours}) get daySummary {
+      double grandTotal, double totalHours, bool estimated}) get daySummary {
     final legs = state.todayLegs;
     final summary = _calculator.summarizeDay(legs);
     final totalHours = legs.isNotEmpty ? legs.last.legDurationHours : 0.0;
@@ -288,6 +288,7 @@ class TripNotifier extends StateNotifier<TripState> {
       totalDailyAllowance: summary.totalDailyAllowance,
       grandTotal: summary.grandTotal,
       totalHours: totalHours,
+      estimated: summary.estimated,
     );
   }
 }

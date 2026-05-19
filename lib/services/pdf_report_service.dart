@@ -55,7 +55,9 @@ class PdfReportService {
 
     // Trip details
     for (final date in filteredDates) {
-      final legs = legsByDate[date]!;
+      var legs = legsByDate[date]!;
+      legs = legs.where((l) => l.isCompleted).toList();
+      if (legs.isEmpty) continue;
       final summary = calculator.summarizeDay(legs);
 
       grandTotalKm += summary.totalKm;
@@ -121,7 +123,8 @@ class PdfReportService {
       double totalKm,
       double totalKmAllowance,
       double totalDailyAllowance,
-      double grandTotal
+      double grandTotal,
+      bool estimated,
     }) summary,
     DateFormat dateFmt,
     DateFormat timeFmt,

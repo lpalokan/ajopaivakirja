@@ -335,8 +335,31 @@ class DatabaseService {
     final db = await database;
     final maps = await db.query(
       'trip_legs',
-      where: 'synced = 0',
+      where: 'synced = 0 AND end_odometer IS NOT NULL AND (end_location IS NOT NULL AND end_location != "")',
       orderBy: 'date ASC, leg_order ASC',
+    );
+    return maps.map((m) => TripLeg.fromMap(m)).toList();
+  }
+
+  /// Get completed legs only (for exports).
+  static Future<List<TripLeg>> getCompletedLegs() async {
+    final db = await database;
+    final maps = await db.query(
+      'trip_legs',
+      where: 'end_odometer IS NOT NULL AND (end_location IS NOT NULL AND end_location != "")',
+      orderBy: 'date DESC, leg_order ASC',
+    );
+    return maps.map((m) => TripLeg.fromMap(m)).toList();
+  }
+
+  /// Get completed legs for a specific date.
+  static Future<List<TripLeg>> getCompletedLegsForDate(String date) async {
+    final db = await database;
+    final maps = await db.query(
+      'trip_legs',
+      where: 'date = ? AND end_odometer IS NOT NULL AND (end_location IS NOT NULL AND end_location != "")',
+      whereArgs: [date],
+      orderBy: 'leg_order ASC',
     );
     return maps.map((m) => TripLeg.fromMap(m)).toList();
   }
@@ -393,6 +416,26 @@ class DatabaseService {
     );
     if (maps.isEmpty) return null;
     return TripLeg.fromMap(maps.first);
+  }
+
+  /// Get all draft (incomplete) legs — started but missing end fields.
+  static Future<List<TripLeg>> getDraftLegs() async {
+    final db = await database;
+    final maps = await db.query(
+      'trip_legs',
+      where: '(end_odometer IS NULL OR end_location IS NULL OR end_location = "") AND end_time IS NOT NULL',
+      orderBy: 'date DESC, leg_order ASC',
+    );
+    return maps.map((m) => TripLeg.fromMap(m)).toList();
+  }
+
+  /// Count of draft legs.
+  static Future<int> getDraftCount() async {
+    final db = await database;
+    final result = await db.rawQuery(
+      "SELECT COUNT(*) as cnt FROM trip_legs WHERE (end_odometer IS NULL OR end_location IS NULL OR end_location = '') AND end_time IS NOT NULL",
+    );
+    return (result.first['cnt'] as int?) ?? 0;
   }
 
   // ── Km Rates ──

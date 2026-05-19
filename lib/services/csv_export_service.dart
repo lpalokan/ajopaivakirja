@@ -34,6 +34,7 @@ class CsvExportService {
       });
 
     for (final leg in sorted) {
+      if (!leg.isCompleted) continue; // skip drafts
       buf.write(_row(leg));
       buf.write(_crlf);
 

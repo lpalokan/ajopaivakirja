@@ -1,3 +1,5 @@
+enum TripStatus { active, draft, completed }
+
 class TripLeg {
   final int? id;
   final String date;
@@ -157,6 +159,25 @@ class TripLeg {
       TripLeg.fromMap(json);
 
   double get totalAllowance => kmAllowance + dailyAllowance;
+
+  /// Derived status: active (in-progress), draft (started but incomplete),
+  /// or completed (all fields filled).
+  TripStatus get status {
+    if (endTime == null && endOdometer == null) return TripStatus.active;
+    if (endOdometer == null || endLocation == null || endLocation!.isEmpty) {
+      return TripStatus.draft;
+    }
+    return TripStatus.completed;
+  }
+
+  /// Whether this leg is a fully-completed trip ready for export.
+  bool get isCompleted => status == TripStatus.completed;
+
+  /// Whether this leg is a draft (started but incomplete).
+  bool get isDraft => status == TripStatus.draft;
+
+  /// Whether this leg is an active in-progress trip.
+  bool get isActive => status == TripStatus.active;
 
   @override
   String toString() =>
