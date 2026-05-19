@@ -32,6 +32,12 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen>
     with WidgetsBindingObserver {
   final _startCardKey = GlobalKey<StartCardState>();
+  // Stable identity for the location chip: StartCard's Column inserts a
+  // leading route-label row once a location is picked, which shifts the
+  // chip's child index. Without a GlobalKey, keyless reconciliation would
+  // dispose the live chip State mid-callback (the one running the picker
+  // dialog), so its `mounted` check fails and the pick is dropped.
+  final _locationChipKey = GlobalKey();
   int? _selectedRouteId;
   String? _selectedStartLocation;
   String? _selectedPurpose;
@@ -432,6 +438,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 onStart: () => _onStartTap(tripNotifier, settings),
                 visionService: ref.read(odometerVisionServiceProvider),
                 locationChip: LocationChip(
+                  key: _locationChipKey,
                   locationService: ref.read(locationServiceProvider),
                   fallbackLabel:
                       _selectedStartLocation ?? settings.homeLocation,

@@ -434,6 +434,22 @@ Future<void> startAdHoc(WidgetTester tester, String from, int odometer) async {
   await tester.testTextInput.receiveAction(TextInputAction.done);
   await tester.pump(const Duration(milliseconds: 300));
 
+  // Self-diagnosing checkpoint: confirm the text actually landed in the
+  // dialog field before we commit it. If this fails, the bug is in text
+  // entry / the autocomplete field; if this passes but the chip check
+  // below fails, the bug is in propagation back to the chip.
+  final dialogText = find.descendant(
+    of: find.byType(AlertDialog),
+    matching: find.text(from),
+  );
+  expect(
+    dialogText,
+    findsWidgets,
+    reason: "Typed start location '$from' did not land in the 'Muuta "
+        "sijainti' dialog field — text entry / finder is the problem, "
+        'not propagation.',
+  );
+
   final useBtn = find.widgetWithText(FilledButton, 'Käytä');
   await tester.tap(useBtn.first);
   await settle(tester);
