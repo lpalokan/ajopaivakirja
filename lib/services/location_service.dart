@@ -86,8 +86,10 @@ class LocationService {
 
     for (final zone in zones) {
       final dist = haversineDistance(
-        position.latitude, position.longitude,
-        zone.latitude, zone.longitude,
+        position.latitude,
+        position.longitude,
+        zone.latitude,
+        zone.longitude,
       );
       if (dist <= zone.radiusMeters && dist < nearestDist) {
         nearest = zone;
@@ -119,24 +121,24 @@ class LocationService {
 
     _isMonitoring = true;
 
-    _positionStream = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 100,
-      ),
-    ).listen(
-      (position) {
-        _currentPosition = position;
-      },
-      onError: (Object _) {
-        // A transient location error must not leak as an unhandled
-        // async error; monitoring simply pauses until the next fix.
-      },
-      cancelOnError: false,
-    );
+    _positionStream =
+        Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 100,
+          ),
+        ).listen(
+          (position) {
+            _currentPosition = position;
+          },
+          onError: (Object _) {
+            // A transient location error must not leak as an unhandled
+            // async error; monitoring simply pauses until the next fix.
+          },
+          cancelOnError: false,
+        );
 
-    _proximityTimer =
-        Timer.periodic(const Duration(seconds: 30), (_) async {
+    _proximityTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
       if (!_isMonitoring || _targetLocation == null) return;
 
       final pos = _currentPosition;
@@ -153,10 +155,13 @@ class LocationService {
       for (final zone in zones) {
         if (zone.name.trim().toLowerCase() == homeLocation) {
           final dist = haversineDistance(
-            pos.latitude, pos.longitude,
-            zone.latitude, zone.longitude,
+            pos.latitude,
+            pos.longitude,
+            zone.latitude,
+            zone.longitude,
           );
-          if (dist <= zone.radiusMeters + 200) { // a bit of grace
+          if (dist <= zone.radiusMeters + 200) {
+            // a bit of grace
             nearHome = true;
             break;
           }
@@ -184,14 +189,20 @@ class LocationService {
 
   /// Haversine distance in meters between two lat/lon points.
   static double haversineDistance(
-    double lat1, double lon1, double lat2, double lon2,
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
   ) {
     const double earthRadius = 6371000;
     final dLat = _toRadians(lat2 - lat1);
     final dLon = _toRadians(lon2 - lon1);
-    final a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(_toRadians(lat1)) * cos(_toRadians(lat2)) *
-        sin(dLon / 2) * sin(dLon / 2);
+    final a =
+        sin(dLat / 2) * sin(dLat / 2) +
+        cos(_toRadians(lat1)) *
+            cos(_toRadians(lat2)) *
+            sin(dLon / 2) *
+            sin(dLon / 2);
     final c = 2 * atan2(sqrt(a), sqrt(1 - a));
     return earthRadius * c;
   }

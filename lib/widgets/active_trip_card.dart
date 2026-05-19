@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:intl/intl.dart';
 import '../models/trip_leg.dart';
 import '../models/expense.dart';
 import '../services/database_service.dart';
+import '../main.dart';
 import 'odometer_dialog.dart';
 import 'expense_dialog.dart';
 import '../services/odometer_vision_service.dart';
@@ -19,7 +21,8 @@ class ActiveTripCard extends StatelessWidget {
     DateTime? endTime,
     String? endLocation,
     String? purpose,
-  }) onStopDriving;
+  })
+  onStopDriving;
   final VoidCallback? onCancel;
   final OdometerVisionService? visionService;
 
@@ -41,16 +44,12 @@ class ActiveTripCard extends StatelessWidget {
     final minutes = duration.inMinutes.remainder(60);
     final durationStr = '$hours h ${minutes.toString().padLeft(2, '0')} min';
     final routeLabel =
-        leg.routeDescription ?? '${leg.startLocation} → ${leg.endLocation ?? '...'}';
+        leg.routeDescription ??
+        '${leg.startLocation} → ${leg.endLocation ?? '...'}';
 
-    final numeralLarge = Theme.of(context)
-        .textTheme
-        .displayLarge
-        ?.copyWith(
-          fontSize: 56,
-          fontWeight: FontWeight.w700,
-          letterSpacing: -0.02,
-        );
+    final numeralLarge = Theme.of(
+      context,
+    ).extension<NumeralTypography>()!.large;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -111,7 +110,7 @@ class ActiveTripCard extends StatelessWidget {
                   const PopupMenuItem(
                     value: 'expense',
                     child: ListTile(
-                      leading: Icon(Icons.receipt_long),
+                      leading: Icon(Symbols.receipt_long),
                       title: Text('Kulu'),
                       dense: true,
                     ),
@@ -119,9 +118,11 @@ class ActiveTripCard extends StatelessWidget {
                   const PopupMenuItem(
                     value: 'cancel',
                     child: ListTile(
-                      leading: Icon(Icons.close, color: Colors.red),
-                      title: Text('Peru matka',
-                          style: TextStyle(color: Colors.red)),
+                      leading: Icon(Symbols.close, color: Colors.red),
+                      title: Text(
+                        'Peru matka',
+                        style: TextStyle(color: Colors.red),
+                      ),
                       dense: true,
                     ),
                   ),
@@ -134,9 +135,7 @@ class ActiveTripCard extends StatelessWidget {
           Center(
             child: Text(
               '${(leg.kmDriven + liveDistanceKm).toStringAsFixed(1)} km',
-              style: numeralLarge?.copyWith(
-                color: colorScheme.onPrimary,
-              ),
+              style: numeralLarge.copyWith(color: colorScheme.onPrimary),
             ),
           ),
           const SizedBox(height: 4),
@@ -169,19 +168,20 @@ class ActiveTripCard extends StatelessWidget {
   }
 
   Future<void> _addExpense(BuildContext context) async {
-    final result = await showDialog<
-        ({ExpenseType type, double amount, String? description})>(
-      context: context,
-      builder: (ctx) => const ExpenseDialog(),
-    );
+    final result =
+        await showDialog<
+          ({ExpenseType type, double amount, String? description})
+        >(context: context, builder: (ctx) => const ExpenseDialog());
     if (result != null && leg.id != null) {
-      await DatabaseService.insertExpense(Expense(
-        tripLegId: leg.id,
-        type: result.type,
-        amount: result.amount,
-        description: result.description,
-        createdAt: DateTime.now().toIso8601String(),
-      ));
+      await DatabaseService.insertExpense(
+        Expense(
+          tripLegId: leg.id,
+          type: result.type,
+          amount: result.amount,
+          description: result.description,
+          createdAt: DateTime.now().toIso8601String(),
+        ),
+      );
     }
   }
 
@@ -232,7 +232,8 @@ class ActiveTripCard extends StatelessWidget {
       builder: (ctx) => AlertDialog(
         title: const Text('Peru matka'),
         content: const Text(
-            'Haluatko varmasti peruuttaa käynnissä olevan matkan?'),
+          'Haluatko varmasti peruuttaa käynnissä olevan matkan?',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),

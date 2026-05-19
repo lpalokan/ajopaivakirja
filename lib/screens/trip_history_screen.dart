@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -19,8 +20,7 @@ class TripHistoryScreen extends ConsumerStatefulWidget {
   const TripHistoryScreen({super.key});
 
   @override
-  ConsumerState<TripHistoryScreen> createState() =>
-      _TripHistoryScreenState();
+  ConsumerState<TripHistoryScreen> createState() => _TripHistoryScreenState();
 }
 
 class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
@@ -56,7 +56,11 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
       legsByDate[date] = await DatabaseService.getLegsForDate(date);
     }
     // Load expenses for all legs
-    final allLegIds = legsByDate.values.expand((l) => l).map((l) => l.id).whereType<int>().toList();
+    final allLegIds = legsByDate.values
+        .expand((l) => l)
+        .map((l) => l.id)
+        .whereType<int>()
+        .toList();
     _expensesByLegId = await DatabaseService.getExpensesForLegs(allLegIds);
     final draftCount = await DatabaseService.getDraftCount();
     if (mounted) {
@@ -88,10 +92,18 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
           context: context,
           builder: (ctx) => AlertDialog(
             title: const Text('Ei muutoksia'),
-            content: const Text('Ei muutoksia synkronoitavana. Haluatko silti päivittää?'),
+            content: const Text(
+              'Ei muutoksia synkronoitavana. Haluatko silti päivittää?',
+            ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Peruuta')),
-              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Synkronoi')),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Peruuta'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Synkronoi'),
+              ),
             ],
           ),
         );
@@ -125,14 +137,18 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
       await _load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Synkronoitu: ${unsynced.length} riviä${deletedIds.isNotEmpty ? ', poistettu ${deletedIds.length}' : ''}')),
+          SnackBar(
+            content: Text(
+              'Synkronoitu: ${unsynced.length} riviä${deletedIds.isNotEmpty ? ', poistettu ${deletedIds.length}' : ''}',
+            ),
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Synkronointi epäonnistui: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Synkronointi epäonnistui: $e')));
       }
     } finally {
       if (mounted) setState(() => _syncing = false);
@@ -143,8 +159,12 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     final settings = ref.read(settingsProvider);
     final calc = TripCalculator(settings, kmRates: _kmRates);
 
-    final startOdoCtrl = TextEditingController(text: leg.startOdometer.toString());
-    final endOdoCtrl = TextEditingController(text: leg.endOdometer?.toString() ?? '');
+    final startOdoCtrl = TextEditingController(
+      text: leg.startOdometer.toString(),
+    );
+    final endOdoCtrl = TextEditingController(
+      text: leg.endOdometer?.toString() ?? '',
+    );
     final startLocCtrl = TextEditingController(text: leg.startLocation);
     final endLocCtrl = TextEditingController(text: leg.endLocation ?? '');
     final purposeCtrl = TextEditingController(text: leg.purpose ?? '');
@@ -179,7 +199,10 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Muokkaa merkintää', style: Theme.of(ctx).textTheme.titleLarge),
+                Text(
+                  'Muokkaa merkintää',
+                  style: Theme.of(ctx).textTheme.titleLarge,
+                ),
                 const SizedBox(height: 16),
                 InkWell(
                   onTap: () async {
@@ -195,7 +218,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                     decoration: const InputDecoration(
                       labelText: 'Päivämäärä',
                       border: OutlineInputBorder(),
-                      suffixIcon: Icon(Icons.calendar_today),
+                      suffixIcon: Icon(Symbols.calendar_today),
                     ),
                     child: Text(dateFmt.format(pickedDate)),
                   ),
@@ -210,7 +233,13 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                     if (t != null) {
                       final d = pickedStartTime;
                       setDialogState(() {
-                        pickedStartTime = DateTime(d.year, d.month, d.day, t.hour, t.minute);
+                        pickedStartTime = DateTime(
+                          d.year,
+                          d.month,
+                          d.day,
+                          t.hour,
+                          t.minute,
+                        );
                       });
                     }
                   },
@@ -218,7 +247,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                     decoration: const InputDecoration(
                       labelText: 'Alkamisaika',
                       border: OutlineInputBorder(),
-                      suffixIcon: Icon(Icons.access_time),
+                      suffixIcon: Icon(Symbols.access_time),
                     ),
                     child: Text(timeFmt.format(pickedStartTime)),
                   ),
@@ -234,8 +263,11 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                       if (t != null) {
                         setDialogState(() {
                           pickedEndTime = DateTime(
-                            pickedEndTime!.year, pickedEndTime!.month, pickedEndTime!.day,
-                            t.hour, t.minute,
+                            pickedEndTime!.year,
+                            pickedEndTime!.month,
+                            pickedEndTime!.day,
+                            t.hour,
+                            t.minute,
                           );
                         });
                       }
@@ -244,7 +276,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                       decoration: const InputDecoration(
                         labelText: 'Päättymisaika',
                         border: OutlineInputBorder(),
-                        suffixIcon: Icon(Icons.access_time),
+                        suffixIcon: Icon(Symbols.access_time),
                       ),
                       child: Text(timeFmt.format(pickedEndTime!)),
                     ),
@@ -305,8 +337,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                Text('Päiväraha',
-                    style: Theme.of(ctx).textTheme.titleSmall),
+                Text('Päiväraha', style: Theme.of(ctx).textTheme.titleSmall),
                 RadioGroup<int?>(
                   groupValue: pickedType,
                   onChanged: (v) => setDialogState(() => pickedType = v),
@@ -354,9 +385,12 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
 
     if (result != true) return;
 
-    final startOdo = int.tryParse(startOdoCtrl.text.trim()) ?? leg.startOdometer;
+    final startOdo =
+        int.tryParse(startOdoCtrl.text.trim()) ?? leg.startOdometer;
     final endOdoText = endOdoCtrl.text.trim();
-    final endOdo = endOdoText.isNotEmpty ? int.tryParse(endOdoText) : leg.endOdometer;
+    final endOdo = endOdoText.isNotEmpty
+        ? int.tryParse(endOdoText)
+        : leg.endOdometer;
 
     var updated = leg.copyWith(
       date: DateFormat('yyyy-MM-dd').format(pickedDate),
@@ -415,7 +449,9 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
             child: const Text('Poista'),
           ),
         ],
@@ -427,9 +463,9 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     await DatabaseService.deleteTripLeg(leg.id!);
     await _load();
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Merkintä poistettu')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Merkintä poistettu')));
     }
     return true;
   }
@@ -442,12 +478,12 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
         actions: [
           IconButton(
             onPressed: _legsByDate.isNotEmpty ? _exportCsv : null,
-            icon: const Icon(Icons.table_chart),
+            icon: const Icon(Symbols.table_chart),
             tooltip: 'Vie CSV',
           ),
           IconButton(
             onPressed: _legsByDate.isNotEmpty ? _exportPdf : null,
-            icon: const Icon(Icons.picture_as_pdf),
+            icon: const Icon(Symbols.picture_as_pdf),
             tooltip: 'Vie PDF-raportti',
           ),
           IconButton(
@@ -458,10 +494,12 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : Icon(Icons.cloud_upload,
+                : Icon(
+                    Symbols.cloud_upload,
                     color: _hasUnsynced
                         ? null
-                        : Theme.of(context).colorScheme.outline),
+                        : Theme.of(context).colorScheme.outline,
+                  ),
             tooltip: 'Synkronoi Sheetsiin',
           ),
         ],
@@ -469,52 +507,51 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _dates.isEmpty
-              ? const Center(child: Text('Ei ajohistoriaa'))
-              : Column(
-                  children: [
-                    StatusChipRow(
-                      draftCount: _draftCount,
-                      unsyncedCount: _hasUnsynced
-                          ? _legsByDate.values
-                              .expand((l) => l)
-                              .where((l) => !l.synced)
-                              .length
-                          : 0,
-                      onDraftsTap: () {
-                        // Scroll to first draft
-                        var draftIdx = 0;
-                        for (final date in _dates) {
-                          final legs = _legsByDate[date]!;
-                          for (final leg in legs) {
-                            if (leg.isDraft) {
-                              _scrollController.animateTo(
-                                draftIdx * 200.0,
-                                // approximate offset
-                                duration:
-                                    const Duration(milliseconds: 300),
-                                curve: Curves.easeInOut,
-                              );
-                              return;
-                            }
-                          }
+          ? const Center(child: Text('Ei ajohistoriaa'))
+          : Column(
+              children: [
+                StatusChipRow(
+                  draftCount: _draftCount,
+                  unsyncedCount: _hasUnsynced
+                      ? _legsByDate.values
+                            .expand((l) => l)
+                            .where((l) => !l.synced)
+                            .length
+                      : 0,
+                  onDraftsTap: () {
+                    // Scroll to first draft
+                    var draftIdx = 0;
+                    for (final date in _dates) {
+                      final legs = _legsByDate[date]!;
+                      for (final leg in legs) {
+                        if (leg.isDraft) {
+                          _scrollController.animateTo(
+                            draftIdx * 200.0,
+                            // approximate offset
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOut,
+                          );
+                          return;
                         }
-                      },
-                      onUnsyncedTap: _syncAll,
-                    ),
-                    Expanded(
-                      child: ListView.builder(
-                        controller: _scrollController,
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _dates.length,
-                        itemBuilder: (context, index) {
-                          final date = _dates[index];
-                          final legs = _legsByDate[date]!;
-                          return _buildDateGroup(date, legs);
-                        },
-                      ),
-                    ),
-                  ],
+                      }
+                    }
+                  },
+                  onUnsyncedTap: _syncAll,
                 ),
+                Expanded(
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _dates.length,
+                    itemBuilder: (context, index) {
+                      final date = _dates[index];
+                      final legs = _legsByDate[date]!;
+                      return _buildDateGroup(date, legs);
+                    },
+                  ),
+                ),
+              ],
+            ),
     );
   }
 
@@ -536,9 +573,9 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('CSV:n luonti epäonnistui: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('CSV:n luonti epäonnistui: $e')));
       }
     }
   }
@@ -553,24 +590,25 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.open_in_new),
+              leading: const Icon(Symbols.open_in_new),
               title: const Text('Avaa sovelluksessa'),
               subtitle: const Text(
-                  'Valitse sovellus, esim. Sheets, Excel tai PDF-katselin'),
+                'Valitse sovellus, esim. Sheets, Excel tai PDF-katselin',
+              ),
               onTap: () => Navigator.pop(ctx, 'open'),
             ),
             ListTile(
-              leading: const Icon(Icons.ios_share),
+              leading: const Icon(Symbols.ios_share),
               title: const Text('Jaa'),
               onTap: () => Navigator.pop(ctx, 'share'),
             ),
             ListTile(
-              leading: const Icon(Icons.download),
+              leading: const Icon(Symbols.download),
               title: const Text('Tallenna Lataukset-kansioon'),
               onTap: () => Navigator.pop(ctx, 'save'),
             ),
             ListTile(
-              leading: const Icon(Icons.close),
+              leading: const Icon(Symbols.close),
               title: const Text('Peruuta'),
               onTap: () => Navigator.pop(ctx),
             ),
@@ -582,10 +620,9 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     if (choice == 'open') {
       await _openInApp(file);
     } else if (choice == 'share') {
-      await SharePlus.instance.share(ShareParams(
-        files: [XFile(file.path)],
-        text: shareText,
-      ));
+      await SharePlus.instance.share(
+        ShareParams(files: [XFile(file.path)], text: shareText),
+      );
     } else if (choice == 'save') {
       await _saveToDownloads(file);
     }
@@ -607,9 +644,9 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
 
     final error = await ref.read(fileOpenerServiceProvider).open(path);
     if (error != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error)));
     }
   }
 
@@ -643,9 +680,11 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(saved != null
-            ? 'Tallennettu: ${saved.path}'
-            : 'Tallennus epäonnistui: $error'),
+        content: Text(
+          saved != null
+              ? 'Tallennettu: ${saved.path}'
+              : 'Tallennus epäonnistui: $error',
+        ),
       ),
     );
   }
@@ -669,10 +708,8 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
 
     final range = await showDialog<({DateTime start, DateTime end})?>(
       context: context,
-      builder: (ctx) => _PdfDateRangeDialog(
-        initialStart: startDate,
-        initialEnd: endDate,
-      ),
+      builder: (ctx) =>
+          _PdfDateRangeDialog(initialStart: startDate, initialEnd: endDate),
     );
 
     if (range == null || !mounted) return;
@@ -701,17 +738,19 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     } catch (e) {
       if (mounted) {
         Navigator.of(context).pop(); // close loading
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('PDF:n luonti epäonnistui: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('PDF:n luonti epäonnistui: $e')));
       }
     }
   }
 
   Widget _buildDateGroup(String date, List<TripLeg> legs) {
     final totalKm = legs.fold<double>(0, (s, l) => s + l.kmDriven);
-    final totalAllowance =
-        legs.fold<double>(0, (s, l) => s + l.kmAllowance + l.dailyAllowance);
+    final totalAllowance = legs.fold<double>(
+      0,
+      (s, l) => s + l.kmAllowance + l.dailyAllowance,
+    );
     final hasDrafts = legs.any((l) => l.isDraft);
     final displayDate = _formatDisplayDate(date);
 
@@ -725,14 +764,17 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(displayDate,
-                    style: Theme.of(context).textTheme.titleSmall),
+                Text(
+                  displayDate,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
                 Text(
                   '${totalKm.toStringAsFixed(1)} km · €${totalAllowance.toStringAsFixed(2)}'
                   '${hasDrafts ? " ± luonnos" : ""}',
                   style: TextStyle(
-                      color: Theme.of(context).colorScheme.primary,
-                      fontWeight: FontWeight.bold),
+                    color: Theme.of(context).colorScheme.primary,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ],
             ),
@@ -751,13 +793,15 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                   alignment: Alignment.centerRight,
                   padding: const EdgeInsets.only(right: 20),
                   color: Theme.of(context).colorScheme.error,
-                  child: const Icon(Icons.delete, color: Colors.white),
+                  child: const Icon(Symbols.delete, color: Colors.white),
                 ),
                 child: ListTile(
                   dense: true,
                   onTap: () => _showEditDialog(leg),
                   title: Text(
-                      leg.routeDescription ?? '${leg.startLocation} → ${leg.endLocation ?? "-"}'),
+                    leg.routeDescription ??
+                        '${leg.startLocation} → ${leg.endLocation ?? "-"}',
+                  ),
                   subtitle: Text(
                     '${_formatTime(leg.startTime)}–${leg.endTime != null ? _formatTime(leg.endTime!) : "..."} · '
                     '${leg.kmDriven.toStringAsFixed(1)} km',
@@ -766,14 +810,13 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text('€${leg.totalAllowance.toStringAsFixed(2)}'),
-                      const Icon(Icons.chevron_right, size: 18),
+                      const Icon(Symbols.chevron_right, size: 18),
                     ],
                   ),
                 ),
               ),
             // Show expenses for this leg
-            if (leg.id != null)
-              ..._buildExpenseRows(leg.id!),
+            if (leg.id != null) ..._buildExpenseRows(leg.id!),
           ],
         ],
       ),
@@ -785,10 +828,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       decoration: BoxDecoration(
         border: Border(
-          left: BorderSide(
-            color: Colors.amber.shade700,
-            width: 4,
-          ),
+          left: BorderSide(color: Colors.amber.shade700, width: 4),
         ),
         borderRadius: BorderRadius.circular(8),
       ),
@@ -799,7 +839,9 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
           children: [
             Expanded(
               child: Text(
-                  leg.routeDescription ?? '${leg.startLocation} → ${leg.endLocation ?? "-"}'),
+                leg.routeDescription ??
+                    '${leg.startLocation} → ${leg.endLocation ?? "-"}',
+              ),
             ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -837,7 +879,11 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
         padding: const EdgeInsets.only(left: 56, right: 16, bottom: 2),
         child: Row(
           children: [
-            Icon(Icons.receipt_long, size: 14, color: Theme.of(context).colorScheme.outline),
+            Icon(
+              Symbols.receipt_long,
+              size: 14,
+              color: Theme.of(context).colorScheme.outline,
+            ),
             const SizedBox(width: 6),
             Text(
               exp.type.displayName,
@@ -874,8 +920,10 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
               child: IconButton(
                 padding: EdgeInsets.zero,
                 iconSize: 14,
-                icon: Icon(Icons.delete_outline,
-                    color: Theme.of(context).colorScheme.outline),
+                icon: Icon(
+                  Symbols.delete_outline,
+                  color: Theme.of(context).colorScheme.outline,
+                ),
                 onPressed: () => _deleteExpense(exp),
               ),
             ),
@@ -954,7 +1002,7 @@ class _PdfDateRangeDialogState extends State<_PdfDateRangeDialog> {
               decoration: const InputDecoration(
                 labelText: 'Aloituspäivä',
                 border: OutlineInputBorder(),
-                suffixIcon: Icon(Icons.calendar_today),
+                suffixIcon: Icon(Symbols.calendar_today),
               ),
               child: Text(dateFmt.format(_start)),
             ),
@@ -974,7 +1022,7 @@ class _PdfDateRangeDialogState extends State<_PdfDateRangeDialog> {
               decoration: const InputDecoration(
                 labelText: 'Päättymispäivä',
                 border: OutlineInputBorder(),
-                suffixIcon: Icon(Icons.calendar_today),
+                suffixIcon: Icon(Symbols.calendar_today),
               ),
               child: Text(dateFmt.format(_end)),
             ),
@@ -997,10 +1045,7 @@ class _PdfDateRangeDialogState extends State<_PdfDateRangeDialog> {
         FilledButton(
           onPressed: _end.isBefore(_start)
               ? null
-              : () => Navigator.pop(
-                    context,
-                    (start: _start, end: _end),
-                  ),
+              : () => Navigator.pop(context, (start: _start, end: _end)),
           child: const Text('Luo PDF'),
         ),
       ],

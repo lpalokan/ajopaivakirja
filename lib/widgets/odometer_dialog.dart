@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -141,8 +142,10 @@ class _OdometerInputState extends State<_OdometerInput> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (widget.subtitle != null) ...[
-              Text(widget.subtitle!,
-                  style: TextStyle(color: colorScheme.onSurfaceVariant)),
+              Text(
+                widget.subtitle!,
+                style: TextStyle(color: colorScheme.onSurfaceVariant),
+              ),
               const SizedBox(height: 16),
             ],
             if (widget.showTime) ...[
@@ -168,7 +171,7 @@ class _OdometerInputState extends State<_OdometerInput> {
                   decoration: InputDecoration(
                     labelText: widget.timeLabel ?? 'Aika',
                     border: const OutlineInputBorder(),
-                    suffixIcon: const Icon(Icons.access_time),
+                    suffixIcon: const Icon(Symbols.access_time),
                   ),
                   child: Text(timeFmt.format(_pickedTime)),
                 ),
@@ -210,19 +213,21 @@ class _OdometerInputState extends State<_OdometerInput> {
                 errorText: _errorText,
                 suffixIcon: widget.visionService != null
                     ? _isProcessingOcr
-                        ? const Padding(
-                            padding: EdgeInsets.all(12),
-                            child: SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          )
-                        : IconButton(
-                            icon: const Icon(Icons.camera_alt),
-                            tooltip: 'Ota kuva mittarista',
-                            onPressed: _captureAndOcr,
-                          )
+                          ? const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            )
+                          : IconButton(
+                              icon: const Icon(Symbols.camera_alt),
+                              tooltip: 'Ota kuva mittarista',
+                              onPressed: _captureAndOcr,
+                            )
                     : null,
               ),
               autofocus: true,
@@ -235,10 +240,7 @@ class _OdometerInputState extends State<_OdometerInput> {
           onPressed: () => Navigator.pop(context),
           child: const Text('Peruuta'),
         ),
-        FilledButton(
-          onPressed: _confirm,
-          child: Text(widget.actionLabel),
-        ),
+        FilledButton(onPressed: _confirm, child: Text(widget.actionLabel)),
       ],
     );
   }
@@ -256,20 +258,24 @@ class _OdometerInputState extends State<_OdometerInput> {
       return;
     }
 
-    final location =
-        _hasLocationField ? _locationController.text.trim() : null;
+    final location = _hasLocationField ? _locationController.text.trim() : null;
     if (_hasLocationField && (location == null || location.isEmpty)) {
-      setState(() => _errorText = 'Syötä ${widget.locationLabel?.toLowerCase()}');
+      setState(
+        () => _errorText = 'Syötä ${widget.locationLabel?.toLowerCase()}',
+      );
       return;
     }
 
     setState(() => _errorText = null);
-    final purpose =
-        _hasRelatedField ? _purposeController.text.trim() : null;
+    final purpose = _hasRelatedField ? _purposeController.text.trim() : null;
     final time = widget.showTime ? _pickedTime : null;
 
-    Navigator.pop(context,
-        (odometer: value, purpose: purpose, time: time, location: location));
+    Navigator.pop(context, (
+      odometer: value,
+      purpose: purpose,
+      time: time,
+      location: location,
+    ));
   }
 
   Future<void> _captureAndOcr() async {
@@ -281,19 +287,20 @@ class _OdometerInputState extends State<_OdometerInput> {
     setState(() => _isProcessingOcr = true);
 
     try {
-      final reading = await widget.visionService!.extractOdometer(
+      final result = await widget.visionService!.extractOdometer(
         photo.path,
         expectedHint: widget.expectedHint,
       );
 
       if (!mounted) return;
 
-      if (reading != null) {
-        _odometerController.text = reading.toString();
+      if (result != null) {
+        _odometerController.text = result.value.toString();
         setState(() => _errorText = null);
       } else {
         setState(
-            () => _errorText = 'Mittarilukemaa ei tunnistettu, syötä käsin');
+          () => _errorText = 'Mittarilukemaa ei tunnistettu, syötä käsin',
+        );
       }
     } finally {
       try {

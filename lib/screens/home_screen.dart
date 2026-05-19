@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../main.dart';
 import '../models/route.dart' as model;
@@ -27,7 +28,8 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen>
+    with WidgetsBindingObserver {
   final _startCardKey = GlobalKey<StartCardState>();
   int? _selectedRouteId;
   String? _selectedStartLocation;
@@ -37,6 +39,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await ref.read(settingsProvider.notifier).load();
       await ref.read(routeProvider.notifier).load();
@@ -53,22 +56,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         if (routes.isEmpty) {
           final routeNotifier = ref.read(routeProvider.notifier);
           final now = DateTime.now();
-          await routeNotifier.add(model.Route(
-            name: 'Töihin',
-            startLocation: 'Koti',
-            endLocation: 'Työ',
-            distanceKm: 54,
-            createdAt: now,
-            updatedAt: now,
-          ));
-          await routeNotifier.add(model.Route(
-            name: 'Kotiin',
-            startLocation: 'Työ',
-            endLocation: 'Koti',
-            distanceKm: 54,
-            createdAt: now,
-            updatedAt: now,
-          ));
+          await routeNotifier.add(
+            model.Route(
+              name: 'Töihin',
+              startLocation: 'Koti',
+              endLocation: 'Työ',
+              distanceKm: 54,
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
+          await routeNotifier.add(
+            model.Route(
+              name: 'Kotiin',
+              startLocation: 'Työ',
+              endLocation: 'Koti',
+              distanceKm: 54,
+              createdAt: now,
+              updatedAt: now,
+            ),
+          );
           LogService().info('App: seeded debug routes (Töihin, Kotiin)');
         }
       }
@@ -123,8 +130,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
   }
 
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final tripNotifier = ref.read(tripProvider.notifier);
+    if (state == AppLifecycleState.paused) {
+      tripNotifier.onAppBackgrounded();
+    } else if (state == AppLifecycleState.resumed) {
+      tripNotifier.onAppForegrounded();
+    }
+  }
+
   void _showArrivalDialog(
-      BuildContext context, TripLeg activeLeg, int expectedOdometer) {
+    BuildContext context,
+    TripLeg activeLeg,
+    int expectedOdometer,
+  ) {
     // Delegate to the standard arrival dialog in odometer_dialog.dart
     // This is triggered from background service callback.
     final tripNotif = ref.read(tripProvider.notifier);
@@ -150,10 +176,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final tripState = ref.watch(tripProvider);
     final settings = ref.watch(settingsProvider);
     final tripNotifier = ref.read(tripProvider.notifier);
-    final allRecent =
-        ref.read(routeProvider.notifier).getRecentRoutes(limit: 1000);
-    final recentRoutes =
-        allRecent.take(4).toList();
+    final allRecent = ref
+        .read(routeProvider.notifier)
+        .getRecentRoutes(limit: 1000);
+    final recentRoutes = allRecent.take(4).toList();
 
     final lastOdometerFuture = tripState.activeLeg == null
         ? DatabaseService.getLastLeg()
@@ -164,24 +190,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         title: const Text('Ajopäiväkirja'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.settings),
+            icon: const Icon(Symbols.settings),
             onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              );
+              Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
             },
           ),
         ],
       ),
       body: tripState.activeLeg != null
           ? _buildActiveBody(tripState, tripNotifier)
-          : _buildIdleBody(tripState, routes, settings, tripNotifier,
-              recentRoutes, lastOdometerFuture),
+          : _buildIdleBody(
+              tripState,
+              routes,
+              settings,
+              tripNotifier,
+              recentRoutes,
+              lastOdometerFuture,
+            ),
     );
   }
 
-  Widget _buildActiveBody(
-      TripState tripState, TripNotifier tripNotifier) {
+  Widget _buildActiveBody(TripState tripState, TripNotifier tripNotifier) {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Column(
@@ -190,23 +221,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ActiveTripCard(
           leg: tripState.activeLeg!,
           liveDistanceKm: _liveDistanceKm,
-          onStopDriving:
-              (odometer, {endTime, endLocation, purpose}) async {
-            await tripNotifier.stopDriving(odometer,
-                endTime: endTime,
-                endLocation: endLocation,
-                purpose: purpose);
-            await ref
-                .read(backgroundServiceProvider)
-                .onDrivingStopped();
+          onStopDriving: (odometer, {endTime, endLocation, purpose}) async {
+            await tripNotifier.stopDriving(
+              odometer,
+              endTime: endTime,
+              endLocation: endLocation,
+              purpose: purpose,
+            );
+            await ref.read(backgroundServiceProvider).onDrivingStopped();
             ref.read(tripDetectionServiceProvider).stop();
             ref.read(tripDetectionServiceProvider).start();
           },
           onCancel: () async {
             await tripNotifier.cancelDriving();
-            await ref
-                .read(backgroundServiceProvider)
-                .onDrivingStopped();
+            await ref.read(backgroundServiceProvider).onDrivingStopped();
             ref.read(tripDetectionServiceProvider).stop();
             ref.read(tripDetectionServiceProvider).start();
           },
@@ -223,11 +251,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   legs: tripState.todayLegs,
                   onTapLeg: (leg) {
                     // Navigate to history for editing
-                    Navigator.of(context)
-                        .push(
+                    Navigator.of(context).push(
                       MaterialPageRoute(
-                          builder: (_) =>
-                              const TripHistoryScreen()),
+                        builder: (_) => const TripHistoryScreen(),
+                      ),
                     );
                   },
                 ),
@@ -248,27 +275,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   final activeLeg = tripState.activeLeg;
                   if (activeLeg != null) {
                     final expectedOdometer =
-                        activeLeg.startOdometer +
-                            activeLeg.kmDriven.toInt();
+                        activeLeg.startOdometer + activeLeg.kmDriven.toInt();
                     // Trigger the same stop flow
                     tripNotifier.stopDriving(
                       expectedOdometer,
                       endTime: DateTime.now(),
                     );
-                    ref
-                        .read(backgroundServiceProvider)
-                        .onDrivingStopped();
+                    ref.read(backgroundServiceProvider).onDrivingStopped();
                     ref.read(tripDetectionServiceProvider).stop();
                     ref.read(tripDetectionServiceProvider).start();
                   }
                 },
-                icon: const Icon(Icons.flag),
+                icon: const Icon(Symbols.flag),
                 label: const Text('Olen perillä'),
                 style: FilledButton.styleFrom(
-                  backgroundColor:
-                      colorScheme.primaryContainer,
-                  foregroundColor:
-                      colorScheme.onPrimaryContainer,
+                  backgroundColor: colorScheme.primaryContainer,
+                  foregroundColor: colorScheme.onPrimaryContainer,
                 ),
               ),
             ),
@@ -296,8 +318,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             legs: tripState.todayLegs,
             onTapLeg: (leg) {
               Navigator.of(context).push(
-                MaterialPageRoute(
-                    builder: (_) => const TripHistoryScreen()),
+                MaterialPageRoute(builder: (_) => const TripHistoryScreen()),
               );
             },
           ),
@@ -308,17 +329,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.add_road,
-                      size: 56,
-                      color: colorScheme.outline),
+                  Icon(Symbols.add_road, size: 56, color: colorScheme.outline),
                   const SizedBox(height: 8),
-                  Text('Ei matkoja tänään',
-                      style:
-                          Theme.of(context).textTheme.bodyLarge),
+                  Text(
+                    'Ei matkoja tänään',
+                    style: Theme.of(context).textTheme.bodyLarge,
+                  ),
                   Text(
                     'Aloita ajo alla olevasta lomakkeesta.',
-                    style: TextStyle(
-                        color: colorScheme.onSurfaceVariant),
+                    style: TextStyle(color: colorScheme.onSurfaceVariant),
                   ),
                 ],
               ),
@@ -352,8 +371,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             onShowAll: () {
               Navigator.of(context).push(
                 MaterialPageRoute(
-                    builder: (_) =>
-                        const RouteManagementScreen()),
+                  builder: (_) => const RouteManagementScreen(),
+                ),
               );
             },
           ),
@@ -363,8 +382,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         FutureBuilder<TripLeg?>(
           future: lastOdometerFuture,
           builder: (context, snapshot) {
-            final lastOdometer =
-                snapshot.data?.endOdometer;
+            final lastOdometer = snapshot.data?.endOdometer;
             return Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
               child: StartCard(
@@ -373,18 +391,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 selectedRouteLabel: _selectedStartLocation != null
                     ? 'Reitti: $_selectedStartLocation'
                     : null,
-                onStart: () =>
-                    _onStartTap(tripNotifier, settings),
-                visionService:
-                    ref.read(odometerVisionServiceProvider),
+                onStart: () => _onStartTap(tripNotifier, settings),
+                visionService: ref.read(odometerVisionServiceProvider),
                 locationChip: LocationChip(
-                  locationService:
-                      ref.read(locationServiceProvider),
+                  locationService: ref.read(locationServiceProvider),
                   fallbackLabel:
                       _selectedStartLocation ?? settings.homeLocation,
                   onChanged: (loc) {
-                    setState(
-                        () => _selectedStartLocation = loc);
+                    setState(() => _selectedStartLocation = loc);
                   },
                 ),
               ),
@@ -396,13 +410,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _onStartTap(
-      TripNotifier tripNotifier, AppSettings settings) async {
+    TripNotifier tripNotifier,
+    AppSettings settings,
+  ) async {
     final odometer = _startCardKey.currentState?.odometerValue;
     if (odometer == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Syötä mittarilukema')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Syötä mittarilukema')));
       }
       return;
     }
@@ -417,8 +433,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     model.Route? selectedRoute;
     if (_selectedRouteId != null) {
-      selectedRoute =
-          ref.read(routeProvider).firstWhere((r) => r.id == _selectedRouteId);
+      selectedRoute = ref
+          .read(routeProvider)
+          .firstWhere((r) => r.id == _selectedRouteId);
     }
 
     TripLeg leg;
@@ -474,9 +491,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       driver: settings.driverName,
     );
     await backgroundService.onDrivingStarted(leg);
-    if (route.id != null && route.lastPurpose != null &&
+    if (route.id != null &&
+        route.lastPurpose != null &&
         route.lastPurpose!.isNotEmpty) {
-      await ref.read(routeProvider.notifier)
+      await ref
+          .read(routeProvider.notifier)
           .savePurpose(route.id!, route.lastPurpose!);
     }
     if (route.id != null) {

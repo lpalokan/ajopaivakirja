@@ -65,7 +65,7 @@ class TripLeg {
     String? purpose,
     String? driver,
     double? kmAllowance,
-  double? dailyAllowance,
+    double? dailyAllowance,
     int? dailyAllowanceType = _allowanceTypeSentinel,
     bool? isReturnHome,
     bool? synced,
@@ -89,7 +89,9 @@ class TripLeg {
       driver: driver ?? this.driver,
       kmAllowance: kmAllowance ?? this.kmAllowance,
       dailyAllowance: dailyAllowance ?? this.dailyAllowance,
-      dailyAllowanceType: identical(dailyAllowanceType, _allowanceTypeSentinel) ? this.dailyAllowanceType : dailyAllowanceType,
+      dailyAllowanceType: identical(dailyAllowanceType, _allowanceTypeSentinel)
+          ? this.dailyAllowanceType
+          : dailyAllowanceType,
       isReturnHome: isReturnHome ?? this.isReturnHome,
       synced: synced ?? this.synced,
     );
@@ -139,10 +141,8 @@ class TripLeg {
       endLocation: map['end_location'] as String?,
       routeDescription: map['route_description'] as String?,
       kmDriven: (map['km_driven'] as num?)?.toDouble() ?? 0,
-      workingTimeHours:
-          (map['working_time_hours'] as num?)?.toDouble() ?? 0,
-      legDurationHours:
-          (map['leg_duration_hours'] as num?)?.toDouble() ?? 0,
+      workingTimeHours: (map['working_time_hours'] as num?)?.toDouble() ?? 0,
+      legDurationHours: (map['leg_duration_hours'] as num?)?.toDouble() ?? 0,
       purpose: map['purpose'] as String?,
       driver: map['driver'] as String,
       kmAllowance: (map['km_allowance'] as num?)?.toDouble() ?? 0,
@@ -155,15 +155,15 @@ class TripLeg {
 
   Map<String, dynamic> toJson() => toMap();
 
-  factory TripLeg.fromJson(Map<String, dynamic> json) =>
-      TripLeg.fromMap(json);
+  factory TripLeg.fromJson(Map<String, dynamic> json) => TripLeg.fromMap(json);
 
   double get totalAllowance => kmAllowance + dailyAllowance;
 
-  /// Derived status: active (in-progress), draft (started but incomplete),
-  /// or completed (all fields filled).
-  TripStatus get status {
-    if (endTime == null && endOdometer == null) return TripStatus.active;
+  /// Derived status. Requires [activeLegId] to distinguish the currently
+  /// running trip from an abandoned one — both have null end fields but only
+  /// the one matching [activeLegId] is truly active.
+  TripStatus status({int? activeLegId}) {
+    if (activeLegId != null && id == activeLegId) return TripStatus.active;
     if (endOdometer == null || endLocation == null || endLocation!.isEmpty) {
       return TripStatus.draft;
     }
@@ -171,13 +171,15 @@ class TripLeg {
   }
 
   /// Whether this leg is a fully-completed trip ready for export.
-  bool get isCompleted => status == TripStatus.completed;
+  bool get isCompleted =>
+      endOdometer != null && endLocation != null && endLocation!.isNotEmpty;
 
   /// Whether this leg is a draft (started but incomplete).
-  bool get isDraft => status == TripStatus.draft;
+  bool get isDraft => !isCompleted;
 
   /// Whether this leg is an active in-progress trip.
-  bool get isActive => status == TripStatus.active;
+  /// Must be compared against the current active-leg id externally.
+  bool get isActive => false;
 
   @override
   String toString() =>

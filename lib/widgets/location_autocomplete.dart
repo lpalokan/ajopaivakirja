@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/material_symbols_icons.dart';
 
 /// Text field with a dropdown of known locations.
 ///
@@ -43,7 +44,7 @@ class LocationAutocomplete extends StatelessWidget {
             border: const OutlineInputBorder(),
             suffixIcon: GestureDetector(
               onTap: () => focusNode.requestFocus(),
-              child: const Icon(Icons.arrow_drop_down),
+              child: const Icon(Symbols.arrow_drop_down),
             ),
           ),
           onChanged: (v) {

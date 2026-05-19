@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/material_symbols_icons.dart';
 import '../services/location_service.dart';
 import '../services/database_service.dart';
 import '../models/location_zone.dart';
@@ -56,9 +57,9 @@ class _LocationChipState extends State<LocationChip> {
         return;
       }
 
-      final pos = await widget.locationService
-          .getCurrentPosition()
-          .timeout(const Duration(seconds: 3));
+      final pos = await widget.locationService.getCurrentPosition().timeout(
+        const Duration(seconds: 3),
+      );
       if (pos == null) {
         _setFallbackOrEmpty();
         return;
@@ -71,7 +72,10 @@ class _LocationChipState extends State<LocationChip> {
       final zones = await DatabaseService.getAllLocationZones();
       for (final zone in zones) {
         final dist = LocationService.haversineDistance(
-          pos.latitude, pos.longitude, zone.latitude, zone.longitude,
+          pos.latitude,
+          pos.longitude,
+          zone.latitude,
+          zone.longitude,
         );
         if (dist <= zone.radiusMeters) {
           if (!mounted) return;
@@ -119,10 +123,10 @@ class _LocationChipState extends State<LocationChip> {
 
   IconData get _icon {
     return switch (_source) {
-      LocationChipSource.searching => Icons.location_searching,
-      LocationChipSource.zone => Icons.my_location,
-      LocationChipSource.geocoded => Icons.near_me,
-      LocationChipSource.fallback => Icons.place_outlined,
+      LocationChipSource.searching => Symbols.location_searching,
+      LocationChipSource.zone => Symbols.my_location,
+      LocationChipSource.geocoded => Symbols.near_me,
+      LocationChipSource.fallback => Symbols.place,
     };
   }
 
@@ -141,24 +145,24 @@ class _LocationChipState extends State<LocationChip> {
                 height: 16,
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
-            : Icon(_icon, size: 18,
+            : Icon(
+                _icon,
+                size: 18,
                 color: _source == LocationChipSource.zone
                     ? colorScheme.primary
-                    : colorScheme.onSurfaceVariant),
+                    : colorScheme.onSurfaceVariant,
+              ),
         label: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Flexible(
-              child: Text(
-                _label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+              child: Text(_label, maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
             if (_source == LocationChipSource.fallback)
-              const Text('  (edellinen)',
-                  style: TextStyle(
-                      fontSize: 11, color: Colors.grey)),
+              const Text(
+                '  (edellinen)',
+                style: TextStyle(fontSize: 11, color: Colors.grey),
+              ),
           ],
         ),
         onPressed: () async {
@@ -187,10 +191,7 @@ class _LocationChipState extends State<LocationChip> {
           children: [
             TextField(
               controller: nameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Nimi',
-                border: OutlineInputBorder(),
-              ),
+              decoration: const InputDecoration(labelText: 'Nimi'),
               autofocus: true,
             ),
             const SizedBox(height: 12),
@@ -200,7 +201,6 @@ class _LocationChipState extends State<LocationChip> {
               decoration: const InputDecoration(
                 labelText: 'Säde (metriä)',
                 suffixText: 'm',
-                border: OutlineInputBorder(),
               ),
             ),
           ],
@@ -219,15 +219,16 @@ class _LocationChipState extends State<LocationChip> {
     );
 
     if (ok == true && nameCtrl.text.trim().isNotEmpty) {
-      final radius =
-          double.tryParse(radiusCtrl.text.trim()) ?? 100;
-      await DatabaseService.insertLocationZone(LocationZone(
-        name: nameCtrl.text.trim(),
-        latitude: double.parse(_resolvedLat!),
-        longitude: double.parse(_resolvedLon!),
-        radiusMeters: radius,
-        createdAt: DateTime.now().toIso8601String(),
-      ));
+      final radius = double.tryParse(radiusCtrl.text.trim()) ?? 100;
+      await DatabaseService.insertLocationZone(
+        LocationZone(
+          name: nameCtrl.text.trim(),
+          latitude: double.parse(_resolvedLat!),
+          longitude: double.parse(_resolvedLon!),
+          radiusMeters: radius,
+          createdAt: DateTime.now().toIso8601String(),
+        ),
+      );
     }
   }
 }

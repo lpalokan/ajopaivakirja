@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
@@ -96,14 +97,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Perustiedot',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleSmall
-                            ?.copyWith(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .primary)),
+                    Text(
+                      'Perustiedot',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: _homeController,
@@ -132,23 +131,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Korvaukset',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleSmall
-                            ?.copyWith(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .primary)),
+                    Text(
+                      'Korvaukset',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
                     const SizedBox(height: 12),
                     TextFormField(
                       controller: _kmRateController,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(
-                              decimal: true),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       inputFormatters: [
-                        FilteringTextInputFormatter.allow(
-                            RegExp(r'[\d.,]')),
+                        FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
                       ],
                       decoration: const InputDecoration(
                         labelText: 'Km-korvaus (€/km)',
@@ -158,12 +154,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     const SizedBox(height: 16),
                     TextFormField(
                       controller: _allowance6hController,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(
-                              decimal: true),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       inputFormatters: [
-                        FilteringTextInputFormatter.allow(
-                            RegExp(r'[\d.,]')),
+                        FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
                       ],
                       decoration: const InputDecoration(
                         labelText: 'Päiväraha (yli 6h)',
@@ -173,12 +168,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     const SizedBox(height: 16),
                     TextFormField(
                       controller: _allowance10hController,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(
-                              decimal: true),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       inputFormatters: [
-                        FilteringTextInputFormatter.allow(
-                            RegExp(r'[\d.,]')),
+                        FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
                       ],
                       decoration: const InputDecoration(
                         labelText: 'Päiväraha (yli 10h)',
@@ -192,18 +186,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 8),
             ExpansionTile(
               title: const Text('Aiemmat km-korvaukset'),
-              subtitle: Text(
-                  '${_kmRates.length} vuodelle tallennettu'),
+              subtitle: Text('${_kmRates.length} vuodelle tallennettu'),
               initiallyExpanded: _kmRatesExpanded,
               onExpansionChanged: (v) => _kmRatesExpanded = v,
               children: [
-                ..._kmRates.entries
-                    .map((e) => _buildKmRateRow(e.key, e.value)),
+                ..._kmRates.entries.map((e) => _buildKmRateRow(e.key, e.value)),
                 Padding(
                   padding: const EdgeInsets.all(16),
                   child: OutlinedButton.icon(
                     onPressed: () => _showAddKmRateDialog(),
-                    icon: const Icon(Icons.add, size: 18),
+                    icon: const Icon(Symbols.add, size: 18),
                     label: const Text('Lisää vuosi'),
                   ),
                 ),
@@ -217,41 +209,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Sijaintialueet',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleSmall
-                            ?.copyWith(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .primary)),
+                    Text(
+                      'Sijaintialueet',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
                     const SizedBox(height: 4),
                     ExpansionTile(
                       title: const Text('Tallennetut sijainnit'),
-                      subtitle: Text(
-                          '${_locationZones.length} aluetta'),
+                      subtitle: Text('${_locationZones.length} aluetta'),
                       initiallyExpanded: _zonesExpanded,
                       onExpansionChanged: (v) => _zonesExpanded = v,
                       children: [
-                        ..._locationZones.map((z) => ListTile(
-                              dense: true,
-                              title: Text(z.name),
-                              subtitle: Text(
-                                  '${z.radiusMeters.toStringAsFixed(0)} m'),
-                              trailing: IconButton(
-                                icon: const Icon(Icons.delete,
-                                    size: 18),
-                                onPressed: () => _deleteZone(z),
-                              ),
-                            )),
+                        ..._locationZones.map(
+                          (z) => ListTile(
+                            dense: true,
+                            title: Text(z.name),
+                            subtitle: Text(
+                              '${z.radiusMeters.toStringAsFixed(0)} m',
+                            ),
+                            trailing: IconButton(
+                              icon: const Icon(Symbols.delete, size: 18),
+                              onPressed: () => _deleteZone(z),
+                            ),
+                          ),
+                        ),
                         Padding(
                           padding: const EdgeInsets.all(16),
                           child: OutlinedButton.icon(
                             onPressed: _addZone,
-                            icon:
-                                const Icon(Icons.add, size: 18),
-                            label: const Text(
-                                'Lisää nykyinen sijainti'),
+                            icon: const Icon(Symbols.add, size: 18),
+                            label: const Text('Lisää nykyinen sijainti'),
                           ),
                         ),
                       ],
@@ -268,14 +257,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Google Sheets',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleSmall
-                            ?.copyWith(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .primary)),
+                    Text(
+                      'Google Sheets',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
                     const SizedBox(height: 12),
                     _buildSheetsAuthButton(),
                     const SizedBox(height: 16),
@@ -294,10 +281,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         SizedBox(
                           height: 56,
                           child: OutlinedButton(
-                            onPressed:
-                                _signedIn ? _showFilePicker : null,
-                            child:
-                                const Icon(Icons.folder_open),
+                            onPressed: _signedIn ? _showFilePicker : null,
+                            child: const Icon(Symbols.folder_open),
                           ),
                         ),
                       ],
@@ -321,14 +306,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 children: [
                   SwitchListTile(
                     title: const Text('Virheloki'),
-                    subtitle: const Text(
-                        'Tallentaa lokitiedoston puhelimeen'),
-                    value:
-                        ref.watch(settingsProvider).debugLogging,
+                    subtitle: const Text('Tallentaa lokitiedoston puhelimeen'),
+                    value: ref.watch(settingsProvider).debugLogging,
                     onChanged: (v) async {
-                      await ref
-                          .read(settingsProvider.notifier)
-                          .update({
+                      await ref.read(settingsProvider.notifier).update({
                         'debug_logging': v ? '1' : '0',
                       });
                       LogService().setEnabled(v);
@@ -340,14 +321,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                   if (ref.watch(settingsProvider).debugLogging)
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                          16, 0, 16, 12),
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                       child: Row(
                         children: [
                           Expanded(
                             child: OutlinedButton.icon(
                               onPressed: _shareLogs,
-                              icon: const Icon(Icons.share),
+                              icon: const Icon(Symbols.share),
                               label: const Text('Jaa loki'),
                             ),
                           ),
@@ -355,10 +335,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           Expanded(
                             child: OutlinedButton.icon(
                               onPressed: _copyLogsToDownloads,
-                              icon:
-                                  const Icon(Icons.download),
-                              label: const Text(
-                                  'Tallenna tiedot'),
+                              icon: const Icon(Symbols.download),
+                              label: const Text('Tallenna tiedot'),
                             ),
                           ),
                         ],
@@ -373,7 +351,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               child: ListTile(
                 title: const Text('Sovelluksen versio'),
                 subtitle: Text(appVersion),
-                leading: const Icon(Icons.info_outline),
+                leading: const Icon(Symbols.info),
               ),
             ),
             const SizedBox(height: 24),
@@ -383,10 +361,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ? const SizedBox(
                       width: 16,
                       height: 16,
-                      child:
-                          CircularProgressIndicator(strokeWidth: 2),
+                      child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.save),
+                  : const Icon(Symbols.save),
               label: Text(_saving ? 'Tallennetaan...' : 'Tallenna'),
             ),
           ],
@@ -399,14 +376,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (_signedIn) {
       return Row(
         children: [
-          const Icon(Icons.check_circle, color: Colors.green, size: 20),
+          const Icon(Symbols.check_circle, color: Colors.green, size: 20),
           const SizedBox(width: 8),
           const Text('Kirjautunut Googleen'),
           const Spacer(),
-          TextButton(
-            onPressed: _signOut,
-            child: const Text('Kirjaudu ulos'),
-          ),
+          TextButton(onPressed: _signOut, child: const Text('Kirjaudu ulos')),
         ],
       );
     }
@@ -418,7 +392,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               height: 16,
               child: CircularProgressIndicator(strokeWidth: 2),
             )
-          : const Icon(Icons.login),
+          : const Icon(Symbols.login),
       label: Text(_signingIn ? 'Kirjaudutaan...' : 'Kirjaudu Googleen'),
     );
   }
@@ -452,10 +426,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     await showDialog(
       context: context,
-      builder: (ctx) => _FilePickerDialog(sheets: sheets, onSelect: (id) {
-        _sheetIdController.text = id;
-        Navigator.pop(ctx);
-      }),
+      builder: (ctx) => _FilePickerDialog(
+        sheets: sheets,
+        onSelect: (id) {
+          _sheetIdController.text = id;
+          Navigator.pop(ctx);
+        },
+      ),
     );
   }
 
@@ -475,80 +452,80 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       final pos = await locationService.getCurrentPosition();
       if (pos == null) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Sijaintia ei saatu')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Sijaintia ei saatu')));
         }
         return;
       }
 
-    final nameCtrl = TextEditingController();
-    final radiusCtrl = TextEditingController(text: '200');
+      final nameCtrl = TextEditingController();
+      final radiusCtrl = TextEditingController(text: '200');
 
-    if (!mounted) return;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Lisää sijaintialue'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Nimi',
-                hintText: 'esim. Koti, Toimisto',
-                border: OutlineInputBorder(),
+      if (!mounted) return;
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Lisää sijaintialue'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Nimi',
+                  hintText: 'esim. Koti, Toimisto',
+                ),
+                autofocus: true,
               ),
-              autofocus: true,
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: radiusCtrl,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(
-                labelText: 'Säde (metriä)',
-                suffixText: 'm',
-                border: OutlineInputBorder(),
+              const SizedBox(height: 12),
+              TextField(
+                controller: radiusCtrl,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: const InputDecoration(
+                  labelText: 'Säde (metriä)',
+                  suffixText: 'm',
+                ),
               ),
+              const SizedBox(height: 8),
+              Text(
+                'Sijainti: ${pos.latitude.toStringAsFixed(4)}, ${pos.longitude.toStringAsFixed(4)}',
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Peruuta'),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Sijainti: ${pos.latitude.toStringAsFixed(4)}, ${pos.longitude.toStringAsFixed(4)}',
-              style: Theme.of(ctx).textTheme.bodySmall,
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Lisää'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Peruuta'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Lisää'),
-          ),
-        ],
-      ),
-    );
+      );
 
-    if (ok == true && nameCtrl.text.trim().isNotEmpty) {
-      final radius = double.tryParse(radiusCtrl.text.trim()) ?? 200;
-      await DatabaseService.insertLocationZone(LocationZone(
-        name: nameCtrl.text.trim(),
-        latitude: pos.latitude,
-        longitude: pos.longitude,
-        radiusMeters: radius,
-        createdAt: DateTime.now().toIso8601String(),
-      ));
-      await _loadZones();
-    }
+      if (ok == true && nameCtrl.text.trim().isNotEmpty) {
+        final radius = double.tryParse(radiusCtrl.text.trim()) ?? 200;
+        await DatabaseService.insertLocationZone(
+          LocationZone(
+            name: nameCtrl.text.trim(),
+            latitude: pos.latitude,
+            longitude: pos.longitude,
+            radiusMeters: radius,
+            createdAt: DateTime.now().toIso8601String(),
+          ),
+        );
+        await _loadZones();
+      }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Sijaintia ei saatu: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Sijaintia ei saatu: $e')));
       }
     }
   }
@@ -566,16 +543,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('${rate.toStringAsFixed(2)} €/km',
-              style: TextStyle(
-                  color: Theme.of(context).colorScheme.primary)),
+          Text(
+            '${rate.toStringAsFixed(2)} €/km',
+            style: TextStyle(color: Theme.of(context).colorScheme.primary),
+          ),
           const SizedBox(width: 8),
           IconButton(
-            icon: const Icon(Icons.edit, size: 18),
+            icon: const Icon(Symbols.edit, size: 18),
             onPressed: () => _editKmRate(year, rate),
           ),
           IconButton(
-            icon: const Icon(Icons.delete, size: 18),
+            icon: const Icon(Symbols.delete, size: 18),
             onPressed: () => _deleteKmRate(year),
           ),
         ],
@@ -598,23 +576,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               controller: yearCtrl,
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(
-                labelText: 'Vuosi',
-                border: OutlineInputBorder(),
-              ),
+              decoration: const InputDecoration(labelText: 'Vuosi'),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: rateCtrl,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
               ],
               decoration: const InputDecoration(
                 labelText: 'Km-korvaus (€/km)',
                 suffixText: '€/km',
-                border: OutlineInputBorder(),
               ),
             ),
           ],
@@ -651,15 +626,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         title: Text('Muokkaa km-korvausta $year'),
         content: TextField(
           controller: rateCtrl,
-          keyboardType:
-              const TextInputType.numberWithOptions(decimal: true),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
           inputFormatters: [
             FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
           ],
           decoration: const InputDecoration(
             labelText: 'Km-korvaus (€/km)',
             suffixText: '€/km',
-            border: OutlineInputBorder(),
           ),
         ),
         actions: [
@@ -698,7 +671,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.error),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
             child: const Text('Poista'),
           ),
         ],
@@ -717,9 +691,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final srcPath = logService.logPath;
     if (srcPath == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Lokitiedostoa ei löydy')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Lokitiedostoa ei löydy')));
       }
       return;
     }
@@ -730,15 +704,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       final dest = File(destPath);
       await dest.writeAsString(content);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Tallennettu: $destPath')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Tallennettu: $destPath')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Tallennus epäonnistui: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Tallennus epäonnistui: $e')));
       }
     }
   }
@@ -750,14 +724,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (path == null) return;
 
     // Write to a shareable temp file
-    final tempPath = '${(await getApplicationDocumentsDirectory()).path}/kilometrikorvaus_export.log';
+    final tempPath =
+        '${(await getApplicationDocumentsDirectory()).path}/kilometrikorvaus_export.log';
     final file = File(tempPath);
     await file.writeAsString(content);
 
-    await SharePlus.instance.share(ShareParams(
-      files: [XFile(tempPath)],
-      text: 'Kilometrikorvaus debug log',
-    ));
+    await SharePlus.instance.share(
+      ShareParams(files: [XFile(tempPath)], text: 'Kilometrikorvaus debug log'),
+    );
   }
 
   Future<void> _save() async {
@@ -779,14 +753,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       });
       // Sync current year rate to km_rates table
       final currentYear = DateTime.now().year;
-      final parsedRate =
-          double.tryParse(kmRateStr) ?? 0.55;
+      final parsedRate = double.tryParse(kmRateStr) ?? 0.55;
       await notifier.saveKmRate(currentYear, parsedRate);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Asetukset tallennettu')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Asetukset tallennettu')));
         Navigator.of(context).pop();
       }
     } finally {
@@ -847,22 +820,22 @@ class _FilePickerDialogState extends State<_FilePickerDialog> {
                 child: Center(child: CircularProgressIndicator()),
               )
             : _error != null
-                ? Text(_error!, style: const TextStyle(color: Colors.red))
-                : _files == null || _files!.isEmpty
-                    ? const Text('Ei tiedostoja')
-                    : ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: _files!.length,
-                        itemBuilder: (_, i) {
-                          final f = _files![i];
-                          final name = f.name ?? 'Nimetön';
-                          return ListTile(
-                            leading: const Icon(Icons.table_chart),
-                            title: Text(name),
-                            onTap: () => widget.onSelect(f.id ?? ''),
-                          );
-                        },
-                      ),
+            ? Text(_error!, style: const TextStyle(color: Colors.red))
+            : _files == null || _files!.isEmpty
+            ? const Text('Ei tiedostoja')
+            : ListView.builder(
+                shrinkWrap: true,
+                itemCount: _files!.length,
+                itemBuilder: (_, i) {
+                  final f = _files![i];
+                  final name = f.name ?? 'Nimetön';
+                  return ListTile(
+                    leading: const Icon(Symbols.table_chart),
+                    title: Text(name),
+                    onTap: () => widget.onSelect(f.id ?? ''),
+                  );
+                },
+              ),
       ),
       actions: [
         TextButton(

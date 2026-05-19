@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/material_symbols_icons.dart';
 import '../models/route.dart' as model;
 
 /// A horizontal chip row showing the user's most-used routes as shortcuts.
@@ -83,8 +84,8 @@ class RouteChip extends StatelessWidget {
       color: isSelected
           ? colorScheme.primaryContainer
           : isFeatured
-              ? colorScheme.secondaryContainer
-              : colorScheme.surfaceContainer,
+          ? colorScheme.secondaryContainer
+          : colorScheme.surfaceContainer,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
@@ -107,8 +108,11 @@ class RouteChip extends StatelessWidget {
                     ),
                   ),
                   if (isSelected)
-                    Icon(Icons.check_circle,
-                        size: 16, color: colorScheme.primary),
+                    Icon(
+                      Symbols.check_circle,
+                      size: 16,
+                      color: colorScheme.primary,
+                    ),
                 ],
               ),
               const SizedBox(height: 2),

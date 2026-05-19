@@ -117,7 +117,11 @@ class DatabaseService {
     ''');
   }
 
-  static Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+  static Future<void> _onUpgrade(
+    Database db,
+    int oldVersion,
+    int newVersion,
+  ) async {
     if (oldVersion < 2) {
       await db.execute('''
         ALTER TABLE trip_legs ADD COLUMN daily_allowance_type INTEGER
@@ -153,11 +157,10 @@ class DatabaseService {
       // Backfill any default years missing from existing installs without
       // overwriting rates the user has customised...
       for (final entry in KmRate.finnishDefaults.entries) {
-        await db.insert(
-          'km_rates',
-          {'year': entry.key, 'rate': entry.value},
-          conflictAlgorithm: ConflictAlgorithm.ignore,
-        );
+        await db.insert('km_rates', {
+          'year': entry.key,
+          'rate': entry.value,
+        }, conflictAlgorithm: ConflictAlgorithm.ignore);
       }
       // ...except 2026, which shipped with a wrong default (0.57) that the
       // settings-sync may have persisted; force it to the official 0.55.
@@ -173,11 +176,10 @@ class DatabaseService {
   static Future<void> _seedKmRates(Database db) async {
     final batch = db.batch();
     for (final entry in KmRate.finnishDefaults.entries) {
-      batch.insert(
-        'km_rates',
-        {'year': entry.key, 'rate': entry.value},
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+      batch.insert('km_rates', {
+        'year': entry.key,
+        'rate': entry.value,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
     }
     await batch.commit(noResult: true);
   }
@@ -238,7 +240,10 @@ class DatabaseService {
     return result.map((r) => r['loc'] as String).toList();
   }
 
-  static Future<void> updateRouteLastPurpose(int routeId, String purpose) async {
+  static Future<void> updateRouteLastPurpose(
+    int routeId,
+    String purpose,
+  ) async {
     final db = await database;
     final now = DateTime.now().toIso8601String();
     await db.update(
@@ -264,7 +269,9 @@ class DatabaseService {
   static Future<TripLeg> insertTripLeg(TripLeg leg) async {
     final db = await database;
     final id = await db.insert('trip_legs', leg.toMap());
-    LogService().info('DB: inserted leg $id (${leg.startLocation} -> ${leg.endLocation})');
+    LogService().info(
+      'DB: inserted leg $id (${leg.startLocation} -> ${leg.endLocation})',
+    );
     return leg.copyWith(id: id);
   }
 
@@ -335,7 +342,8 @@ class DatabaseService {
     final db = await database;
     final maps = await db.query(
       'trip_legs',
-      where: 'synced = 0 AND end_odometer IS NOT NULL AND (end_location IS NOT NULL AND end_location != "")',
+      where:
+          "synced = 0 AND end_odometer IS NOT NULL AND (end_location IS NOT NULL AND end_location != '')",
       orderBy: 'date ASC, leg_order ASC',
     );
     return maps.map((m) => TripLeg.fromMap(m)).toList();
@@ -346,7 +354,8 @@ class DatabaseService {
     final db = await database;
     final maps = await db.query(
       'trip_legs',
-      where: 'end_odometer IS NOT NULL AND (end_location IS NOT NULL AND end_location != "")',
+      where:
+          "end_odometer IS NOT NULL AND (end_location IS NOT NULL AND end_location != '')",
       orderBy: 'date DESC, leg_order ASC',
     );
     return maps.map((m) => TripLeg.fromMap(m)).toList();
@@ -357,7 +366,8 @@ class DatabaseService {
     final db = await database;
     final maps = await db.query(
       'trip_legs',
-      where: 'date = ? AND end_odometer IS NOT NULL AND (end_location IS NOT NULL AND end_location != "")',
+      where:
+          "date = ? AND end_odometer IS NOT NULL AND (end_location IS NOT NULL AND end_location != '')",
       whereArgs: [date],
       orderBy: 'leg_order ASC',
     );
@@ -408,9 +418,14 @@ class DatabaseService {
 
   static Future<TripLeg?> getActiveLeg() async {
     final db = await database;
+    // Only return legs started today to avoid treating old abandoned trips
+    // as still-active. An abandoned trip lacking end_time is surfaced as a
+    // draft via getDraftLegs() instead.
+    final today = DateTime.now().toIso8601String().substring(0, 10);
     final maps = await db.query(
       'trip_legs',
-      where: 'end_time IS NULL',
+      where: 'end_time IS NULL AND date = ?',
+      whereArgs: [today],
       orderBy: 'date DESC, leg_order DESC',
       limit: 1,
     );
@@ -419,21 +434,32 @@ class DatabaseService {
   }
 
   /// Get all draft (incomplete) legs — started but missing end fields.
+  /// Includes abandoned trips (end_time IS NULL) that are not the currently
+  /// active leg. The caller must filter out the active leg by id.
   static Future<List<TripLeg>> getDraftLegs() async {
     final db = await database;
     final maps = await db.query(
       'trip_legs',
-      where: '(end_odometer IS NULL OR end_location IS NULL OR end_location = "") AND end_time IS NOT NULL',
+      where:
+          "(end_odometer IS NULL OR end_location IS NULL OR end_location = '')",
       orderBy: 'date DESC, leg_order ASC',
     );
     return maps.map((m) => TripLeg.fromMap(m)).toList();
   }
 
-  /// Count of draft legs.
-  static Future<int> getDraftCount() async {
+  /// Count of draft legs (incomplete, excluding the active leg if any).
+  static Future<int> getDraftCount({int? activeLegId}) async {
     final db = await database;
+    var whereClause =
+        "(end_odometer IS NULL OR end_location IS NULL OR end_location = '')";
+    final whereArgs = <dynamic>[];
+    if (activeLegId != null) {
+      whereClause += ' AND id != ?';
+      whereArgs.add(activeLegId);
+    }
     final result = await db.rawQuery(
-      "SELECT COUNT(*) as cnt FROM trip_legs WHERE (end_odometer IS NULL OR end_location IS NULL OR end_location = '') AND end_time IS NOT NULL",
+      'SELECT COUNT(*) as cnt FROM trip_legs WHERE $whereClause',
+      whereArgs,
     );
     return (result.first['cnt'] as int?) ?? 0;
   }
@@ -463,11 +489,10 @@ class DatabaseService {
 
   static Future<void> upsertKmRate(int year, double rate) async {
     final db = await database;
-    await db.insert(
-      'km_rates',
-      {'year': year, 'rate': rate},
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert('km_rates', {
+      'year': year,
+      'rate': rate,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   static Future<void> deleteKmRate(int year) async {
@@ -481,12 +506,11 @@ class DatabaseService {
     final db = await database;
     final batch = db.batch();
     for (final entry in settings.toMap().entries) {
-      batch.insert(
-        'settings',
-        {'key': entry.key, 'value': entry.value},
-        conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-  }
+      batch.insert('settings', {
+        'key': entry.key,
+        'value': entry.value,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    }
     await batch.commit(noResult: true);
   }
 
@@ -502,11 +526,7 @@ class DatabaseService {
 
   static Future<String?> getSetting(String key) async {
     final db = await database;
-    final maps = await db.query(
-      'settings',
-      where: 'key = ?',
-      whereArgs: [key],
-    );
+    final maps = await db.query('settings', where: 'key = ?', whereArgs: [key]);
     if (maps.isEmpty) return null;
     return maps.first['value'] as String;
   }
@@ -516,7 +536,9 @@ class DatabaseService {
   static Future<Expense> insertExpense(Expense expense) async {
     final db = await database;
     final id = await db.insert('expenses', expense.toMap());
-    LogService().info('DB: inserted expense $id (${expense.type.displayName}, ${expense.amount}€)');
+    LogService().info(
+      'DB: inserted expense $id (${expense.type.displayName}, ${expense.amount}€)',
+    );
     return expense.copyWith(id: id);
   }
 
@@ -537,7 +559,9 @@ class DatabaseService {
     return maps.map((m) => Expense.fromMap(m)).toList();
   }
 
-  static Future<Map<int, List<Expense>>> getExpensesForLegs(List<int> legIds) async {
+  static Future<Map<int, List<Expense>>> getExpensesForLegs(
+    List<int> legIds,
+  ) async {
     if (legIds.isEmpty) return {};
     final db = await database;
     final placeholders = legIds.map((_) => '?').join(',');

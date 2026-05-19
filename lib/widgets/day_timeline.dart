@@ -77,13 +77,8 @@ class DayTimeline extends StatelessWidget {
                     height: 12,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      border: Border.all(
-                        color: markerColor,
-                        width: 2,
-                      ),
-                      color: isDraft
-                          ? Colors.transparent
-                          : markerColor,
+                      border: Border.all(color: markerColor, width: 2),
+                      color: isDraft ? Colors.transparent : markerColor,
                     ),
                   ),
                   // Bottom rail segment (only if not last)
@@ -111,8 +106,7 @@ class DayTimeline extends StatelessWidget {
                                       '${leg.startLocation} → ${leg.endLocation ?? '...'}',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style:
-                                      Theme.of(context).textTheme.bodyMedium,
+                                  style: Theme.of(context).textTheme.bodyMedium,
                                 ),
                               ),
                               if (isDraft) ...[
@@ -172,9 +166,7 @@ class DayTimeline extends StatelessWidget {
   }
 
   Widget _railSegment(Paint paint) {
-    return CustomPaint(
-      painter: _RailPainter(paint),
-    );
+    return CustomPaint(painter: _RailPainter(paint));
   }
 
   Paint _solidLine() {

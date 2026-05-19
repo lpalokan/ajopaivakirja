@@ -10,13 +10,44 @@ class _Candidate {
   _Candidate(this.value, this.score, this.numDigits);
 }
 
+class OdometerVisionResult {
+  final int value;
+
+  /// Confidence score 0.0–1.0 based on candidate scoring heuristics.
+  final double confidence;
+
+  const OdometerVisionResult({required this.value, required this.confidence});
+}
+
 class OdometerVisionService {
   TextRecognizer? _textRecognizer;
 
   static const _gaugeNumbers = {
-    20, 30, 40, 50, 60, 70, 80, 90,
-    100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200,
-    210, 220, 240, 260, 280, 300,
+    20,
+    30,
+    40,
+    50,
+    60,
+    70,
+    80,
+    90,
+    100,
+    110,
+    120,
+    130,
+    140,
+    150,
+    160,
+    170,
+    180,
+    190,
+    200,
+    210,
+    220,
+    240,
+    260,
+    280,
+    300,
   };
 
   static bool _isGaugeComposite(String rawMatch) {
@@ -33,11 +64,9 @@ class OdometerVisionService {
   }
 
   static bool _hasGaugeProgression(String text) {
-    final numbers = RegExp(r'\b\d+\b')
-        .allMatches(text)
-        .map((m) => int.parse(m.group(0)!))
-        .toSet()
-        .toList();
+    final numbers = RegExp(
+      r'\b\d+\b',
+    ).allMatches(text).map((m) => int.parse(m.group(0)!)).toSet().toList();
     if (numbers.length < 3) return false;
     numbers.sort();
 
@@ -49,7 +78,12 @@ class OdometerVisionService {
     return false;
   }
 
-  Future<int?> extractOdometer(String imagePath, {int? expectedHint}) async {
+  /// Extracts the odometer reading from [imagePath].
+  /// Returns both the value and a confidence score (0.0–1.0).
+  Future<OdometerVisionResult?> extractOdometer(
+    String imagePath, {
+    int? expectedHint,
+  }) async {
     try {
       final file = File(imagePath);
       if (!await file.exists()) {
@@ -58,8 +92,7 @@ class OdometerVisionService {
       }
 
       final inputImage = InputImage.fromFilePath(imagePath);
-      _textRecognizer ??=
-          TextRecognizer(script: TextRecognitionScript.latin);
+      _textRecognizer ??= TextRecognizer(script: TextRecognitionScript.latin);
       final recognized = await _textRecognizer!.processImage(inputImage);
 
       if (recognized.text.isEmpty) {
@@ -68,15 +101,21 @@ class OdometerVisionService {
       }
 
       LogService().info(
-          'OCR: found ${recognized.blocks.length} block(s) in image');
+        'OCR: found ${recognized.blocks.length} block(s) in image',
+      );
 
-      final result =
-          _findOdometerNumber(recognized.blocks, expectedHint: expectedHint);
+      final result = _findOdometerNumber(
+        recognized.blocks,
+        expectedHint: expectedHint,
+      );
       if (result != null) {
-        LogService().info('OCR: extracted odometer reading $result');
+        LogService().info(
+          'OCR: extracted odometer reading ${result.value} (confidence: ${result.confidence.toStringAsFixed(2)})',
+        );
       } else {
-        LogService()
-            .info('OCR: no odometer-like number found (checked per-block)');
+        LogService().info(
+          'OCR: no odometer-like number found (checked per-block)',
+        );
       }
       return result;
     } catch (e, st) {
@@ -85,7 +124,10 @@ class OdometerVisionService {
     }
   }
 
-  int? _findOdometerNumber(List<TextBlock> blocks, {int? expectedHint}) {
+  OdometerVisionResult? _findOdometerNumber(
+    List<TextBlock> blocks, {
+    int? expectedHint,
+  }) {
     final candidates = <int, _Candidate>{};
 
     for (final block in blocks) {
@@ -97,9 +139,10 @@ class OdometerVisionService {
 
       int blockModifier = 0;
 
-      if (RegExp(r'km\s*/?\s*h\b|mph\b|rpm\b|r\s*/?\s*min\b',
-              caseSensitive: false)
-          .hasMatch(text)) {
+      if (RegExp(
+        r'km\s*/?\s*h\b|mph\b|rpm\b|r\s*/?\s*min\b',
+        caseSensitive: false,
+      ).hasMatch(text)) {
         blockModifier -= 10;
       }
 
@@ -120,8 +163,7 @@ class OdometerVisionService {
       final blockCandidates = <int>{};
       final gaugePenalty = <int, int>{};
 
-      for (final m
-          in RegExp(r'\b\d{1,3}(?:[ .]\d{3})+?\b').allMatches(text)) {
+      for (final m in RegExp(r'\b\d{1,3}(?:[ .]\d{3})+?\b').allMatches(text)) {
         final rawMatch = m.group(0)!;
         final digits = rawMatch.replaceAll(RegExp(r'[ .]'), '');
         if (digits.length >= 5) {
@@ -182,16 +224,25 @@ class OdometerVisionService {
       });
 
     LogService().info(
-        'OCR candidates (scored): ${sorted.map((c) => '${c.value}(s${c.score})').join(', ')}'
-        '${expectedHint != null ? ' hint=$expectedHint' : ''}');
+      'OCR candidates (scored): ${sorted.map((c) => '${c.value}(s${c.score})').join(', ')}'
+      '${expectedHint != null ? ' hint=$expectedHint' : ''}',
+    );
 
     if (sorted.first.score < 0) {
       LogService().info(
-          'OCR: best candidate score ${sorted.first.score} < 0, rejecting');
+        'OCR: best candidate score ${sorted.first.score} < 0, rejecting',
+      );
       return null;
     }
 
-    return sorted.first.value;
+    final best = sorted.first;
+    // Map the raw score to a 0.0–1.0 confidence range.
+    // Scores typically range from -10 to 18; clamp and normalise.
+    final confidence = (best.score.clamp(0, 18) / 18.0)
+        .clamp(0.0, 1.0)
+        .toDouble();
+
+    return OdometerVisionResult(value: best.value, confidence: confidence);
   }
 
   void dispose() {
