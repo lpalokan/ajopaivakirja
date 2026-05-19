@@ -785,13 +785,16 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                   displayDate,
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
-                Text(
-                  '${totalKm.toStringAsFixed(1)} km · €${totalAllowance.toStringAsFixed(2)}'
-                  '${hasDrafts ? " ± luonnos" : ""}',
-                  style: Theme.of(context)
-                      .extension<NumeralTypography>()!
-                      .small
-                      .copyWith(color: Theme.of(context).colorScheme.tertiary),
+                Flexible(
+                  child: Text(
+                    '${totalKm.toStringAsFixed(1)} km · €${totalAllowance.toStringAsFixed(2)}'
+                    '${hasDrafts ? " ± luonnos" : ""}',
+                    style: Theme.of(context)
+                        .extension<NumeralTypography>()!
+                        .small
+                        .copyWith(color: Theme.of(context).colorScheme.tertiary),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),

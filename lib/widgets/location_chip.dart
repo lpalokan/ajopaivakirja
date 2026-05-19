@@ -177,7 +177,7 @@ class _LocationChipState extends State<LocationChip> {
     final suggestions = await DatabaseService.getUniqueLocations();
     final ctrl = TextEditingController(text: _label);
 
-    if (!mounted) return;
+    if (!context.mounted) return;
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(

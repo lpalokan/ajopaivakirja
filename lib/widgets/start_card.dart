@@ -140,11 +140,11 @@ class StartCardState extends State<StartCard> {
               ),
             ),
             const SizedBox(width: 8),
-            // 56×56 FilledTonalIconButton per spec §2
+            // 56×56 IconButton.filledTonal per spec §2
             SizedBox(
               width: 56,
               height: 56,
-              child: FilledButton.tonalIcon(
+              child: IconButton.filledTonal(
                 onPressed: _isProcessingOcr ? null : _captureAndOcr,
                 icon: _isProcessingOcr
                     ? const SizedBox(
@@ -153,7 +153,6 @@ class StartCardState extends State<StartCard> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Symbols.camera_alt),
-                label: const SizedBox.shrink(),
               ),
             ),
           ],
