@@ -124,6 +124,7 @@ final _fakeFileOpener = _FakeFileOpenerService();
 
 Future<void> resetDatabase() async {
   final db = await DatabaseService.database;
+  await db.delete('expenses');
   await db.delete('trip_legs');
   await db.delete('routes');
   await db.delete('settings');
@@ -339,10 +340,9 @@ Future<void> saveSettings(WidgetTester tester) async {
     await tester.pump(const Duration(milliseconds: 200));
   }
   await settle(tester);
-  if (btn.evaluate().isNotEmpty) {
-    await tester.ensureVisible(btn.first);
-    await settle(tester);
-  }
+  if (btn.evaluate().isEmpty) return;
+  await tester.ensureVisible(btn.first);
+  await settle(tester);
   await tester.tap(btn.first, warnIfMissed: false);
   await pumpFor(tester, 1000); // keep the transient SnackBar visible
 }

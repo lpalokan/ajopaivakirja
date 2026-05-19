@@ -149,6 +149,17 @@ class DatabaseService {
     }
     if (oldVersion < 7) {
       await db.execute('''
+        CREATE TABLE IF NOT EXISTS expenses (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          trip_leg_id INTEGER,
+          type INTEGER NOT NULL,
+          amount REAL NOT NULL,
+          description TEXT,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (trip_leg_id) REFERENCES trip_legs(id) ON DELETE SET NULL
+        )
+      ''');
+      await db.execute('''
         CREATE TABLE IF NOT EXISTS km_rates (
           year INTEGER PRIMARY KEY,
           rate REAL NOT NULL
