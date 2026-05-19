@@ -23,6 +23,12 @@ class DayTimeline extends StatelessWidget {
   Widget build(BuildContext context) {
     if (legs.isEmpty) return const SizedBox.shrink();
 
+    final dailyKm = legs.fold<double>(0, (s, l) => s + l.kmDriven);
+    final dailyAllowance = legs.fold<double>(
+      0,
+      (s, l) => s + l.kmAllowance + l.dailyAllowance,
+    );
+
     final dateFmt = DateFormat('EEEE d.M.yyyy', 'fi');
     final timeFmt = DateFormat('HH:mm');
 
@@ -33,9 +39,21 @@ class DayTimeline extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Tänään (${dateFmt.format(legs.first.startTime)})',
-              style: Theme.of(context).textTheme.titleSmall,
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Tänään (${dateFmt.format(legs.first.startTime)})',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                Text(
+                  '${dailyKm.toStringAsFixed(1)} km · €${dailyAllowance.toStringAsFixed(2)}',
+                  style: Theme.of(context)
+                      .extension<NumeralTypography>()!
+                      .small
+                      .copyWith(color: Theme.of(context).colorScheme.tertiary),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
             for (var i = 0; i < legs.length; i++)

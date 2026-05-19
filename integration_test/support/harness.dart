@@ -383,6 +383,10 @@ Future<void> startAdHoc(WidgetTester tester, String from, int odometer) async {
       await tester.enterText(autoField.last, from);
       await tester.pump(const Duration(milliseconds: 300));
     }
+    // Dismiss the Autocomplete overlay and soft keyboard so the
+    // dialog action buttons are not shifted behind the scrim.
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump(const Duration(milliseconds: 300));
     final useBtn = find.widgetWithText(FilledButton, 'Käytä');
     if (useBtn.evaluate().isNotEmpty) {
       await tester.tap(useBtn.first);
@@ -393,10 +397,6 @@ Future<void> startAdHoc(WidgetTester tester, String from, int odometer) async {
   await tester.enterText(_odometerField, '$odometer');
   final startBtn = find.widgetWithText(FilledButton, 'Aloita ajo');
   await scrollIntoView(tester, startBtn);
-  if (startBtn.evaluate().isNotEmpty) {
-    await tester.ensureVisible(startBtn.first);
-    await settle(tester);
-  }
   await tester.tap(startBtn.first);
   await settle(tester);
   await waitFor(tester, find.widgetWithText(FilledButton, 'Olen perillä'));
@@ -407,12 +407,7 @@ Future<void> arriveAdHoc(WidgetTester tester, String to, int odometer) async {
   await waitFor(tester, find.widgetWithText(FilledButton, 'Olen perillä'));
   // The first "Olen perillä" is the in-card CTA (which opens the arrival
   // dialog); the bottom-anchored duplicate is last in tree order.
-  final perillaBtn = find.widgetWithText(FilledButton, 'Olen perillä');
-  if (perillaBtn.evaluate().isNotEmpty) {
-    await tester.ensureVisible(perillaBtn.first);
-    await settle(tester);
-  }
-  await tester.tap(perillaBtn.first);
+  await tester.tap(find.widgetWithText(FilledButton, 'Olen perillä').first);
   await settle(tester);
   await waitFor(tester, _dialogField('Määränpää'));
   await tester.enterText(_dialogField('Määränpää'), to);
