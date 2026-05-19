@@ -42,3 +42,8 @@ Feature: Driving flow
     And I start the {'Kotiin'} route at {1054} km
     And I arrive at {1108} km
     Then I see text containing {'108.0 km'}
+
+  Scenario: DayTimeline shows draft with Täydennä link while trip is active
+    When I start the {'Töihin'} route at {1000} km
+    Then I see text containing {'Täydennä'}
+    And I see text containing {'Tänään'}

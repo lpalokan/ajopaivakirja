@@ -74,3 +74,14 @@ Feature: Trip history
     And I open history
     And I sync to sheets
     Then I see {'Sheets-tunnusta ei ole määritetty'}
+
+  Scenario: Status chips show draft count when drafts exist
+    When a draft trip from {'Koti'} at {1000} km exists
+    And I open history
+    Then I see text containing {'luonnosta odottaa'}
+
+  Scenario: Status chip shows unsynced count after completing a trip
+    When I start the {'Töihin'} route at {1000} km
+    And I arrive at {1054} km
+    And I open history
+    Then I see text containing {'synkronoimatta'}

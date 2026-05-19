@@ -13,6 +13,7 @@
 import 'app_smoke_test.dart' as smoke;
 import 'features/ad_hoc_driving_test.dart' as ad_hoc_driving;
 import 'features/calculations_test.dart' as calculations;
+import 'features/drafts_test.dart' as drafts;
 import 'features/driving_test.dart' as driving;
 import 'features/history_test.dart' as history;
 import 'features/navigation_test.dart' as navigation;
@@ -30,4 +31,5 @@ void main() {
   driving.main();
   history.main();
   calculations.main();
+  drafts.main();
 }

@@ -11,6 +11,8 @@
 // builds HomeScreen seeds two routes ("Töihin" Koti→Työ 54 km, "Kotiin"
 // Työ→Koti 54 km), so every scenario starts from that deterministic state.
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -499,4 +501,48 @@ Future<void> toggleDebugLogging(WidgetTester tester) async {
   await scrollIntoView(tester, find.text('Virheloki'));
   await tester.tap(find.text('Virheloki'));
   await settle(tester);
+}
+
+// ─── Draft helpers ─────────────────────────────────────────────────────────
+
+/// Insert a draft (incomplete) leg directly into the on-device database.
+/// This simulates a trip that was started but never finished (abandoned).
+/// Uses [date] (yyyy-MM-dd) so callers can control whether the leg appears
+/// on today's timeline or only in history.
+Future<TripLeg> createDraftLeg({
+  required String startLocation,
+  required int startOdometer,
+  String? endLocation,
+  String? routeDescription,
+  String date = '2026-05-18',
+}) async {
+  final leg = TripLeg(
+    date: date,
+    legOrder: 1,
+    startTime: DateTime(2026, 5, 18, 8, 0),
+    startOdometer: startOdometer,
+    startLocation: startLocation,
+    endLocation: endLocation ?? '',
+    endOdometer: null,
+    routeDescription: routeDescription,
+    driver: 'Testikuljettaja',
+  );
+  return await DatabaseService.insertTripLeg(leg);
+}
+
+// ─── CSV content verification ──────────────────────────────────────────────
+
+/// Read the last exported CSV file and assert it contains no data rows
+/// (only the UTF-8 BOM + header line). Used to verify drafts are filtered
+/// from exports.
+Future<void> expectCsvHasOnlyHeaderRow(WidgetTester tester) async {
+  final path = _fakeFileOpener.openedPath;
+  expect(path, isNotNull, reason: 'No exported file was opened');
+  final content = await File(path!).readAsString();
+  // Split by CRLF (RFC 4180), filter out empty trailing lines.
+  final lines = content
+      .split('\r\n')
+      .where((l) => l.trim().isNotEmpty)
+      .toList();
+  expect(lines.length, 1, reason: 'Expected only header row, got:\n$content');
 }
