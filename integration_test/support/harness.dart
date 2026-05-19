@@ -244,7 +244,13 @@ Future<void> openSettings(WidgetTester tester) async {
 }
 
 Future<void> openRoutes(WidgetTester tester) async {
-  await tester.tap(find.textContaining('Kaikki reitit'));
+  final link = find.textContaining('Kaikki reitit');
+  if (link.evaluate().isEmpty) await scrollIntoView(tester, link);
+  if (link.evaluate().isNotEmpty) {
+    await tester.ensureVisible(link.first);
+    await settle(tester);
+  }
+  await tester.tap(link.first);
   await settle(tester);
 }
 

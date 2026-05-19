@@ -42,10 +42,14 @@ class DayTimeline extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Tänään (${dateFmt.format(legs.first.startTime)})',
-                  style: Theme.of(context).textTheme.titleSmall,
+                Flexible(
+                  child: Text(
+                    'Tänään (${dateFmt.format(legs.first.startTime)})',
+                    style: Theme.of(context).textTheme.titleSmall,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Text(
                   '${dailyKm.toStringAsFixed(1)} km · €${dailyAllowance.toStringAsFixed(2)}',
                   style: Theme.of(context)
