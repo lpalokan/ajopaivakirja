@@ -174,20 +174,16 @@ Future<void> scrollIntoView(WidgetTester tester, Finder f) async {
   if (f.evaluate().isNotEmpty) return; // already present, don't scroll
   final sc = find.byType(Scrollable);
   if (sc.evaluate().isEmpty) return;
-  // If the list already fits the screen there is nothing to scroll —
-  // calling scrollUntilVisible here just overscroll-bounces repeatedly
-  // (looks like the screen "vibrating"). Skip it.
+  // Try scrollables from last to first so the topmost route's
+  // vertical ListView is used, not a stale horizontal Scrollable
+  // from the previous screen still in the Navigator stack.
   try {
-    final pos = tester.state<ScrollableState>(sc.first).position;
+    final pos = tester.state<ScrollableState>(sc.last).position;
     if (pos.maxScrollExtent <= 0.0) return;
-  } catch (_) {
-    return;
-  }
-  try {
     await tester.scrollUntilVisible(
       f,
       300,
-      scrollable: sc.first,
+      scrollable: sc.last,
       maxScrolls: 15,
     );
   } catch (_) {}
