@@ -7,15 +7,13 @@ Feature: Driving flow
     Given a clean database
     And the app is running
 
-  Scenario: Start dialog appears from a route
-    When I open routes
-    And I tap {'Töihin'}
+  Scenario: Tapping a route chip selects it on the StartCard
+    When I tap {'Töihin'}
     Then I see text containing {'Reitti:'}
 
   Scenario: Empty odometer blocks start
-    When I open routes
-    And I tap {'Töihin'}
-    And I tap the {'Aloita ajo'} dialog button
+    When I tap {'Töihin'}
+    And I tap {'Aloita ajo'}
     Then I see {'Syötä mittarilukema'}
 
   Scenario: Starting a trip shows the active-trip card

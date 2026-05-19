@@ -31,6 +31,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
   bool _syncing = false;
   Map<int, double> _kmRates = {};
   int _draftCount = 0;
+  String? _completeMonthName;
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -63,11 +64,43 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
         .toList();
     _expensesByLegId = await DatabaseService.getExpensesForLegs(allLegIds);
     final draftCount = await DatabaseService.getDraftCount();
+
+    // Find the most recent month where all legs are completed and synced.
+    String? completeMonth;
+    if (draftCount == 0) {
+      final monthNames = {
+        1: 'Tammikuu',
+        2: 'Helmikuu',
+        3: 'Maaliskuu',
+        4: 'Huhtikuu',
+        5: 'Toukokuu',
+        6: 'Kesäkuu',
+        7: 'Heinäkuu',
+        8: 'Elokuu',
+        9: 'Syyskuu',
+        10: 'Lokakuu',
+        11: 'Marraskuu',
+        12: 'Joulukuu',
+      };
+      // Check months in reverse chronological order from dates list
+      for (final date in dates) {
+        final legs = legsByDate[date]!;
+        if (legs.isEmpty) continue;
+        final allComplete = legs.every((l) => l.isCompleted && l.synced);
+        if (allComplete) {
+          final month = int.parse(date.substring(5, 7));
+          completeMonth = monthNames[month];
+          break;
+        }
+      }
+    }
+
     if (mounted) {
       setState(() {
         _dates = dates;
         _legsByDate = legsByDate;
         _draftCount = draftCount;
+        _completeMonthName = completeMonth;
         _loading = false;
       });
     }
@@ -217,7 +250,6 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                   child: InputDecorator(
                     decoration: const InputDecoration(
                       labelText: 'Päivämäärä',
-                      border: OutlineInputBorder(),
                       suffixIcon: Icon(Symbols.calendar_today),
                     ),
                     child: Text(dateFmt.format(pickedDate)),
@@ -246,7 +278,6 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                   child: InputDecorator(
                     decoration: const InputDecoration(
                       labelText: 'Alkamisaika',
-                      border: OutlineInputBorder(),
                       suffixIcon: Icon(Symbols.access_time),
                     ),
                     child: Text(timeFmt.format(pickedStartTime)),
@@ -275,7 +306,6 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                     child: InputDecorator(
                       decoration: const InputDecoration(
                         labelText: 'Päättymisaika',
-                        border: OutlineInputBorder(),
                         suffixIcon: Icon(Symbols.access_time),
                       ),
                       child: Text(timeFmt.format(pickedEndTime!)),
@@ -284,19 +314,13 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                 if (leg.endTime != null) const SizedBox(height: 12),
                 TextField(
                   controller: startLocCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Lähtöpaikka',
-                    border: OutlineInputBorder(),
-                  ),
+                  decoration: const InputDecoration(labelText: 'Lähtöpaikka'),
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: endLocCtrl,
                   autofocus: draftFocusField == 'endLocation',
-                  decoration: const InputDecoration(
-                    labelText: 'Määränpää',
-                    border: OutlineInputBorder(),
-                  ),
+                  decoration: const InputDecoration(labelText: 'Määränpää'),
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -305,7 +329,6 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   decoration: const InputDecoration(
                     labelText: 'Mittari alussa (km)',
-                    border: OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -316,25 +339,18 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   decoration: const InputDecoration(
                     labelText: 'Mittari lopussa (km)',
-                    border: OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: purposeCtrl,
                   autofocus: draftFocusField == 'purpose',
-                  decoration: const InputDecoration(
-                    labelText: 'Tarkoitus',
-                    border: OutlineInputBorder(),
-                  ),
+                  decoration: const InputDecoration(labelText: 'Tarkoitus'),
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: driverCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Kuljettaja',
-                    border: OutlineInputBorder(),
-                  ),
+                  decoration: const InputDecoration(labelText: 'Kuljettaja'),
                 ),
                 const SizedBox(height: 16),
                 Text('Päiväraha', style: Theme.of(ctx).textTheme.titleSmall),
@@ -512,6 +528,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
               children: [
                 StatusChipRow(
                   draftCount: _draftCount,
+                  completeMonthName: _completeMonthName,
                   unsyncedCount: _hasUnsynced
                       ? _legsByDate.values
                             .expand((l) => l)
@@ -771,10 +788,10 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                 Text(
                   '${totalKm.toStringAsFixed(1)} km · €${totalAllowance.toStringAsFixed(2)}'
                   '${hasDrafts ? " ± luonnos" : ""}',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.primary,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: Theme.of(context)
+                      .extension<NumeralTypography>()!
+                      .small
+                      .copyWith(color: Theme.of(context).colorScheme.tertiary),
                 ),
               ],
             ),
@@ -809,7 +826,15 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('€${leg.totalAllowance.toStringAsFixed(2)}'),
+                      Text(
+                        '€${leg.totalAllowance.toStringAsFixed(2)}',
+                        style: Theme.of(context)
+                            .extension<NumeralTypography>()!
+                            .inline_
+                            .copyWith(
+                              color: Theme.of(context).colorScheme.tertiary,
+                            ),
+                      ),
                       const Icon(Symbols.chevron_right, size: 18),
                     ],
                   ),
@@ -1001,7 +1026,6 @@ class _PdfDateRangeDialogState extends State<_PdfDateRangeDialog> {
             child: InputDecorator(
               decoration: const InputDecoration(
                 labelText: 'Aloituspäivä',
-                border: OutlineInputBorder(),
                 suffixIcon: Icon(Symbols.calendar_today),
               ),
               child: Text(dateFmt.format(_start)),
@@ -1021,7 +1045,6 @@ class _PdfDateRangeDialogState extends State<_PdfDateRangeDialog> {
             child: InputDecorator(
               decoration: const InputDecoration(
                 labelText: 'Päättymispäivä',
-                border: OutlineInputBorder(),
                 suffixIcon: Icon(Symbols.calendar_today),
               ),
               child: Text(dateFmt.format(_end)),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/trip_leg.dart';
+import '../main.dart';
 
 /// A vertical timeline showing today's completed trips and inline drafts.
 ///
@@ -140,18 +141,17 @@ class DayTimeline extends StatelessWidget {
                       children: [
                         Text(
                           '${leg.kmDriven.toStringAsFixed(1)} km',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
+                          style: Theme.of(context)
+                              .extension<NumeralTypography>()!
+                              .small
+                              .copyWith(color: colorScheme.onSurface),
                         ),
                         Text(
                           '€${leg.totalAllowance.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: colorScheme.tertiary,
-                            fontWeight: FontWeight.w600,
-                          ),
+                          style: Theme.of(context)
+                              .extension<NumeralTypography>()!
+                              .inline_
+                              .copyWith(color: colorScheme.tertiary),
                         ),
                       ],
                     ),

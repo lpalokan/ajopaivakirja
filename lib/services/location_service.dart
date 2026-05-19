@@ -10,6 +10,13 @@ class LocationService {
   Position? _currentPosition;
   StreamSubscription<Position>? _positionStream;
 
+  /// Broadcast stream of GPS positions for live distance tracking.
+  /// Consumers (e.g. ActiveTripCard) subscribe to this for updates.
+  final StreamController<Position> _positionController =
+      StreamController<Position>.broadcast();
+
+  Stream<Position> get positionStream => _positionController.stream;
+
   // At most one native permission dialog per session: concurrent callers
   // share the in-flight request, and once the user has answered we never
   // auto-prompt again (which previously stacked dialogs permanently).
@@ -130,6 +137,9 @@ class LocationService {
         ).listen(
           (position) {
             _currentPosition = position;
+            if (!_positionController.isClosed) {
+              _positionController.add(position);
+            }
           },
           onError: (Object _) {
             // A transient location error must not leak as an unhandled
@@ -185,6 +195,7 @@ class LocationService {
 
   void dispose() {
     stopMonitoring();
+    _positionController.close();
   }
 
   /// Haversine distance in meters between two lat/lon points.

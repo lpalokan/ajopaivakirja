@@ -4,6 +4,7 @@ import 'package:material_symbols_icons/material_symbols_icons.dart';
 import '../services/location_service.dart';
 import '../services/database_service.dart';
 import '../models/location_zone.dart';
+import 'location_autocomplete.dart';
 
 /// Source of the location label shown in the chip.
 enum LocationChipSource { zone, geocoded, fallback, searching }
@@ -165,14 +166,47 @@ class _LocationChipState extends State<LocationChip> {
               ),
           ],
         ),
-        onPressed: () async {
-          // Open the existing location autocomplete dialog
-          // This is a simplified version — the full autocomplete
-          // requires the existing LocationAutocomplete widget.
-          // For now, we trigger an edit flow.
-        },
+        onPressed: searching ? null : () => _showLocationPicker(context),
       ),
     );
+  }
+
+  /// Opens a dialog that lets the user override the auto-detected location
+  /// by typing or picking from previously-used locations.
+  Future<void> _showLocationPicker(BuildContext context) async {
+    final suggestions = await DatabaseService.getUniqueLocations();
+    final ctrl = TextEditingController(text: _label);
+
+    if (!mounted) return;
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Muuta sijainti'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: LocationAutocomplete(
+            controller: ctrl,
+            label: 'Sijainti',
+            suggestions: suggestions,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Peruuta'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Käytä'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null && result.isNotEmpty && mounted) {
+      setState(() => _label = result);
+      widget.onChanged(result);
+    }
   }
 
   Future<void> _saveAsZone() async {

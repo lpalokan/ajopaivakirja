@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../main.dart';
+import '../services/location_service.dart';
 import '../models/route.dart' as model;
 import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
@@ -34,7 +35,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   int? _selectedRouteId;
   String? _selectedStartLocation;
   String? _selectedPurpose;
-  final double _liveDistanceKm = 0;
+  double _liveDistanceKm = 0;
+  StreamSubscription<dynamic>? _positionSub;
+  dynamic _lastPosition;
 
   @override
   void initState() {
@@ -127,11 +130,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         detectionService.updateSettings(settings);
         detectionService.start();
       }
+
+      // Subscribe to live GPS position updates for active-trip distance
+      _positionSub = ref.read(locationServiceProvider).positionStream.listen((
+        pos,
+      ) {
+        if (!mounted) return;
+        final last = _lastPosition;
+        _lastPosition = pos;
+        if (last != null && ref.read(tripProvider).activeLeg != null) {
+          final dist = LocationService.haversineDistance(
+            last.latitude,
+            last.longitude,
+            pos.latitude,
+            pos.longitude,
+          );
+          // Convert meters to km and add to running total
+          _liveDistanceKm += dist / 1000.0;
+        }
+      });
     });
   }
 
   @override
   void dispose() {
+    _positionSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -190,6 +213,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         title: const Text('Ajopäiväkirja'),
         actions: [
           IconButton(
+            icon: const Icon(Symbols.history),
+            tooltip: 'Historia',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const TripHistoryScreen()),
+              );
+            },
+          ),
+          IconButton(
             icon: const Icon(Symbols.settings),
             onPressed: () {
               Navigator.of(
@@ -228,12 +260,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               endLocation: endLocation,
               purpose: purpose,
             );
+            _liveDistanceKm = 0;
+            _lastPosition = null;
             await ref.read(backgroundServiceProvider).onDrivingStopped();
             ref.read(tripDetectionServiceProvider).stop();
             ref.read(tripDetectionServiceProvider).start();
           },
           onCancel: () async {
             await tripNotifier.cancelDriving();
+            _liveDistanceKm = 0;
+            _lastPosition = null;
             await ref.read(backgroundServiceProvider).onDrivingStopped();
             ref.read(tripDetectionServiceProvider).stop();
             ref.read(tripDetectionServiceProvider).start();
@@ -281,6 +317,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                       expectedOdometer,
                       endTime: DateTime.now(),
                     );
+                    _liveDistanceKm = 0;
+                    _lastPosition = null;
                     ref.read(backgroundServiceProvider).onDrivingStopped();
                     ref.read(tripDetectionServiceProvider).stop();
                     ref.read(tripDetectionServiceProvider).start();
@@ -465,6 +503,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     await backgroundService.onDrivingStarted(leg);
 
+    _liveDistanceKm = 0;
+    _lastPosition = null;
+
     setState(() {
       _selectedRouteId = null;
       _selectedStartLocation = null;
@@ -491,6 +532,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       driver: settings.driverName,
     );
     await backgroundService.onDrivingStarted(leg);
+    _liveDistanceKm = 0;
+    _lastPosition = null;
     if (route.id != null &&
         route.lastPurpose != null &&
         route.lastPurpose!.isNotEmpty) {

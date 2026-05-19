@@ -14,6 +14,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_symbols_icons/material_symbols_icons.dart';
 
 import 'package:kilometrikorvaus/main.dart';
 import 'package:kilometrikorvaus/models/trip_leg.dart';
@@ -51,17 +52,20 @@ class _FakeLocationService extends LocationService {
   Future<bool> hasPermissionGranted() async => false;
   @override
   Future<void> startMonitoringDestination(
-      String d, settings, NotificationService n) async {}
+    String d,
+    settings,
+    NotificationService n,
+  ) async {}
   @override
   Future<void> stopMonitoring() async {}
 }
 
 class _FakeBackgroundService extends BackgroundService {
   _FakeBackgroundService()
-      : super(
-          notificationService: _FakeNotificationService(),
-          locationService: _FakeLocationService(),
-        );
+    : super(
+        notificationService: _FakeNotificationService(),
+        locationService: _FakeLocationService(),
+      );
   @override
   Future<void> initialize() async {}
   @override
@@ -90,14 +94,15 @@ class _FakeSheetsService extends SheetsService {
     required String sheetTab,
     List<int>? deletedLegIds,
     Future<void> Function(int legId)? onSynced,
-  }) async =>
-      0;
+  }) async => 0;
 }
 
 class _FakeOdometerVisionService extends OdometerVisionService {
   @override
-  Future<int?> extractOdometer(String imagePath, {int? expectedHint}) async =>
-      null;
+  Future<OdometerVisionResult?> extractOdometer(
+    String imagePath, {
+    int? expectedHint,
+  }) async => null;
 }
 
 /// Records the "open in external app" call instead of firing a native
@@ -148,8 +153,11 @@ Future<void> settle(WidgetTester tester, [int timeoutMs = 6000]) async {
 }
 
 /// Pump until [f] matches at least one widget (or [timeoutMs] elapses).
-Future<void> waitFor(WidgetTester tester, Finder f,
-    {int timeoutMs = 10000}) async {
+Future<void> waitFor(
+  WidgetTester tester,
+  Finder f, {
+  int timeoutMs = 10000,
+}) async {
   final deadline = DateTime.now().add(Duration(milliseconds: timeoutMs));
   while (DateTime.now().isBefore(deadline)) {
     await tester.pump(const Duration(milliseconds: 100));
@@ -173,17 +181,24 @@ Future<void> scrollIntoView(WidgetTester tester, Finder f) async {
     return;
   }
   try {
-    await tester.scrollUntilVisible(f, 300,
-        scrollable: sc.first, maxScrolls: 15);
+    await tester.scrollUntilVisible(
+      f,
+      300,
+      scrollable: sc.first,
+      maxScrolls: 15,
+    );
   } catch (_) {}
 }
 
 Finder get _odometerField => find.ancestor(
-      of: find.text('Matkamittari (km)'), matching: find.byType(TextField));
+  of: find.text('Matkamittari (km)'),
+  matching: find.byType(TextField),
+);
 
 Finder get _arrivalOdoField => find.ancestor(
-      of: find.text('Matkamittari perillä (km)'),
-      matching: find.byType(TextField));
+  of: find.text('Matkamittari perillä (km)'),
+  matching: find.byType(TextField),
+);
 
 Finder _formField(String label) =>
     find.ancestor(of: find.text(label), matching: find.byType(TextFormField));
@@ -198,13 +213,15 @@ Future<void> launchApp(WidgetTester tester) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        notificationServiceProvider
-            .overrideWithValue(_FakeNotificationService()),
+        notificationServiceProvider.overrideWithValue(
+          _FakeNotificationService(),
+        ),
         locationServiceProvider.overrideWithValue(_FakeLocationService()),
         backgroundServiceProvider.overrideWithValue(_FakeBackgroundService()),
         sheetsServiceProvider.overrideWithValue(_FakeSheetsService()),
-        odometerVisionServiceProvider
-            .overrideWithValue(_FakeOdometerVisionService()),
+        odometerVisionServiceProvider.overrideWithValue(
+          _FakeOdometerVisionService(),
+        ),
         fileOpenerServiceProvider.overrideWithValue(_fakeFileOpener),
       ],
       child: const KilometrikorvausApp(),
@@ -218,7 +235,7 @@ Future<void> launchApp(WidgetTester tester) async {
 }
 
 Future<void> openSettings(WidgetTester tester) async {
-  await tester.tap(find.byIcon(Icons.settings));
+  await tester.tap(find.byIcon(Symbols.settings));
   await settle(tester);
 }
 
@@ -228,7 +245,7 @@ Future<void> openRoutes(WidgetTester tester) async {
 }
 
 Future<void> openHistory(WidgetTester tester) async {
-  await tester.tap(find.text('Historia').last);
+  await tester.tap(find.byIcon(Symbols.history));
   await settle(tester);
 }
 
@@ -253,7 +270,10 @@ Future<void> expectAbsent(WidgetTester tester, String text) async {
 /// Assert a persisted settings value in the on-device SQLite DB. More
 /// reliable than re-reading a rebuilt, lazily-laid-out Settings screen.
 Future<void> expectSetting(
-    WidgetTester tester, String key, String value) async {
+  WidgetTester tester,
+  String key,
+  String value,
+) async {
   String? actual;
   final deadline = DateTime.now().add(const Duration(seconds: 4));
   while (DateTime.now().isBefore(deadline)) {
@@ -279,14 +299,20 @@ Future<void> tapText(WidgetTester tester, String text) async {
 }
 
 Future<void> enterSettingsField(
-    WidgetTester tester, String value, String label) async {
+  WidgetTester tester,
+  String value,
+  String label,
+) async {
   final f = _formField(label);
   if (f.evaluate().isEmpty) await scrollIntoView(tester, f);
   await tester.enterText(f, value);
 }
 
 Future<void> enterDialogField(
-    WidgetTester tester, String value, String label) async {
+  WidgetTester tester,
+  String value,
+  String label,
+) async {
   await tester.enterText(_dialogField(label), value);
 }
 
@@ -319,41 +345,61 @@ Future<void> saveSettings(WidgetTester tester) async {
   await pumpFor(tester, 1000); // keep the transient SnackBar visible
 }
 
-Future<void> startTrip(
-    WidgetTester tester, String route, int odometer) async {
-  await openRoutes(tester);
-  await tester.tap(
-      find.ancestor(of: find.text(route), matching: find.byType(ListTile)));
+Future<void> startTrip(WidgetTester tester, String route, int odometer) async {
+  // Tap the route chip on the home screen to select it as a shortcut.
+  // The chip is inside a RouteChip widget in the RouteChipRow.
+  await waitFor(tester, find.text(route));
+  await tester.tap(find.text(route).first);
   await settle(tester);
+  // The StartCard now shows "Reitti: $route" — verify it took effect.
   await waitFor(tester, find.textContaining('Reitti:'));
-  await tester.enterText(_dialogField('Tarkoitus'), 'Testi');
+
+  // Enter odometer in the StartCard field (on home, not in a dialog).
   await tester.enterText(_odometerField, '$odometer');
-  await tester.tap(find.widgetWithText(FilledButton, 'Aloita ajo'));
+
+  // Tap "Aloita ajo" on the StartCard (bottom of home screen).
+  final startBtn = find.widgetWithText(FilledButton, 'Aloita ajo');
+  await scrollIntoView(tester, startBtn);
+  await tester.tap(startBtn.first);
   await settle(tester);
   await waitFor(tester, find.widgetWithText(FilledButton, 'Olen perillä'));
 }
 
-Future<void> startAdHoc(
-    WidgetTester tester, String from, int odometer) async {
-  // The home "Aloita ajo" button (no predefined route) — distinct from the
-  // per-route "Aloita" buttons and the dialog's own "Aloita ajo" action.
-  final homeBtn = find.widgetWithText(FilledButton, 'Aloita ajo');
-  await scrollIntoView(tester, homeBtn);
-  await tester.tap(homeBtn.first);
-  await settle(tester);
-  await waitFor(tester, _dialogField('Lähtöpaikka'));
-  await tester.enterText(_dialogField('Lähtöpaikka'), from);
+Future<void> startAdHoc(WidgetTester tester, String from, int odometer) async {
+  // The LocationChip auto-resolves GPS; in the test suite the fake
+  // LocationService returns no permission, so the chip shows a fallback.
+  // Tap the chip to open the autocomplete dialog and manually enter the
+  // start location, matching the pre-redesign workflow.
+  final chip = find.byType(InputChip);
+  if (chip.evaluate().isNotEmpty) {
+    await tester.tap(chip.first);
+    await settle(tester);
+    // The autocomplete dialog should now be visible.
+    final autoField = find.byType(TextField);
+    if (autoField.evaluate().isNotEmpty) {
+      await tester.enterText(autoField.last, from);
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+    final useBtn = find.widgetWithText(FilledButton, 'Käytä');
+    if (useBtn.evaluate().isNotEmpty) {
+      await tester.tap(useBtn.first);
+      await settle(tester);
+    }
+  }
+
   await tester.enterText(_odometerField, '$odometer');
-  // .last: the dialog action button (home button still in the tree behind).
-  await tester.tap(find.widgetWithText(FilledButton, 'Aloita ajo').last);
+  final startBtn = find.widgetWithText(FilledButton, 'Aloita ajo');
+  await scrollIntoView(tester, startBtn);
+  await tester.tap(startBtn.first);
   await settle(tester);
   await waitFor(tester, find.widgetWithText(FilledButton, 'Olen perillä'));
 }
 
-Future<void> arriveAdHoc(
-    WidgetTester tester, String to, int odometer) async {
+Future<void> arriveAdHoc(WidgetTester tester, String to, int odometer) async {
   await settle(tester);
   await waitFor(tester, find.widgetWithText(FilledButton, 'Olen perillä'));
+  // The first "Olen perillä" is the in-card CTA (which opens the arrival
+  // dialog); the bottom-anchored duplicate is last in tree order.
   await tester.tap(find.widgetWithText(FilledButton, 'Olen perillä').first);
   await settle(tester);
   await waitFor(tester, _dialogField('Määränpää'));
@@ -369,6 +415,7 @@ Future<void> arrive(WidgetTester tester, int odometer) async {
   // (both screens show an "Olen perillä" button mid-transition).
   await settle(tester);
   await waitFor(tester, find.widgetWithText(FilledButton, 'Olen perillä'));
+  // Tap the in-card CTA (first in tree) which opens the arrival dialog.
   await tester.tap(find.widgetWithText(FilledButton, 'Olen perillä').first);
   await settle(tester);
   await waitFor(tester, _arrivalOdoField);
@@ -378,8 +425,13 @@ Future<void> arrive(WidgetTester tester, int odometer) async {
   await settle(tester);
 }
 
-Future<void> addRoute(WidgetTester tester, String name, String from,
-    String to, int km) async {
+Future<void> addRoute(
+  WidgetTester tester,
+  String name,
+  String from,
+  String to,
+  int km,
+) async {
   await openRoutes(tester);
   await tapText(tester, 'Lisää uusi reitti');
   await waitFor(tester, find.text('Uusi reitti'));
@@ -423,12 +475,12 @@ Future<void> tapDialogButton(WidgetTester tester, String label) async {
 }
 
 Future<void> syncToSheets(WidgetTester tester) async {
-  await tester.tap(find.byIcon(Icons.cloud_upload));
+  await tester.tap(find.byIcon(Symbols.cloud_upload));
   await pumpFor(tester, 800); // transient SnackBar
 }
 
 Future<void> exportCsv(WidgetTester tester) async {
-  await tester.tap(find.byIcon(Icons.table_chart));
+  await tester.tap(find.byIcon(Symbols.table_chart));
   await settle(tester);
   await waitFor(tester, find.text('Avaa sovelluksessa'));
 }

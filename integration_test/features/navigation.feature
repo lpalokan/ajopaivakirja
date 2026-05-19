@@ -9,7 +9,7 @@ Feature: App boot and navigation
 
   Scenario: Home screen renders
     Then I see {'Ajopäiväkirja'}
-    And I see {'Viimeisimmät reitit'}
+    And I see {'Aloita ajo'}
 
   Scenario: Navigate to Settings and back
     When I open settings
