@@ -335,7 +335,15 @@ Future<void> enterSettingsField(
 ) async {
   final f = _formField(label);
   if (f.evaluate().isEmpty) await scrollIntoView(tester, f);
+  // Ensure the field is fully visible and focused so enterText cannot
+  // route through whatever EditableText currently owns the input
+  // connection (e.g. a previously-focused field higher up).
+  await tester.ensureVisible(f.first);
+  await tester.pump(const Duration(milliseconds: 100));
+  await tester.tap(f.first);
+  await tester.pump(const Duration(milliseconds: 200));
   await tester.enterText(f, value);
+  await tester.pump(const Duration(milliseconds: 200));
 }
 
 Future<void> enterDialogField(
@@ -354,14 +362,20 @@ Future<void> saveSettings(WidgetTester tester) async {
   // The Save button is the last child of a lazy ListView, so its
   // maxScrollExtent grows as more rows build. A single jumpTo can land
   // short and never build the button — re-jump to the (growing) bottom
-  // until the button is actually in the tree.
+  // until the button is actually in the tree. Pick the first vertical,
+  // scrollable candidate — `sc.first` could land on a text-field's
+  // internal Scrollable (horizontal / maxScrollExtent==0).
   final btn = find.widgetWithText(FilledButton, 'Tallenna');
   for (var i = 0; i < 12 && btn.evaluate().isEmpty; i++) {
-    final sc = find.byType(Scrollable);
-    if (sc.evaluate().isNotEmpty) {
+    final scrollables = find.byType(Scrollable);
+    final count = scrollables.evaluate().length;
+    for (var j = 0; j < count; j++) {
       try {
-        final pos = tester.state<ScrollableState>(sc.first).position;
+        final pos = tester.state<ScrollableState>(scrollables.at(j)).position;
+        if (pos.axis != Axis.vertical) continue;
+        if (pos.maxScrollExtent <= 0.0) continue;
         pos.jumpTo(pos.maxScrollExtent);
+        break;
       } catch (_) {}
     }
     await tester.pump(const Duration(milliseconds: 200));
