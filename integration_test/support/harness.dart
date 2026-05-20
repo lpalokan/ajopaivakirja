@@ -335,14 +335,32 @@ Future<void> enterSettingsField(
 ) async {
   final f = _formField(label);
   if (f.evaluate().isEmpty) await scrollIntoView(tester, f);
-  // Ensure the field is fully visible and focused so enterText cannot
-  // route through whatever EditableText currently owns the input
-  // connection (e.g. a previously-focused field higher up).
   await tester.ensureVisible(f.first);
   await tester.pump(const Duration(milliseconds: 100));
   await tester.tap(f.first);
   await tester.pump(const Duration(milliseconds: 200));
-  await tester.enterText(f, value);
+
+  // Write directly to the TextFormField's controller rather than going
+  // through `tester.enterText`. The latter routes through the single test
+  // TextInput connection, which races with whatever EditableText was
+  // focused first (in Settings, the topmost TextFormField wins the
+  // connection on screen open). For deep fields (e.g. Sheet tab, the last
+  // TextFormField in the form) the typed value silently lands on the
+  // wrong field and the test then sees the default value in the DB.
+  // Direct controller writes always reach the intended field; the on-
+  // change listeners that matter for our forms (FormField validators,
+  // save-button-state listeners) all fire from the controller, so this
+  // is observationally equivalent to a real keystroke.
+  final tfWidget = tester.widget<TextFormField>(f.first);
+  final ctrl = tfWidget.controller;
+  if (ctrl != null) {
+    ctrl.text = value;
+    ctrl.selection = TextSelection.collapsed(offset: value.length);
+  } else {
+    // No controller on the widget — fall back to enterText so we still
+    // type *something* and the failure shows up at the assertion.
+    await tester.enterText(f, value);
+  }
   await tester.pump(const Duration(milliseconds: 200));
 }
 
@@ -464,40 +482,48 @@ Future<void> startAdHoc(WidgetTester tester, String from, int odometer) async {
   // can stay on the StartCard's auto-focused odometer field and enterText
   // routes through the wrong EditableText connection.
   //
-  // The RawAutocomplete inside LocationAutocomplete races with TextInput
-  // setup: on a cold dialog, the first enterText sometimes lands before
-  // the field has fully registered its EditableText connection and is
-  // swallowed. Retry once if our checkpoint can't see the typed string.
-  final dialogText = find.descendant(
-    of: find.byType(AlertDialog),
-    matching: find.text(from),
+  // We avoid `tester.enterText` here for one specific reason: it routes
+  // through the single test TextInput connection, and on a cold dialog
+  // the StartCard's auto-focused odometer field is still the "current"
+  // connection while RawAutocomplete is wiring up. Even with tap +
+  // pump + retry the typed value occasionally lands on the odometer
+  // field instead of ours. Writing directly to the TextEditingController
+  // on the TextField widget bypasses that race — RawAutocomplete still
+  // sees the change (its optionsBuilder listens to the controller), and
+  // the "Käytä" button still reads ctrl.text on press, so the rest of
+  // the flow is identical to a real keystroke.
+  await tester.tap(locField.first);
+  await tester.pump(const Duration(milliseconds: 200));
+  final tfWidget = tester.widget<TextField>(locField.first);
+  final ctrl = tfWidget.controller;
+  expect(
+    ctrl,
+    isNotNull,
+    reason: "Muuta sijainti dialog's TextField has no controller — the "
+        'LocationAutocomplete API changed and the harness needs updating.',
   );
-  for (var attempt = 0; attempt < 2; attempt++) {
-    await tester.tap(locField.first);
-    await tester.pump(const Duration(milliseconds: 200));
-    await tester.enterText(locField.first, from);
-    await tester.pump(const Duration(milliseconds: 300));
-    // Dismiss the Autocomplete overlay and soft keyboard so the dialog
-    // action buttons are not shifted behind the scrim.
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tester.pump(const Duration(milliseconds: 300));
-    if (dialogText.evaluate().isNotEmpty) break;
-    // Give the dialog more time to settle before the second attempt — a
-    // cold autocomplete sometimes needs another frame to wire up its
-    // TextInput connection.
-    await settle(tester);
-  }
+  ctrl!.text = from;
+  ctrl.selection = TextSelection.collapsed(offset: from.length);
+  await tester.pump(const Duration(milliseconds: 300));
+  // Dismiss the soft keyboard / autocomplete overlay so the dialog
+  // action buttons are not shifted behind the scrim.
+  FocusManager.instance.primaryFocus?.unfocus();
+  await tester.pump(const Duration(milliseconds: 300));
 
   // Self-diagnosing checkpoint: confirm the text actually landed in the
   // dialog field before we commit it. If this fails, the bug is in text
   // entry / the autocomplete field; if this passes but the chip check
   // below fails, the bug is in propagation back to the chip.
+  final dialogText = find.descendant(
+    of: find.byType(AlertDialog),
+    matching: find.text(from),
+  );
   expect(
     dialogText,
     findsWidgets,
     reason: "Typed start location '$from' did not land in the 'Muuta "
-        "sijainti' dialog field after 2 attempts — text entry / finder "
-        'is the problem, not propagation.',
+        "sijainti' dialog field — direct controller write failed; the "
+        'LocationAutocomplete may have a separate internal controller.',
   );
 
   final useBtn = find.widgetWithText(FilledButton, 'Käytä');
