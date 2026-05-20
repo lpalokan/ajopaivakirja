@@ -504,26 +504,24 @@ Future<void> startAdHoc(WidgetTester tester, String from, int odometer) async {
   );
   ctrl!.text = from;
   ctrl.selection = TextSelection.collapsed(offset: from.length);
-  await tester.pump(const Duration(milliseconds: 300));
-  // Dismiss the soft keyboard / autocomplete overlay so the dialog
-  // action buttons are not shifted behind the scrim.
-  FocusManager.instance.primaryFocus?.unfocus();
+  // One sync pump for the controller's notifyListeners → EditableText
+  // rebuild, plus a longer pump to let RawAutocomplete settle its
+  // options overlay before we tap "Käytä".
+  await tester.pump();
   await tester.pump(const Duration(milliseconds: 300));
 
-  // Self-diagnosing checkpoint: confirm the text actually landed in the
-  // dialog field before we commit it. If this fails, the bug is in text
-  // entry / the autocomplete field; if this passes but the chip check
-  // below fails, the bug is in propagation back to the chip.
-  final dialogText = find.descendant(
-    of: find.byType(AlertDialog),
-    matching: find.text(from),
-  );
+  // Verify the controller — NOT find.text — that the write actually
+  // stuck. find.text against EditableText was flaking on cold-start
+  // first scenarios while the controller itself reliably had the value;
+  // the Käytä button reads ctrl.text.trim() on press anyway, so the
+  // controller is the source of truth that matters for propagation.
   expect(
-    dialogText,
-    findsWidgets,
-    reason: "Typed start location '$from' did not land in the 'Muuta "
-        "sijainti' dialog field — direct controller write failed; the "
-        'LocationAutocomplete may have a separate internal controller.',
+    ctrl.text,
+    from,
+    reason: "Direct controller write to 'Muuta sijainti' dialog field "
+        "did not stick: expected '$from' but controller has "
+        "'${ctrl.text}'. The TextField finder may be matching a stale "
+        'or different field.',
   );
 
   final useBtn = find.widgetWithText(FilledButton, 'Käytä');

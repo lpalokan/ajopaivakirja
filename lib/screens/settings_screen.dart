@@ -317,6 +317,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       if (v) {
                         await LogService().init(enabled: true);
                       }
+                      if (!mounted) return;
                       setState(() {});
                     },
                   ),
