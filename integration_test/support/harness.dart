@@ -356,8 +356,13 @@ Future<void> enterDialogField(
 
 Future<void> saveSettings(WidgetTester tester) async {
   // Close the soft keyboard (it shrinks the list and fights scrolling).
+  // The deepest field (Sheet tab, in the Google Sheets card) sits behind
+  // several other cards, so reflow after the keyboard closes can move the
+  // Tallenna button further than a single pump captures — let things
+  // settle before we start hunting for it.
   FocusManager.instance.primaryFocus?.unfocus();
   await tester.pump(const Duration(milliseconds: 300));
+  await settle(tester);
 
   // The Save button is the last child of a lazy ListView, so its
   // maxScrollExtent grows as more rows build. A single jumpTo can land
@@ -381,7 +386,18 @@ Future<void> saveSettings(WidgetTester tester) async {
     await tester.pump(const Duration(milliseconds: 200));
   }
   await settle(tester);
-  if (btn.evaluate().isEmpty) return;
+  if (btn.evaluate().isEmpty) {
+    // The Tallenna button never materialised in the tree. Don't silently
+    // return — that defers the failure to a downstream `expectSetting`
+    // assertion seconds later and hides the real cause. Fail here so the
+    // test report points at the actual problem.
+    fail(
+      'saveSettings: "Tallenna" FilledButton never appeared after 12 '
+      'jumpTo(maxScrollExtent) attempts. The Settings ListView did not '
+      'build down to its last child — either the list is too long for the '
+      'scroll budget, or the button moved.',
+    );
+  }
   await tester.ensureVisible(btn.first);
   await settle(tester);
   await tester.tap(btn.first, warnIfMissed: false);
@@ -447,29 +463,41 @@ Future<void> startAdHoc(WidgetTester tester, String from, int odometer) async {
   // Tap first to force focus onto the dialog field — without it, focus
   // can stay on the StartCard's auto-focused odometer field and enterText
   // routes through the wrong EditableText connection.
-  await tester.tap(locField.first);
-  await tester.pump(const Duration(milliseconds: 200));
-  await tester.enterText(locField.first, from);
-  await tester.pump(const Duration(milliseconds: 300));
-  // Dismiss the Autocomplete overlay and soft keyboard so the dialog
-  // action buttons are not shifted behind the scrim.
-  await tester.testTextInput.receiveAction(TextInputAction.done);
-  await tester.pump(const Duration(milliseconds: 300));
+  //
+  // The RawAutocomplete inside LocationAutocomplete races with TextInput
+  // setup: on a cold dialog, the first enterText sometimes lands before
+  // the field has fully registered its EditableText connection and is
+  // swallowed. Retry once if our checkpoint can't see the typed string.
+  final dialogText = find.descendant(
+    of: find.byType(AlertDialog),
+    matching: find.text(from),
+  );
+  for (var attempt = 0; attempt < 2; attempt++) {
+    await tester.tap(locField.first);
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.enterText(locField.first, from);
+    await tester.pump(const Duration(milliseconds: 300));
+    // Dismiss the Autocomplete overlay and soft keyboard so the dialog
+    // action buttons are not shifted behind the scrim.
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump(const Duration(milliseconds: 300));
+    if (dialogText.evaluate().isNotEmpty) break;
+    // Give the dialog more time to settle before the second attempt — a
+    // cold autocomplete sometimes needs another frame to wire up its
+    // TextInput connection.
+    await settle(tester);
+  }
 
   // Self-diagnosing checkpoint: confirm the text actually landed in the
   // dialog field before we commit it. If this fails, the bug is in text
   // entry / the autocomplete field; if this passes but the chip check
   // below fails, the bug is in propagation back to the chip.
-  final dialogText = find.descendant(
-    of: find.byType(AlertDialog),
-    matching: find.text(from),
-  );
   expect(
     dialogText,
     findsWidgets,
     reason: "Typed start location '$from' did not land in the 'Muuta "
-        "sijainti' dialog field — text entry / finder is the problem, "
-        'not propagation.',
+        "sijainti' dialog field after 2 attempts — text entry / finder "
+        'is the problem, not propagation.',
   );
 
   final useBtn = find.widgetWithText(FilledButton, 'Käytä');
