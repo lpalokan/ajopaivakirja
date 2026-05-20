@@ -511,6 +511,22 @@ Future<void> arriveAdHoc(WidgetTester tester, String to, int odometer) async {
   await settle(tester);
 }
 
+Future<void> longPressLiveCounter(WidgetTester tester) async {
+  // The active-trip card renders the live km counter as "<x.x> km" inside
+  // a Semantics-wrapped widget. Long-press triggers the WCAG 2.2.2 freeze
+  // affordance — counter and pulse pause, "Pinjattu" badge appears.
+  await waitFor(tester, find.textContaining(RegExp(r'^\d+\.\d km$')));
+  final counter = find.byKey(const ValueKey('active-trip-counter'));
+  if (counter.evaluate().isNotEmpty) {
+    await tester.longPress(counter.first);
+  } else {
+    await tester.longPress(
+      find.textContaining(RegExp(r'^\d+\.\d km$')).first,
+    );
+  }
+  await settle(tester);
+}
+
 Future<void> arrive(WidgetTester tester, int odometer) async {
   // Let the route-screen pop finish so only Home's active card remains
   // (both screens show an "Olen perillä" button mid-transition).

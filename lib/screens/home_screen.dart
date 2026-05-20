@@ -229,6 +229,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ),
           IconButton(
             icon: const Icon(Symbols.settings),
+            tooltip: 'Asetukset',
             onPressed: () {
               Navigator.of(
                 context,

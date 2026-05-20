@@ -11,6 +11,7 @@
 // When you add a new .feature, add one import + one main() call below.
 
 import 'app_smoke_test.dart' as smoke;
+import 'features/accessibility_test.dart' as accessibility;
 import 'features/ad_hoc_driving_test.dart' as ad_hoc_driving;
 import 'features/calculations_test.dart' as calculations;
 import 'features/drafts_test.dart' as drafts;
@@ -32,4 +33,5 @@ void main() {
   history.main();
   calculations.main();
   drafts.main();
+  accessibility.main();
 }

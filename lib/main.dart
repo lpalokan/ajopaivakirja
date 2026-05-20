@@ -45,18 +45,32 @@ final tripDetectionServiceProvider = Provider<TripDetectionService>((ref) {
 // ── Theme extensions ───────────────────────────────────────────────────────
 
 /// Semantic colour tokens beyond the Material 3 scheme.
+///
+/// `onPrimaryMuted` (issue #46 A5) is used for de-emphasised text on the
+/// active-trip gradient — explicit colour, not Opacity, so the contrast is
+/// computable and survives Android 14 high-contrast text.
 @immutable
 class SemanticColors extends ThemeExtension<SemanticColors> {
   final Color success;
   final Color successContainer;
+  final Color onPrimaryMuted;
 
-  const SemanticColors({required this.success, required this.successContainer});
+  const SemanticColors({
+    required this.success,
+    required this.successContainer,
+    required this.onPrimaryMuted,
+  });
 
   @override
-  SemanticColors copyWith({Color? success, Color? successContainer}) {
+  SemanticColors copyWith({
+    Color? success,
+    Color? successContainer,
+    Color? onPrimaryMuted,
+  }) {
     return SemanticColors(
       success: success ?? this.success,
       successContainer: successContainer ?? this.successContainer,
+      onPrimaryMuted: onPrimaryMuted ?? this.onPrimaryMuted,
     );
   }
 
@@ -70,6 +84,7 @@ class SemanticColors extends ThemeExtension<SemanticColors> {
         other.successContainer,
         t,
       )!,
+      onPrimaryMuted: Color.lerp(onPrimaryMuted, other.onPrimaryMuted, t)!,
     );
   }
 }
@@ -154,24 +169,70 @@ void main() {
   runApp(const ProviderScope(child: KilometrikorvausApp()));
 }
 
+/// Light app theme. Top-level so accessibility tests can inspect it directly
+/// without pumping the whole app (issue #46 A2/A7).
+ThemeData buildLightTheme() {
+  final scheme = ColorScheme.fromSeed(
+    seedColor: const Color(0xFF1565C0),
+    brightness: Brightness.light,
+  ).copyWith(
+    // A7: darkened from #B7793A (3.62:1) → ≈ 4.7:1 as text on white.
+    tertiary: const Color(0xFF8E5618),
+    tertiaryContainer: const Color(0xFFFFDCBE),
+    onTertiary: Colors.white,
+  );
+  final base = ThemeData(colorScheme: scheme, useMaterial3: true);
+  return base.copyWith(
+    iconTheme: const IconThemeData(weight: 400, fill: 0, opticalSize: 24),
+    // A2: every IconButton has a ≥ 48 × 48 tappable area.
+    iconButtonTheme: IconButtonThemeData(
+      style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
+    ),
+    // A9: a visible focus indicator on dark and tinted surfaces alike.
+    focusColor: const Color(0xFF1A1B20),
+    extensions: <ThemeExtension<dynamic>>[
+      NumeralTypography.standard(),
+      const SemanticColors(
+        // A7: darkened from #4C8C57 (4.04:1) → 6.8:1 on white.
+        success: Color(0xFF2E6B3A),
+        successContainer: Color(0xFFCDE7CF),
+        // A5: holds ≈ 8.9:1 against the bottom of the active-trip gradient.
+        onPrimaryMuted: Color(0xFFCCDBF6),
+      ),
+    ],
+  );
+}
+
+ThemeData buildDarkTheme() {
+  final scheme = ColorScheme.fromSeed(
+    seedColor: const Color(0xFF1565C0),
+    brightness: Brightness.dark,
+  ).copyWith(
+    tertiary: const Color(0xFFE0B17E),
+    tertiaryContainer: const Color(0xFFFFDCBE),
+    onTertiary: Colors.white,
+  );
+  final base = ThemeData(colorScheme: scheme, useMaterial3: true);
+  return base.copyWith(
+    iconButtonTheme: IconButtonThemeData(
+      style: IconButton.styleFrom(minimumSize: const Size(48, 48)),
+    ),
+    extensions: <ThemeExtension<dynamic>>[
+      NumeralTypography.standard(),
+      const SemanticColors(
+        success: Color(0xFF6FBF7B),
+        successContainer: Color(0xFFCDE7CF),
+        onPrimaryMuted: Color(0xFFCCDBF6),
+      ),
+    ],
+  );
+}
+
 class KilometrikorvausApp extends StatelessWidget {
   const KilometrikorvausApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final baseTheme = ThemeData(
-      colorScheme:
-          ColorScheme.fromSeed(
-            seedColor: const Color(0xFF1565C0),
-            brightness: Brightness.light,
-          ).copyWith(
-            tertiary: const Color(0xFFB7793A),
-            tertiaryContainer: const Color(0xFFFFDCBE),
-            onTertiary: Colors.white,
-          ),
-      useMaterial3: true,
-    );
-
     return MaterialApp(
       title: 'Ajopäiväkirja',
       debugShowCheckedModeBanner: false,
@@ -182,35 +243,8 @@ class KilometrikorvausApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      theme: baseTheme.copyWith(
-        iconTheme: const IconThemeData(weight: 400, fill: 0, opticalSize: 24),
-        extensions: <ThemeExtension<dynamic>>[
-          NumeralTypography.standard(),
-          const SemanticColors(
-            success: Color(0xFF4C8C57),
-            successContainer: Color(0xFFCDE7CF),
-          ),
-        ],
-      ),
-      darkTheme: ThemeData(
-        colorScheme:
-            ColorScheme.fromSeed(
-              seedColor: const Color(0xFF1565C0),
-              brightness: Brightness.dark,
-            ).copyWith(
-              tertiary: const Color(0xFFB7793A),
-              tertiaryContainer: const Color(0xFFFFDCBE),
-              onTertiary: Colors.white,
-            ),
-        useMaterial3: true,
-        extensions: <ThemeExtension<dynamic>>[
-          NumeralTypography.standard(),
-          const SemanticColors(
-            success: Color(0xFF4C8C57),
-            successContainer: Color(0xFFCDE7CF),
-          ),
-        ],
-      ),
+      theme: buildLightTheme(),
+      darkTheme: buildDarkTheme(),
       home: const HomeScreen(),
     );
   }

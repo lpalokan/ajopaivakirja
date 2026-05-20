@@ -950,6 +950,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
               child: IconButton(
                 padding: EdgeInsets.zero,
                 iconSize: 14,
+                tooltip: 'Poista kulu',
                 icon: Icon(
                   Symbols.delete_outline,
                   color: Theme.of(context).colorScheme.outline,

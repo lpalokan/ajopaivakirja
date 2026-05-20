@@ -231,6 +231,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             ),
                             trailing: IconButton(
                               icon: const Icon(Symbols.delete, size: 18),
+                              tooltip: 'Poista sijainti',
                               onPressed: () => _deleteZone(z),
                             ),
                           ),
@@ -550,10 +551,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(width: 8),
           IconButton(
             icon: const Icon(Symbols.edit, size: 18),
+            tooltip: 'Muokkaa km-korvausta',
             onPressed: () => _editKmRate(year, rate),
           ),
           IconButton(
             icon: const Icon(Symbols.delete, size: 18),
+            tooltip: 'Poista km-korvaus',
             onPressed: () => _deleteKmRate(year),
           ),
         ],
