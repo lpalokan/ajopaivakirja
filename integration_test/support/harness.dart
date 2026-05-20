@@ -421,12 +421,20 @@ Future<void> startAdHoc(WidgetTester tester, String from, int odometer) async {
         "AppSettings.homeLocation ('Koti').",
   );
 
-  // Target the dialog's autocomplete field by its label, not by tree
-  // position (the StartCard odometer field is also a TextField).
-  final locField = find.ancestor(
-    of: find.text('Sijainti'),
+  // Target the dialog's autocomplete field directly: there is exactly one
+  // TextField inside the 'Muuta sijainti' AlertDialog. Going via the
+  // 'Sijainti' label finder is fragile — InputDecorator renders the label
+  // as multiple Text widgets during the floating-label animation, and the
+  // StartCard's odometer field is also in the tree behind the modal.
+  final locField = find.descendant(
+    of: find.byType(AlertDialog),
     matching: find.byType(TextField),
   );
+  // Tap first to force focus onto the dialog field — without it, focus
+  // can stay on the StartCard's auto-focused odometer field and enterText
+  // routes through the wrong EditableText connection.
+  await tester.tap(locField.first);
+  await tester.pump(const Duration(milliseconds: 200));
   await tester.enterText(locField.first, from);
   await tester.pump(const Duration(milliseconds: 300));
   // Dismiss the Autocomplete overlay and soft keyboard so the dialog
