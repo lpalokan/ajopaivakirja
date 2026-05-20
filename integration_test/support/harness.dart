@@ -554,7 +554,10 @@ Future<void> tapDialogButton(WidgetTester tester, String label) async {
 }
 
 Future<void> syncToSheets(WidgetTester tester) async {
-  await tester.tap(find.byIcon(Symbols.cloud_upload));
+  // The AppBar sync button and the StatusChipRow's "unsynced" chip both
+  // use Symbols.cloud_upload, so find.byIcon is ambiguous. Target the
+  // AppBar button via its unique tooltip.
+  await tester.tap(find.byTooltip('Synkronoi Sheetsiin'));
   await pumpFor(tester, 800); // transient SnackBar
 }
 
