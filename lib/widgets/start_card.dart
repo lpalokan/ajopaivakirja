@@ -83,6 +83,19 @@ class StartCardState extends State<StartCard> {
   }
 
   @override
+  void didUpdateWidget(StartCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // When the parent rebuilds the StartCard with a new initialOdometer
+    // (e.g. after a trip completes and the screen returns to idle), the
+    // State persists because of the GlobalKey, so initState won't fire
+    // again. Update the controller here to prefill the latest end km.
+    if (widget.initialOdometer != null &&
+        widget.initialOdometer != oldWidget.initialOdometer) {
+      _odometerCtrl.text = widget.initialOdometer.toString();
+    }
+  }
+
+  @override
   void dispose() {
     _odometerCtrl.removeListener(_syncOdometerNotifier);
     _odometerFocus.dispose();

@@ -475,7 +475,8 @@ Future<void> startAdHoc(WidgetTester tester, String from, int odometer) async {
   expect(
     find.text('Muuta sijainti'),
     findsOneWidget,
-    reason: 'LocationChip override dialog did not open after tapping the '
+    reason:
+        'LocationChip override dialog did not open after tapping the '
         'chip; the ad-hoc start location would silently fall back to '
         "AppSettings.homeLocation ('Koti').",
   );
@@ -510,7 +511,8 @@ Future<void> startAdHoc(WidgetTester tester, String from, int odometer) async {
   expect(
     ctrl,
     isNotNull,
-    reason: "Muuta sijainti dialog's TextField has no controller — the "
+    reason:
+        "Muuta sijainti dialog's TextField has no controller — the "
         'LocationAutocomplete API changed and the harness needs updating.',
   );
   ctrl!.text = from;
@@ -529,7 +531,8 @@ Future<void> startAdHoc(WidgetTester tester, String from, int odometer) async {
   expect(
     ctrl.text,
     from,
-    reason: "Direct controller write to 'Muuta sijainti' dialog field "
+    reason:
+        "Direct controller write to 'Muuta sijainti' dialog field "
         "did not stick: expected '$from' but controller has "
         "'${ctrl.text}'. The TextField finder may be matching a stale "
         'or different field.',
@@ -546,7 +549,8 @@ Future<void> startAdHoc(WidgetTester tester, String from, int odometer) async {
   expect(
     find.text(from),
     findsWidgets,
-    reason: "Start location '$from' was not applied to the LocationChip; "
+    reason:
+        "Start location '$from' was not applied to the LocationChip; "
         "the ad-hoc trip would start from 'Koti' and the saved route "
         "would be 'Koti -> ...' instead of '$from -> ...'.",
   );
@@ -583,9 +587,7 @@ Future<void> longPressLiveCounter(WidgetTester tester) async {
   if (counter.evaluate().isNotEmpty) {
     await tester.longPress(counter.first);
   } else {
-    await tester.longPress(
-      find.textContaining(RegExp(r'^\d+\.\d km$')).first,
-    );
+    await tester.longPress(find.textContaining(RegExp(r'^\d+\.\d km$')).first);
   }
   await settle(tester);
 }
@@ -726,4 +728,42 @@ Future<void> expectCsvHasOnlyHeaderRow(WidgetTester tester) async {
       .where((l) => l.trim().isNotEmpty)
       .toList();
   expect(lines.length, 1, reason: 'Expected only header row, got:\n$content');
+}
+
+// ─── Bottom "Olen perillä" button ─────────────────────────────────────────
+
+/// Taps the bottom-anchored "Olen perillä" FilledButton (the second one in
+/// tree order during active driving). The in-card CTA comes first; the
+/// bottom duplicate is last.
+Future<void> tapBottomArriveButton(WidgetTester tester) async {
+  await settle(tester);
+  await waitFor(tester, find.widgetWithText(FilledButton, 'Olen perillä'));
+  final buttons = find.widgetWithText(FilledButton, 'Olen perillä');
+  await tester.tap(buttons.last);
+  await settle(tester);
+}
+
+// ─── StartCard odometer field value verification ───────────────────────────
+
+/// Asserts the StartCard's odometer TextField on the home screen holds
+/// [value]. Used after completing a trip to confirm the field pre-fills
+/// from the last leg's end odometer.
+Future<void> expectOdometerFieldValue(WidgetTester tester, int value) async {
+  await waitFor(tester, _odometerField);
+  final tf = tester.widget<TextField>(_odometerField);
+  expect(tf.controller?.text, value.toString());
+}
+
+// ─── Arrival dialog odometer field value verification ──────────────────────
+
+/// Asserts the arrival dialog's odometer TextField holds [value].
+/// Used to verify the dialog pre-fills the expected end odometer for
+/// route-based trips.
+Future<void> expectArrivalOdometerFieldValue(
+  WidgetTester tester,
+  int value,
+) async {
+  await waitFor(tester, _arrivalOdoField);
+  final tf = tester.widget<TextField>(_arrivalOdoField);
+  expect(tf.controller?.text, value.toString());
 }

@@ -20,6 +20,7 @@ import '../widgets/route_chip_row.dart';
 import '../widgets/location_chip.dart';
 import '../widgets/day_timeline.dart';
 import '../widgets/top_context_card.dart';
+import '../widgets/odometer_dialog.dart';
 import 'settings_screen.dart';
 import 'route_management_screen.dart';
 import 'trip_history_screen.dart';
@@ -323,23 +324,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               width: double.infinity,
               height: 56,
               child: FilledButton.icon(
-                onPressed: () {
-                  final activeLeg = tripState.activeLeg;
-                  if (activeLeg != null) {
-                    final expectedOdometer =
-                        activeLeg.startOdometer + activeLeg.kmDriven.toInt();
-                    // Trigger the same stop flow
-                    tripNotifier.stopDriving(
-                      expectedOdometer,
-                      endTime: DateTime.now(),
-                    );
-                    _liveDistanceKm = 0;
-                    _lastPosition = null;
-                    ref.read(backgroundServiceProvider).onDrivingStopped();
-                    ref.read(tripDetectionServiceProvider).stop();
-                    ref.read(tripDetectionServiceProvider).start();
-                  }
-                },
+                onPressed: _onBottomArrivePressed,
                 icon: const Icon(Symbols.flag),
                 label: const Text('Olen perillä'),
                 style: FilledButton.styleFrom(
@@ -373,10 +358,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       children: [
         // Top zone — context card. Priority: a selected route preview
         // wins over the day timeline, which wins over the ad-hoc card.
-        Expanded(
-          flex: 3,
-          child: _buildTopZone(tripState, selectedRoute),
-        ),
+        Expanded(flex: 3, child: _buildTopZone(tripState, selectedRoute)),
         // Route chips
         if (recentRoutes.isNotEmpty) ...[
           RouteChipRow(
@@ -424,9 +406,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 locationChip: LocationChip(
                   key: _locationChipKey,
                   locationService: ref.read(locationServiceProvider),
-                  fallbackLabel: selectedRoute?.startLocation
-                      ?? _pickedLocation
-                      ?? settings.homeLocation,
+                  fallbackLabel:
+                      selectedRoute?.startLocation ??
+                      _pickedLocation ??
+                      settings.homeLocation,
                   onChanged: (loc) {
                     setState(() => _pickedLocation = loc);
                   },
@@ -451,13 +434,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     if (tripState.todayLegs.isNotEmpty) {
       return SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-        child: DayTimeline(
-          legs: tripState.todayLegs,
-          onTapLeg: (leg) {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const TripHistoryScreen()),
-            );
-          },
+        child: Column(
+          children: [
+            DayTimeline(
+              legs: tripState.todayLegs,
+              onTapLeg: (leg) {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const TripHistoryScreen()),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+            const AdHocCard(),
+          ],
         ),
       );
     }
@@ -528,6 +517,64 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       _pickedLocation = null;
       _selectedPurpose = null;
     });
+  }
+
+  /// Shows the arrival dialog for the active leg when the bottom
+  /// "Olen perillä" button is tapped. Mirrors the same dialog flow as
+  /// ActiveTripCard._stopDriving.
+  Future<void> _onBottomArrivePressed() async {
+    final tripState = ref.read(tripProvider);
+    final activeLeg = tripState.activeLeg;
+    if (activeLeg == null) return;
+
+    final tripNotifier = ref.read(tripProvider.notifier);
+    final isAdHoc =
+        activeLeg.routeId == null && activeLeg.routeDescription == null;
+    final expectedOdometer =
+        activeLeg.startOdometer + activeLeg.kmDriven.toInt();
+
+    List<String> suggestions = const [];
+    if (isAdHoc) {
+      try {
+        suggestions = await DatabaseService.getUniqueLocations();
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+
+    final result = await showOdometerDialog(
+      context: context,
+      title: 'Olen perillä',
+      subtitle: isAdHoc
+          ? 'Lähtö: ${activeLeg.startLocation}'
+          : 'Kohde: ${activeLeg.endLocation ?? activeLeg.routeDescription}',
+      label: 'Matkamittari perillä (km)',
+      actionLabel: 'Lopeta ajo',
+      initialValue: isAdHoc ? null : expectedOdometer,
+      expectedHint: isAdHoc ? null : expectedOdometer,
+      showTime: true,
+      initialTime: DateTime.now(),
+      timeLabel: 'Päättymisaika',
+      locationLabel: isAdHoc ? 'Määränpää' : null,
+      locationSuggestions: suggestions,
+      relatedField: isAdHoc ? 'Tarkoitus' : null,
+      initialPurpose: isAdHoc ? activeLeg.purpose : null,
+      visionService: ref.read(odometerVisionServiceProvider),
+    );
+
+    if (result != null && mounted) {
+      await tripNotifier.stopDriving(
+        result.odometer,
+        endTime: result.time,
+        endLocation: result.location,
+        purpose: result.purpose,
+      );
+      _liveDistanceKm = 0;
+      _lastPosition = null;
+      await ref.read(backgroundServiceProvider).onDrivingStopped();
+      ref.read(tripDetectionServiceProvider).stop();
+      ref.read(tripDetectionServiceProvider).start();
+    }
   }
 
   Future<void> _startWithRoute(model.Route route) async {
