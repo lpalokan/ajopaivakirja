@@ -25,28 +25,13 @@ class _RouteManagementScreenState
   Widget build(BuildContext context) {
     final routes = ref.watch(routeProvider);
     final tripState = ref.watch(tripProvider);
-    final tripNotifier = ref.read(tripProvider.notifier);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Reitit')),
       body: Column(
         children: [
           if (tripState.activeLeg != null)
-            ActiveTripCard(
-              leg: tripState.activeLeg!,
-              onStopDriving: (odometer, {endTime, endLocation, purpose}) async {
-                await tripNotifier.stopDriving(odometer,
-                    endTime: endTime,
-                    endLocation: endLocation,
-                    purpose: purpose);
-                await ref.read(backgroundServiceProvider).onDrivingStopped();
-              },
-              onCancel: () async {
-                await tripNotifier.cancelDriving();
-                await ref.read(backgroundServiceProvider).onDrivingStopped();
-              },
-              visionService: ref.read(odometerVisionServiceProvider),
-            ),
+            ActiveTripCard(leg: tripState.activeLeg!),
           Expanded(
             child: routes.isEmpty
                 ? GestureDetector(
@@ -250,10 +235,7 @@ class _RouteManagementScreenState
   }
 
   Future<void> _startDrivingFromRoute(route_model.Route route) async {
-    final tripNotifier = ref.read(tripProvider.notifier);
     final settings = ref.read(settingsProvider);
-    final backgroundService = ref.read(backgroundServiceProvider);
-    final routeNotifier = ref.read(routeProvider.notifier);
 
     final lastLeg = await DatabaseService.getLastLeg();
     final initialOdometer = lastLeg?.endOdometer;
@@ -279,19 +261,14 @@ class _RouteManagementScreenState
 
     if (result == null) return;
 
-    backgroundService.updateSettings(settings);
-    final leg = await tripNotifier.startDriving(
-      route: route,
+    await ref.read(tripProvider.notifier).startTrip(
       startOdometer: result.odometer,
+      startLocation: route.startLocation,
+      route: route,
       purpose: result.purpose ?? '',
       driver: settings.driverName,
       startTime: result.time,
     );
-    await backgroundService.onDrivingStarted(leg);
-    if (route.id != null && result.purpose != null && result.purpose!.isNotEmpty) {
-      await routeNotifier.savePurpose(route.id!, result.purpose!);
-    }
-    await routeNotifier.markUsed(route.id!);
 
     if (mounted) Navigator.of(context).pop();
   }

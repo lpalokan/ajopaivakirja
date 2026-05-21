@@ -1,11 +1,21 @@
+// TripNotifier receives a BuildContext as a method parameter from widget
+// callers; the lint doesn't account for StateNotifier-as-orchestrator usage.
+// ignore_for_file: use_build_context_synchronously
+
+import 'dart:async';
+
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import '../models/route.dart' as model;
 import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
 import '../services/database_service.dart';
 import '../services/trip_calculator.dart';
+import '../services/location_service.dart';
 import '../services/log_service.dart';
+import '../widgets/odometer_dialog.dart';
 import '../main.dart';
 import 'settings_provider.dart';
 import 'route_provider.dart';
@@ -38,6 +48,12 @@ class TripNotifier extends StateNotifier<TripState> {
   DateTime? _backgroundEnterTime;
   static const _idleTimeoutMinutes = 30;
 
+  // GPS live-distance tracking for the active trip.
+  StreamSubscription<Position>? _positionSub;
+  final ValueNotifier<double> _liveDistance = ValueNotifier<double>(0);
+  Position? _lastPosition;
+  bool _callbacksWired = false;
+
   TripNotifier(this._ref) : super(const TripState());
 
   AppSettings get _settings => _ref.read(settingsProvider);
@@ -52,6 +68,10 @@ class TripNotifier extends StateNotifier<TripState> {
   String get _today => DateFormat('yyyy-MM-dd').format(DateTime.now());
 
   bool get isDriving => state.activeLeg != null;
+
+  /// The live GPS distance accumulated during the active trip (in km).
+  /// Consumers listen via [ValueNotifier.addListener] or watch in widgets.
+  ValueNotifier<double> get liveDistanceKm => _liveDistance;
 
   Future<void> load() async {
     final legs = await DatabaseService.getLegsForDate(_today);
@@ -211,6 +231,243 @@ class TripNotifier extends StateNotifier<TripState> {
     state = state.copyWith(activeLeg: null, todayLegs: todayLegs);
   }
 
+  // ── Orchestration seam ───────────────────────────────────────────────
+
+  /// Wire service callbacks so external events (notification taps,
+  /// detection triggers) flow through this notifier instead of the screen.
+  /// Call once after [BackgroundService.initialize] and
+  /// [NotificationService.initialize].
+  void initialize() {
+    if (_callbacksWired) return;
+    _callbacksWired = true;
+    _wireCallbacks();
+
+    final detectionService = _ref.read(tripDetectionServiceProvider);
+    if (!isDriving) {
+      detectionService.start();
+    }
+  }
+
+  /// Start a trip (route-based or ad-hoc). Stops auto-detection, creates
+  /// the leg, starts the background service, and begins GPS live-distance
+  /// tracking. Replaces ~60 lines of orchestration in HomeScreen.
+  Future<void> startTrip({
+    required int startOdometer,
+    required String startLocation,
+    model.Route? route,
+    String? purpose,
+    String? driver,
+    DateTime? startTime,
+  }) async {
+    _ref.read(tripDetectionServiceProvider).stop();
+
+    final backgroundService = _ref.read(backgroundServiceProvider);
+    backgroundService.updateSettings(_settings);
+
+    TripLeg leg;
+    if (route != null) {
+      leg = await startDriving(
+        route: route,
+        startOdometer: startOdometer,
+        purpose: purpose ?? '',
+        driver: driver,
+        startTime: startTime,
+      );
+      if (route.id != null && purpose != null && purpose.isNotEmpty) {
+        await _ref.read(routeProvider.notifier).savePurpose(route.id!, purpose);
+      }
+      if (route.id != null) {
+        await _ref.read(routeProvider.notifier).markUsed(route.id!);
+      }
+    } else {
+      leg = await startAdHocDriving(
+        startOdometer: startOdometer,
+        startLocation: startLocation,
+        purpose: purpose ?? '',
+        driver: driver,
+        startTime: startTime,
+      );
+    }
+
+    await backgroundService.onDrivingStarted(leg);
+    _startGpsTracking();
+  }
+
+  /// Stop the active trip, showing the arrival dialog first so the user
+  /// can confirm / adjust the odometer, end time, location, and purpose.
+  /// Replaces the duplicated arrival-dialog flow in ActiveTripCard and
+  /// HomeScreen.
+  Future<void> stopTrip(BuildContext context) async {
+    final active = state.activeLeg;
+    if (active == null) return;
+
+    final isAdHoc = active.routeId == null && active.routeDescription == null;
+    final expectedOdometer = active.startOdometer + active.kmDriven.toInt();
+
+    List<String> suggestions = const [];
+    if (isAdHoc) {
+      try {
+        suggestions = await DatabaseService.getUniqueLocations();
+      } catch (_) {}
+    }
+
+    final visionService = _ref.read(odometerVisionServiceProvider);
+
+    final result = await showOdometerDialog(
+      context: context,
+      title: 'Olen perillä',
+      subtitle: isAdHoc
+          ? 'Lähtö: ${active.startLocation}'
+          : 'Kohde: ${active.endLocation ?? active.routeDescription}',
+      label: 'Matkamittari perillä (km)',
+      actionLabel: 'Lopeta ajo',
+      initialValue: isAdHoc ? null : expectedOdometer,
+      expectedHint: isAdHoc ? null : expectedOdometer,
+      showTime: true,
+      initialTime: DateTime.now(),
+      timeLabel: 'Päättymisaika',
+      locationLabel: isAdHoc ? 'Määränpää' : null,
+      locationSuggestions: suggestions,
+      relatedField: isAdHoc ? 'Tarkoitus' : null,
+      initialPurpose: isAdHoc ? active.purpose : null,
+      visionService: visionService,
+    );
+
+    if (result == null) return;
+
+    await stopDriving(
+      result.odometer,
+      endTime: result.time,
+      endLocation: result.location,
+      purpose: result.purpose,
+    );
+    _resetTripState();
+  }
+
+  /// Cancel the active trip after a confirmation dialog.
+  Future<void> cancelTrip(BuildContext context) async {
+    final active = state.activeLeg;
+    if (active == null) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Peru matka'),
+        content: const Text(
+          'Haluatko varmasti peruuttaa käynnissä olevan matkan?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Ei'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Peru'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    await cancelDriving();
+    _resetTripState();
+  }
+
+  // ── GPS tracking ─────────────────────────────────────────────────────
+
+  void _startGpsTracking() {
+    _liveDistance.value = 0;
+    _lastPosition = null;
+    _positionSub?.cancel();
+
+    final locationService = _ref.read(locationServiceProvider);
+    _positionSub = locationService.positionStream.listen((pos) {
+      final last = _lastPosition;
+      _lastPosition = pos;
+      if (last != null) {
+        final dist = LocationService.haversineDistance(
+          last.latitude,
+          last.longitude,
+          pos.latitude,
+          pos.longitude,
+        );
+        _liveDistance.value += dist / 1000.0;
+      }
+    });
+  }
+
+  /// Clean up after a trip ends or is cancelled: reset GPS, stop
+  /// background service, stop detection, restart detection.
+  void _resetTripState() {
+    _liveDistance.value = 0;
+    _lastPosition = null;
+    _positionSub?.cancel();
+    _positionSub = null;
+    _ref.read(backgroundServiceProvider).onDrivingStopped();
+    final detectionService = _ref.read(tripDetectionServiceProvider);
+    detectionService.stop();
+    detectionService.start();
+  }
+
+  // ── Service callback wiring ──────────────────────────────────────────
+
+  void _wireCallbacks() {
+    final backgroundService = _ref.read(backgroundServiceProvider);
+    final detectionService = _ref.read(tripDetectionServiceProvider);
+    final ns = _ref.read(notificationServiceProvider);
+
+    backgroundService.onArrived = () {
+      final active = state.activeLeg;
+      if (active != null) {
+        final expectedOdometer =
+            active.startOdometer + active.kmDriven.toInt();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          stopDriving(expectedOdometer, endTime: DateTime.now());
+          _resetTripState();
+        });
+      }
+    };
+
+    backgroundService.onStillDriving = () {
+      backgroundService.onStillDrivingPressed();
+    };
+
+    detectionService.onStartTripRequested = () {
+      final routes = _ref.read(routeProvider);
+      if (routes.isNotEmpty) {
+        _autoStartWithRoute(routes.first);
+      }
+    };
+
+    ns.onStartTrip = () {
+      detectionService.onStartTripRequested?.call();
+    };
+
+    ns.onEndTrip = () {
+      if (state.activeLeg != null) {
+        backgroundService.onArrived?.call();
+      }
+    };
+
+    ns.flushPendingLaunchAction();
+  }
+
+  Future<void> _autoStartWithRoute(model.Route route) async {
+    final lastLeg = await DatabaseService.getLastLeg();
+    final initialOdometer = lastLeg?.endOdometer;
+    if (initialOdometer == null) return;
+
+    await startTrip(
+      startOdometer: initialOdometer,
+      startLocation: route.startLocation,
+      route: route,
+      purpose: route.lastPurpose,
+      driver: _settings.driverName,
+    );
+  }
+
   Future<void> _saveAdHocRoute(TripLeg leg) async {
     final start = leg.startLocation.trim();
     final end = leg.endLocation!.trim();
@@ -291,29 +548,34 @@ class TripNotifier extends StateNotifier<TripState> {
 
   /// Called when the app returns to the foreground.
   /// If the active leg was backgrounded for ≥30 min, mark it as a draft.
+  /// If no trip is active, restarts auto-detection.
   Future<void> onAppForegrounded() async {
     final active = state.activeLeg;
     final enteredAt = _backgroundEnterTime;
     _backgroundEnterTime = null;
 
-    if (active == null || enteredAt == null) return;
-
-    final elapsed = DateTime.now().difference(enteredAt);
-    if (elapsed.inMinutes >= _idleTimeoutMinutes) {
-      LogService().info(
-        'Trip: idle timeout elapsed (${elapsed.inMinutes} min) — '
-        'marking leg ${active.id} as draft',
-      );
-      // Mark unsynced so it surfaces as a draft
-      if (active.id != null) {
-        await DatabaseService.markLegUnsynced(active.id!);
+    if (active != null && enteredAt != null) {
+      final elapsed = DateTime.now().difference(enteredAt);
+      if (elapsed.inMinutes >= _idleTimeoutMinutes) {
+        LogService().info(
+          'Trip: idle timeout elapsed (${elapsed.inMinutes} min) — '
+          'marking leg ${active.id} as draft',
+        );
+        if (active.id != null) {
+          await DatabaseService.markLegUnsynced(active.id!);
+        }
+        final todayLegs = await DatabaseService.getLegsForDate(_today);
+        if (!mounted) return;
+        state = state.copyWith(activeLeg: null, todayLegs: todayLegs);
+        LogService().info(
+          'Trip: active leg ${active.id} converted to draft after idle timeout',
+        );
       }
-      final todayLegs = await DatabaseService.getLegsForDate(_today);
-      if (!mounted) return;
-      state = state.copyWith(activeLeg: null, todayLegs: todayLegs);
-      LogService().info(
-        'Trip: active leg ${active.id} converted to draft after idle timeout',
-      );
+    }
+
+    // Restart detection if no trip is active.
+    if (!isDriving) {
+      _ref.read(tripDetectionServiceProvider).start();
     }
   }
 

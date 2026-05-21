@@ -14,6 +14,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kilometrikorvaus/main.dart';
 import 'package:kilometrikorvaus/models/trip_leg.dart';
@@ -22,10 +23,12 @@ import 'package:kilometrikorvaus/widgets/status_chip_row.dart';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
-/// Pumps [child] under the real app's light theme so accessibility
-/// assertions check the actual configuration, not a copy that drifts.
+/// Pumps [child] under the real app's light theme and a [ProviderScope] so
+/// [ActiveTripCard] (a [ConsumerStatefulWidget]) can read providers.
 Widget _wrap(Widget child) {
-  return MaterialApp(theme: buildLightTheme(), home: Scaffold(body: child));
+  return ProviderScope(
+    child: MaterialApp(theme: buildLightTheme(), home: Scaffold(body: child)),
+  );
 }
 
 TripLeg _activeLeg({double kmDriven = 54.0}) => TripLeg(
@@ -59,13 +62,6 @@ double contrastRatio(Color a, Color b) {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-Future<void> _noopStop(
-  int odometer, {
-  DateTime? endTime,
-  String? endLocation,
-  String? purpose,
-}) async {}
-
 // ─── A1 · Olen perillä button is a solid, discrete shape ───────────────────
 
 void main() {
@@ -73,7 +69,7 @@ void main() {
     testWidgets('button background is fully opaque (alpha == 255)',
         (tester) async {
       await tester.pumpWidget(
-        _wrap(ActiveTripCard(leg: _activeLeg(), onStopDriving: _noopStop)),
+        _wrap(ActiveTripCard(leg: _activeLeg())),
       );
       await tester.pumpAndSettle();
 
@@ -111,7 +107,7 @@ void main() {
         (tester) async {
       final handle = tester.ensureSemantics();
       await tester.pumpWidget(
-        _wrap(ActiveTripCard(leg: _activeLeg(), onStopDriving: _noopStop)),
+        _wrap(ActiveTripCard(leg: _activeLeg())),
       );
       await tester.pumpAndSettle();
       await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
@@ -126,11 +122,7 @@ void main() {
         (tester) async {
       final handle = tester.ensureSemantics();
       await tester.pumpWidget(
-        _wrap(ActiveTripCard(
-          leg: _activeLeg(kmDriven: 54.0),
-          liveDistanceKm: 0,
-          onStopDriving: _noopStop,
-        )),
+        _wrap(ActiveTripCard(leg: _activeLeg(kmDriven: 54.0))),
       );
       await tester.pumpAndSettle();
 
@@ -158,11 +150,7 @@ void main() {
     testWidgets('long-press shows a "Pinjattu" badge and freezes the value',
         (tester) async {
       await tester.pumpWidget(
-        _wrap(ActiveTripCard(
-          leg: _activeLeg(kmDriven: 54.0),
-          liveDistanceKm: 0,
-          onStopDriving: _noopStop,
-        )),
+        _wrap(ActiveTripCard(leg: _activeLeg(kmDriven: 54.0))),
       );
       await tester.pumpAndSettle();
 
@@ -223,7 +211,7 @@ void main() {
     testWidgets('every IconButton in the card subtree has a tooltip',
         (tester) async {
       await tester.pumpWidget(
-        _wrap(ActiveTripCard(leg: _activeLeg(), onStopDriving: _noopStop)),
+        _wrap(ActiveTripCard(leg: _activeLeg())),
       );
       await tester.pumpAndSettle();
 
