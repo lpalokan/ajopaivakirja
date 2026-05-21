@@ -36,12 +36,9 @@ class RouteChipRow extends StatelessWidget {
         itemBuilder: (context, index) {
           if (index < routes.length) {
             final route = routes[index];
-            final isSelected = route.id == selectedRouteId;
-            final isFeatured = index == 0;
             return RouteChip(
               route: route,
-              isSelected: isSelected,
-              isFeatured: isFeatured,
+              isSelected: route.id == selectedRouteId,
               onTap: () => onRouteSelected(route),
             );
           }
@@ -62,34 +59,43 @@ class RouteChipRow extends StatelessWidget {
 }
 
 /// Individual route chip: 120×64, name + meta line.
+///
+/// Selection cues are deliberately redundant: filled background, 2px primary
+/// border, and a trailing check icon. All unselected chips share the same
+/// neutral surface so position never reads as "highlighted".
 class RouteChip extends StatelessWidget {
   final model.Route route;
   final bool isSelected;
-  final bool isFeatured;
   final VoidCallback onTap;
 
   const RouteChip({
     super.key,
     required this.route,
     this.isSelected = false,
-    this.isFeatured = false,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final radius = BorderRadius.circular(12);
 
     return Material(
       color: isSelected
           ? colorScheme.primaryContainer
-          : isFeatured
-          ? colorScheme.secondaryContainer
           : colorScheme.surfaceContainer,
-      borderRadius: BorderRadius.circular(12),
+      shape: RoundedRectangleBorder(
+        borderRadius: radius,
+        side: BorderSide(
+          color: isSelected
+              ? colorScheme.primary
+              : colorScheme.outlineVariant,
+          width: isSelected ? 2 : 1,
+        ),
+      ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: radius,
         child: Container(
           width: 120,
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),

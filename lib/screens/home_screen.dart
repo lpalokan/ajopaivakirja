@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/material_symbols_icons.dart';
@@ -18,6 +19,7 @@ import '../widgets/active_trip_card.dart';
 import '../widgets/route_chip_row.dart';
 import '../widgets/location_chip.dart';
 import '../widgets/day_timeline.dart';
+import '../widgets/top_context_card.dart';
 import 'settings_screen.dart';
 import 'route_management_screen.dart';
 import 'trip_history_screen.dart';
@@ -39,8 +41,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // dialog), so its `mounted` check fails and the pick is dropped.
   final _locationChipKey = GlobalKey();
   int? _selectedRouteId;
-  String? _selectedStartLocation;
+  // Last location the LocationChip emitted. Kept separate from any
+  // selected route's start address so the chip's callback can't silently
+  // overwrite what the route preview / StartCard banner display.
+  String? _pickedLocation;
   String? _selectedPurpose;
+  // Live mirror of the StartCard's odometer field, read by the route
+  // preview card to compute the expected end odometer.
+  final ValueNotifier<int?> _odometerNotifier = ValueNotifier<int?>(null);
   double _liveDistanceKm = 0;
   StreamSubscription<dynamic>? _positionSub;
   dynamic _lastPosition;
@@ -161,6 +169,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   @override
   void dispose() {
     _positionSub?.cancel();
+    _odometerNotifier.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -353,64 +362,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     List<model.Route> recentRoutes,
     Future<TripLeg?>? lastOdometerFuture,
   ) {
-    final colorScheme = Theme.of(context).colorScheme;
+    // Resolve the selected route from the live routes list rather than
+    // caching its fields in state — keeps the StartCard banner and the
+    // route preview rendering from one source of truth.
+    final selectedRoute = _selectedRouteId == null
+        ? null
+        : routes.where((r) => r.id == _selectedRouteId).firstOrNull;
 
     return Column(
       children: [
-        // Status zone (top ~38% — read only)
-        if (tripState.todayLegs.isNotEmpty)
-          DayTimeline(
-            legs: tripState.todayLegs,
-            onTapLeg: (leg) {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const TripHistoryScreen()),
-              );
-            },
-          ),
-        if (tripState.todayLegs.isEmpty)
-          Expanded(
-            flex: 3,
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Symbols.add_road, size: 56, color: colorScheme.outline),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Ei matkoja tänään',
-                    style: Theme.of(context).textTheme.bodyLarge,
-                  ),
-                  Text(
-                    'Aloita ajo alla olevasta lomakkeesta.',
-                    style: TextStyle(color: colorScheme.onSurfaceVariant),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        // Route chips (middle ~28%)
+        // Top zone — context card. Priority: a selected route preview
+        // wins over the day timeline, which wins over the ad-hoc card.
+        Expanded(
+          flex: 3,
+          child: _buildTopZone(tripState, selectedRoute),
+        ),
+        // Route chips
         if (recentRoutes.isNotEmpty) ...[
           RouteChipRow(
             routes: recentRoutes,
             selectedRouteId: _selectedRouteId,
             onRouteSelected: (route) {
               if (route.id == _selectedRouteId) {
-                // Deselect
                 setState(() {
                   _selectedRouteId = null;
-                  _selectedStartLocation = null;
                   _selectedPurpose = null;
                 });
               } else {
                 setState(() {
                   _selectedRouteId = route.id;
-                  _selectedStartLocation = route.startLocation;
                   _selectedPurpose = route.lastPurpose;
                 });
-                // Pre-fill odometer from StartCard
-                if (_startCardKey.currentState != null) {
-                  // Odometer is pre-filled from lastLeg; no change needed
-                }
               }
             },
             onShowAll: () {
@@ -423,7 +405,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           ),
           const SizedBox(height: 8),
         ],
-        // Bottom ~34% — StartCard (primary action zone)
+        // Bottom — StartCard (primary action zone)
         FutureBuilder<TripLeg?>(
           future: lastOdometerFuture,
           builder: (context, snapshot) {
@@ -433,18 +415,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               child: StartCard(
                 key: _startCardKey,
                 initialOdometer: lastOdometer,
-                selectedRouteLabel: _selectedStartLocation != null
-                    ? 'Reitti: $_selectedStartLocation'
+                odometerNotifier: _odometerNotifier,
+                selectedRouteLabel: selectedRoute != null
+                    ? 'Reitti: ${selectedRoute.name} → ${selectedRoute.endLocation}'
                     : null,
                 onStart: () => _onStartTap(tripNotifier, settings),
                 visionService: ref.read(odometerVisionServiceProvider),
                 locationChip: LocationChip(
                   key: _locationChipKey,
                   locationService: ref.read(locationServiceProvider),
-                  fallbackLabel:
-                      _selectedStartLocation ?? settings.homeLocation,
+                  fallbackLabel: selectedRoute?.startLocation
+                      ?? _pickedLocation
+                      ?? settings.homeLocation,
                   onChanged: (loc) {
-                    setState(() => _selectedStartLocation = loc);
+                    setState(() => _pickedLocation = loc);
                   },
                 ),
               ),
@@ -453,6 +437,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ),
       ],
     );
+  }
+
+  Widget _buildTopZone(TripState tripState, model.Route? selectedRoute) {
+    if (selectedRoute != null) {
+      return SingleChildScrollView(
+        child: RoutePreviewCard(
+          route: selectedRoute,
+          odometerListenable: _odometerNotifier,
+        ),
+      );
+    }
+    if (tripState.todayLegs.isNotEmpty) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        child: DayTimeline(
+          legs: tripState.todayLegs,
+          onTapLeg: (leg) {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const TripHistoryScreen()),
+            );
+          },
+        ),
+      );
+    }
+    return const SingleChildScrollView(child: AdHocCard());
   }
 
   Future<void> _onStartTap(
@@ -469,7 +478,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       return;
     }
 
-    final startLocation = _selectedStartLocation ?? settings.homeLocation;
+    final startLocation = _pickedLocation ?? settings.homeLocation;
     final purpose = _selectedPurpose ?? '';
 
     // Stop auto-detection while driving
@@ -516,7 +525,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     setState(() {
       _selectedRouteId = null;
-      _selectedStartLocation = null;
+      _pickedLocation = null;
       _selectedPurpose = null;
     });
   }

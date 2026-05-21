@@ -29,8 +29,8 @@ class DayTimeline extends StatelessWidget {
       (s, l) => s + l.kmAllowance + l.dailyAllowance,
     );
 
-    final dateFmt = DateFormat('EEEE d.M.yyyy', 'fi');
     final timeFmt = DateFormat('HH:mm');
+    final tripCountLabel = legs.length == 1 ? 'matka' : 'matkaa';
 
     return Card(
       margin: EdgeInsets.zero,
@@ -44,7 +44,7 @@ class DayTimeline extends StatelessWidget {
               children: [
                 Flexible(
                   child: Text(
-                    'Tänään (${dateFmt.format(legs.first.startTime)})',
+                    'Tänään · ${legs.length} $tripCountLabel',
                     style: Theme.of(context).textTheme.titleSmall,
                     overflow: TextOverflow.ellipsis,
                   ),

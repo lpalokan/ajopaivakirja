@@ -19,6 +19,10 @@ class StartCard extends StatefulWidget {
   final VoidCallback onStart;
   final OdometerVisionService? visionService;
   final Widget locationChip;
+  // Mirror of the odometer field's int value for sibling widgets (e.g. the
+  // top-of-screen route preview) to read without sharing focus or
+  // triggering a parent rebuild on each keystroke.
+  final ValueNotifier<int?>? odometerNotifier;
 
   const StartCard({
     super.key,
@@ -28,6 +32,7 @@ class StartCard extends StatefulWidget {
     required this.onStart,
     this.visionService,
     required this.locationChip,
+    this.odometerNotifier,
   });
 
   @override
@@ -50,6 +55,9 @@ class StartCardState extends State<StartCard> {
   @override
   void initState() {
     super.initState();
+    // Attach the listener before any controller write so the notifier syncs
+    // even on the initial seed below.
+    _odometerCtrl.addListener(_syncOdometerNotifier);
     if (widget.initialOdometer != null) {
       _odometerCtrl.text = widget.initialOdometer.toString();
     }
@@ -67,8 +75,16 @@ class StartCardState extends State<StartCard> {
     });
   }
 
+  void _syncOdometerNotifier() {
+    final n = widget.odometerNotifier;
+    if (n == null) return;
+    final parsed = int.tryParse(_odometerCtrl.text.trim());
+    if (n.value != parsed) n.value = parsed;
+  }
+
   @override
   void dispose() {
+    _odometerCtrl.removeListener(_syncOdometerNotifier);
     _odometerFocus.dispose();
     _odometerCtrl.dispose();
     super.dispose();
