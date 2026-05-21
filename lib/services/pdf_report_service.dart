@@ -5,6 +5,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:intl/intl.dart';
 import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
+import '../app_version.dart';
 import 'trip_calculator.dart';
 
 class PdfReportService {
@@ -400,7 +401,7 @@ class PdfReportService {
         pw.SizedBox(height: 8),
         pw.Text(
           'Raportti luotu: ${DateFormat('d.M.yyyy HH:mm', 'fi').format(DateTime.now())} '
-          '• Ajopäiväkirja v1.0.0',
+          '• Ajopäiväkirja v$appVersionName',
           style: pw.TextStyle(fontSize: 8, color: PdfColors.grey),
         ),
       ],
