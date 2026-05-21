@@ -63,8 +63,7 @@ class _ActiveTripCardState extends ConsumerState<ActiveTripCard> {
   void _toggleFreeze() {
     setState(() {
       if (_frozenDistanceKm == null) {
-        _frozenDistanceKm =
-            widget.leg.kmDriven + _liveDistance.value;
+        _frozenDistanceKm = widget.leg.kmDriven + _liveDistance.value;
       } else {
         _frozenDistanceKm = null;
       }
@@ -149,9 +148,7 @@ class _ActiveTripCardState extends ConsumerState<ActiveTripCard> {
                     if (value == 'expense') {
                       _addExpense(context);
                     } else if (value == 'cancel') {
-                      ref
-                          .read(tripProvider.notifier)
-                          .cancelTrip(context);
+                      ref.read(tripProvider.notifier).cancelTrip(context);
                     }
                   },
                   itemBuilder: (ctx) => [
@@ -191,7 +188,9 @@ class _ActiveTripCardState extends ConsumerState<ActiveTripCard> {
                     Text(
                       displayedKmStr,
                       key: const ValueKey('active-trip-counter'),
-                      style: numeralLarge.copyWith(color: colorScheme.onPrimary),
+                      style: numeralLarge.copyWith(
+                        color: colorScheme.onPrimary,
+                      ),
                     ),
                     if (isPinned)
                       Padding(
@@ -235,10 +234,7 @@ class _ActiveTripCardState extends ConsumerState<ActiveTripCard> {
             Center(
               child: Text(
                 'Lähtö $startTime · $durationStr',
-                style: TextStyle(
-                  color: semColors.onPrimaryMuted,
-                  fontSize: 13,
-                ),
+                style: TextStyle(color: semColors.onPrimaryMuted, fontSize: 13),
               ),
             ),
             const SizedBox(height: 16),

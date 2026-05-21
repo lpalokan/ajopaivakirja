@@ -421,8 +421,7 @@ class TripNotifier extends StateNotifier<TripState> {
     backgroundService.onArrived = () {
       final active = state.activeLeg;
       if (active != null) {
-        final expectedOdometer =
-            active.startOdometer + active.kmDriven.toInt();
+        final expectedOdometer = active.startOdometer + active.kmDriven.toInt();
         WidgetsBinding.instance.addPostFrameCallback((_) {
           stopDriving(expectedOdometer, endTime: DateTime.now());
           _resetTripState();

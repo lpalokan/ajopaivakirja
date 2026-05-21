@@ -359,13 +359,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           .firstWhere((r) => r.id == _selectedRouteId);
     }
 
-    await ref.read(tripProvider.notifier).startTrip(
-      startOdometer: odometer,
-      startLocation: startLocation,
-      route: selectedRoute,
-      purpose: purpose,
-      driver: settings.driverName,
-    );
+    await ref
+        .read(tripProvider.notifier)
+        .startTrip(
+          startOdometer: odometer,
+          startLocation: startLocation,
+          route: selectedRoute,
+          purpose: purpose,
+          driver: settings.driverName,
+        );
 
     if (!mounted) return;
     setState(() {
