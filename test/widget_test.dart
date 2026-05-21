@@ -305,10 +305,7 @@ void main() {
     });
 
     test('calculateLeg uses year-specific km rate', () {
-      final calc = TripCalculator(
-        baseSettings,
-        kmRates: {2025: 0.53},
-      );
+      final calc = TripCalculator(baseSettings, kmRates: {2025: 0.53});
       final result = calc.calculateLeg(baseLeg);
 
       // 54 km * 0.53 = 28.62
@@ -316,10 +313,7 @@ void main() {
     });
 
     test('calculateLeg falls back to settings rate for unknown year', () {
-      final calc = TripCalculator(
-        baseSettings,
-        kmRates: {2024: 0.46},
-      );
+      final calc = TripCalculator(baseSettings, kmRates: {2024: 0.46});
       final result = calc.calculateLeg(baseLeg); // 2025 leg
 
       // Falls back to baseSettings.kmRate = 0.57
@@ -338,10 +332,7 @@ void main() {
     });
 
     test('getKmRateForYear returns year-specific rate', () {
-      final calc = TripCalculator(
-        baseSettings,
-        kmRates: {2023: 0.53},
-      );
+      final calc = TripCalculator(baseSettings, kmRates: {2023: 0.53});
       expect(calc.getKmRateForYear(2023), 0.53);
       expect(calc.getKmRateForYear(2025), 0.57); // falls back to settings
     });
@@ -790,7 +781,9 @@ void main() {
           legOrder: 2,
           startTime: DateTime(2025, 5, 15, 17, 0),
           startOdometer: 10054,
+          endOdometer: 10108,
           startLocation: 'Työ',
+          endLocation: 'Koti',
           driver: 'Lapa',
         ),
         TripLeg(
@@ -799,7 +792,9 @@ void main() {
           legOrder: 1,
           startTime: DateTime(2025, 5, 15, 8, 0),
           startOdometer: 10000,
+          endOdometer: 10054,
           startLocation: 'Koti',
+          endLocation: 'Työ',
           driver: 'Lapa',
         ),
       ];
@@ -819,7 +814,9 @@ void main() {
           legOrder: 1,
           startTime: now,
           startOdometer: 10000,
+          endOdometer: 10054,
           startLocation: 'Koti, Helsinki',
+          endLocation: 'Työ',
           purpose: 'Meeting "important"',
           driver: 'Lapa',
         ),
@@ -839,7 +836,9 @@ void main() {
           legOrder: 1,
           startTime: now,
           startOdometer: 10000,
+          endOdometer: 10054,
           startLocation: 'Koti',
+          endLocation: 'Työ',
           driver: 'Lapa',
         ),
       ];
@@ -856,7 +855,10 @@ void main() {
         ],
       };
 
-      final content = CsvExportService.generateContent(legs, expensesByLegId: expenses);
+      final content = CsvExportService.generateContent(
+        legs,
+        expensesByLegId: expenses,
+      );
       final lines = content.trim().split('\n');
 
       expect(lines.length, 3); // header + leg row + expense row
@@ -866,23 +868,26 @@ void main() {
       expect(lines[2], contains('5.50'));
     });
 
-    test('generateContent starts with a UTF-8 BOM so Excel/Android detect encoding', () {
-      final legs = [
-        TripLeg(
-          id: 1,
-          date: '2025-05-15',
-          legOrder: 1,
-          startTime: now,
-          startOdometer: 10000,
-          startLocation: 'Koti',
-          driver: 'Lapa',
-        ),
-      ];
+    test(
+      'generateContent starts with a UTF-8 BOM so Excel/Android detect encoding',
+      () {
+        final legs = [
+          TripLeg(
+            id: 1,
+            date: '2025-05-15',
+            legOrder: 1,
+            startTime: now,
+            startOdometer: 10000,
+            startLocation: 'Koti',
+            driver: 'Lapa',
+          ),
+        ];
 
-      final content = CsvExportService.generateContent(legs);
+        final content = CsvExportService.generateContent(legs);
 
-      expect(content.codeUnitAt(0), 0xFEFF);
-    });
+        expect(content.codeUnitAt(0), 0xFEFF);
+      },
+    );
 
     test('generateContent uses RFC 4180 CRLF line endings', () {
       final legs = [

@@ -44,10 +44,7 @@ class _ExpenseDialogState extends State<ExpenseDialog> {
           children: [
             DropdownButtonFormField<ExpenseType>(
               initialValue: _type,
-              decoration: const InputDecoration(
-                labelText: 'Tyyppi',
-                border: OutlineInputBorder(),
-              ),
+              decoration: const InputDecoration(labelText: 'Tyyppi'),
               items: ExpenseType.values.map((t) {
                 return DropdownMenuItem(value: t, child: Text(t.displayName));
               }).toList(),
@@ -58,14 +55,15 @@ class _ExpenseDialogState extends State<ExpenseDialog> {
             const SizedBox(height: 12),
             TextField(
               controller: _amountController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
               ],
               decoration: const InputDecoration(
                 labelText: 'Summa (€)',
                 suffixText: '€',
-                border: OutlineInputBorder(),
               ),
               autofocus: widget.existing == null,
             ),
@@ -75,7 +73,6 @@ class _ExpenseDialogState extends State<ExpenseDialog> {
               decoration: const InputDecoration(
                 labelText: 'Kuvaus (valinnainen)',
                 hintText: 'esim. Pysäköintitalo Forum',
-                border: OutlineInputBorder(),
               ),
             ),
           ],

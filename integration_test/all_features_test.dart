@@ -11,10 +11,13 @@
 // When you add a new .feature, add one import + one main() call below.
 
 import 'app_smoke_test.dart' as smoke;
+import 'features/accessibility_test.dart' as accessibility;
 import 'features/ad_hoc_driving_test.dart' as ad_hoc_driving;
 import 'features/calculations_test.dart' as calculations;
+import 'features/drafts_test.dart' as drafts;
 import 'features/driving_test.dart' as driving;
 import 'features/history_test.dart' as history;
+import 'features/home_context_test.dart' as home_context;
 import 'features/navigation_test.dart' as navigation;
 import 'features/route_management_test.dart' as route_management;
 import 'features/seeded_routes_test.dart' as seeded_routes;
@@ -29,5 +32,8 @@ void main() {
   settings.main();
   driving.main();
   history.main();
+  home_context.main();
   calculations.main();
+  drafts.main();
+  accessibility.main();
 }

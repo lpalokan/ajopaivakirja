@@ -10,6 +10,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 - Branch naming: `feature/N-short-description`
 - Push the branch and create a PR targeting `main`.
 - Reference the issue number in the PR body (e.g., "Closes #2").
+- **When working on a feature branch, always `git add -A && git commit` and `git push origin <branch>` before declaring the work done.** Uncommitted or unpushed changes are incomplete.
 
 ## Shell command conventions
 
@@ -34,7 +35,7 @@ before any implementation code:
    add a new step file in `integration_test/features/step/` (delegating to
    `integration_test/support/harness.dart`) when no existing phrase fits.
 3. **Generate and run the failing test** (`dart run build_runner build
-   --delete-conflicting-outputs`, then the emulator suite) — confirm it
+--delete-conflicting-outputs`, then the emulator suite) — confirm it
    fails for the right reason (red).
 4. **Only then implement** the feature until the scenario passes (green),
    then refactor.

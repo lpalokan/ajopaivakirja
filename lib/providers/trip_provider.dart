@@ -18,17 +18,11 @@ class TripState {
   final TripLeg? activeLeg;
   final List<TripLeg> todayLegs;
 
-  const TripState({
-    this.activeLeg,
-    this.todayLegs = const [],
-  });
+  const TripState({this.activeLeg, this.todayLegs = const []});
 
   static const _unset = _Sentinel();
 
-  TripState copyWith({
-    Object? activeLeg = _unset,
-    List<TripLeg>? todayLegs,
-  }) {
+  TripState copyWith({Object? activeLeg = _unset, List<TripLeg>? todayLegs}) {
     return TripState(
       activeLeg: identical(activeLeg, _unset)
           ? this.activeLeg
@@ -41,6 +35,8 @@ class TripState {
 class TripNotifier extends StateNotifier<TripState> {
   final Ref _ref;
   Map<int, double>? _kmRates;
+  DateTime? _backgroundEnterTime;
+  static const _idleTimeoutMinutes = 30;
 
   TripNotifier(this._ref) : super(const TripState());
 
@@ -62,10 +58,7 @@ class TripNotifier extends StateNotifier<TripState> {
     final activeLeg = await DatabaseService.getActiveLeg();
     if (!mounted) return;
 
-    state = TripState(
-      activeLeg: activeLeg,
-      todayLegs: legs,
-    );
+    state = TripState(activeLeg: activeLeg, todayLegs: legs);
   }
 
   Future<TripLeg> startDriving({
@@ -94,16 +87,15 @@ class TripNotifier extends StateNotifier<TripState> {
     );
 
     final saved = await DatabaseService.insertTripLeg(leg);
-    LogService().info('Trip: started ${route.name} (odo: $startOdometer, leg #$legOrder)');
+    LogService().info(
+      'Trip: started ${route.name} (odo: $startOdometer, leg #$legOrder)',
+    );
     await DatabaseService.updateRouteTimestamp(route.id!);
 
     final todayLegs = await DatabaseService.getLegsForDate(_today);
     if (!mounted) return saved;
 
-    state = state.copyWith(
-      activeLeg: saved,
-      todayLegs: todayLegs,
-    );
+    state = state.copyWith(activeLeg: saved, todayLegs: todayLegs);
 
     return saved;
   }
@@ -136,7 +128,8 @@ class TripNotifier extends StateNotifier<TripState> {
 
     final saved = await DatabaseService.insertTripLeg(leg);
     LogService().info(
-        'Trip: started ad-hoc from $startLocation (odo: $startOdometer, leg #$legOrder)');
+      'Trip: started ad-hoc from $startLocation (odo: $startOdometer, leg #$legOrder)',
+    );
 
     final todayLegs = await DatabaseService.getLegsForDate(_today);
     if (!mounted) return saved;
@@ -168,7 +161,9 @@ class TripNotifier extends StateNotifier<TripState> {
     final wasAdHoc = active.routeId == null && active.routeDescription == null;
 
     leg = _calculator.calculateLeg(leg);
-    LogService().info('Trip: stopped (odo: $endOdometer, km: ${leg.kmDriven}, returnHome: ${leg.isReturnHome})');
+    LogService().info(
+      'Trip: stopped (odo: $endOdometer, km: ${leg.kmDriven}, returnHome: ${leg.isReturnHome})',
+    );
     await DatabaseService.updateTripLeg(leg);
 
     // The trip may have stopped while the screen/provider was being torn
@@ -194,10 +189,7 @@ class TripNotifier extends StateNotifier<TripState> {
     final todayLegs = await DatabaseService.getLegsForDate(_today);
     if (!mounted) return leg;
 
-    state = state.copyWith(
-      activeLeg: null,
-      todayLegs: todayLegs,
-    );
+    state = state.copyWith(activeLeg: null, todayLegs: todayLegs);
 
     return leg;
   }
@@ -224,23 +216,32 @@ class TripNotifier extends StateNotifier<TripState> {
     final end = leg.endLocation!.trim();
     final routeNotifier = _ref.read(routeProvider.notifier);
 
-    final exists = _ref.read(routeProvider).any((r) =>
-        r.startLocation.trim().toLowerCase() == start.toLowerCase() &&
-        r.endLocation.trim().toLowerCase() == end.toLowerCase());
+    final exists = _ref
+        .read(routeProvider)
+        .any(
+          (r) =>
+              r.startLocation.trim().toLowerCase() == start.toLowerCase() &&
+              r.endLocation.trim().toLowerCase() == end.toLowerCase(),
+        );
     if (exists) return;
 
     final now = DateTime.now();
-    await routeNotifier.add(model.Route(
-      name: '$start → $end',
-      startLocation: start,
-      endLocation: end,
-      distanceKm: leg.kmDriven,
-      lastPurpose:
-          (leg.purpose != null && leg.purpose!.isNotEmpty) ? leg.purpose : null,
-      createdAt: now,
-      updatedAt: now,
-    ));
-    LogService().info('Trip: saved ad-hoc route $start -> $end (${leg.kmDriven} km)');
+    await routeNotifier.add(
+      model.Route(
+        name: '$start → $end',
+        startLocation: start,
+        endLocation: end,
+        distanceKm: leg.kmDriven,
+        lastPurpose: (leg.purpose != null && leg.purpose!.isNotEmpty)
+            ? leg.purpose
+            : null,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    LogService().info(
+      'Trip: saved ad-hoc route $start -> $end (${leg.kmDriven} km)',
+    );
   }
 
   Future<void> _syncToSheets(List<TripLeg> legs) async {
@@ -250,7 +251,9 @@ class TripNotifier extends StateNotifier<TripState> {
     try {
       final sheets = _ref.read(sheetsServiceProvider);
       final deletedIds = await DatabaseService.getDeletedLegIds();
-      LogService().info('Sheets: syncing ${legs.length} legs to ${settings.sheetTab} (+ ${deletedIds.length} deletes)');
+      LogService().info(
+        'Sheets: syncing ${legs.length} legs to ${settings.sheetTab} (+ ${deletedIds.length} deletes)',
+      );
       await sheets.appendLegs(
         legs,
         sheetId: settings.sheetId,
@@ -275,9 +278,55 @@ class TripNotifier extends StateNotifier<TripState> {
     await load();
   }
 
+  /// Called when the app is backgrounded. Records the time so we can later
+  /// determine whether the idle timeout (§5) has elapsed.
+  void onAppBackgrounded() {
+    if (state.activeLeg != null) {
+      _backgroundEnterTime = DateTime.now();
+      LogService().info(
+        'Trip: app backgrounded with active leg ${state.activeLeg!.id}',
+      );
+    }
+  }
+
+  /// Called when the app returns to the foreground.
+  /// If the active leg was backgrounded for ≥30 min, mark it as a draft.
+  Future<void> onAppForegrounded() async {
+    final active = state.activeLeg;
+    final enteredAt = _backgroundEnterTime;
+    _backgroundEnterTime = null;
+
+    if (active == null || enteredAt == null) return;
+
+    final elapsed = DateTime.now().difference(enteredAt);
+    if (elapsed.inMinutes >= _idleTimeoutMinutes) {
+      LogService().info(
+        'Trip: idle timeout elapsed (${elapsed.inMinutes} min) — '
+        'marking leg ${active.id} as draft',
+      );
+      // Mark unsynced so it surfaces as a draft
+      if (active.id != null) {
+        await DatabaseService.markLegUnsynced(active.id!);
+      }
+      final todayLegs = await DatabaseService.getLegsForDate(_today);
+      if (!mounted) return;
+      state = state.copyWith(activeLeg: null, todayLegs: todayLegs);
+      LogService().info(
+        'Trip: active leg ${active.id} converted to draft after idle timeout',
+      );
+    }
+  }
+
   /// Get today's day summary for display.
-  ({double totalKm, double totalKmAllowance, double totalDailyAllowance,
-      double grandTotal, double totalHours}) get daySummary {
+  ({
+    double totalKm,
+    double totalKmAllowance,
+    double totalDailyAllowance,
+    double grandTotal,
+    double totalHours,
+    bool estimated,
+  })
+  get daySummary {
     final legs = state.todayLegs;
     final summary = _calculator.summarizeDay(legs);
     final totalHours = legs.isNotEmpty ? legs.last.legDurationHours : 0.0;
@@ -288,6 +337,7 @@ class TripNotifier extends StateNotifier<TripState> {
       totalDailyAllowance: summary.totalDailyAllowance,
       grandTotal: summary.grandTotal,
       totalHours: totalHours,
+      estimated: summary.estimated,
     );
   }
 }

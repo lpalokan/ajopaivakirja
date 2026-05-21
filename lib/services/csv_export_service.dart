@@ -34,6 +34,7 @@ class CsvExportService {
       });
 
     for (final leg in sorted) {
+      if (!leg.isCompleted) continue; // skip drafts
       buf.write(_row(leg));
       buf.write(_crlf);
 
@@ -59,7 +60,9 @@ class CsvExportService {
 
     // Save to documents directory
     final dir = await getApplicationDocumentsDirectory();
-    final name = fileName ?? 'ajopaivakirja_export_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv';
+    final name =
+        fileName ??
+        'ajopaivakirja_export_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv';
     final file = File('${dir.path}/$name');
     await file.writeAsString(content);
     return file;

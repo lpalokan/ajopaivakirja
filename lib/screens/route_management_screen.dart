@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../main.dart';
 import '../models/route.dart' as route_model;
@@ -65,7 +66,7 @@ class _RouteManagementScreenState
                           child: Center(
                             child: TextButton.icon(
                               onPressed: () => _showRouteDialog(),
-                              icon: const Icon(Icons.add),
+                              icon: const Icon(Symbols.add),
                               label: const Text('Lisää uusi reitti'),
                             ),
                           ),
@@ -92,7 +93,7 @@ class _RouteManagementScreenState
                             color: Theme.of(context).colorScheme.primary,
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: const Icon(Icons.edit, color: Colors.white),
+                          child: const Icon(Symbols.edit, color: Colors.white),
                         ),
                         secondaryBackground: Container(
                           alignment: Alignment.centerRight,
@@ -102,7 +103,7 @@ class _RouteManagementScreenState
                             color: Theme.of(context).colorScheme.error,
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: const Icon(Icons.delete, color: Colors.white),
+                          child: const Icon(Symbols.delete, color: Colors.white),
                         ),
                         child: Card(
                           margin: const EdgeInsets.only(bottom: 8),
@@ -113,7 +114,7 @@ class _RouteManagementScreenState
                               '${route.startLocation} → ${route.endLocation} · '
                               '${route.distanceKm.toStringAsFixed(1)} km',
                             ),
-                            trailing: const Icon(Icons.play_arrow, size: 18),
+                            trailing: const Icon(Symbols.play_arrow, size: 18),
                           ),
                         ),
                       );

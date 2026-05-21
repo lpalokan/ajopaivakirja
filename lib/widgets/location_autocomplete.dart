@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/material_symbols_icons.dart';
 
 /// Text field with a dropdown of known locations.
 ///
-/// Selecting a suggestion writes it to [controller] and unfocuses the field
-/// so the options overlay closes instead of lingering on screen.
-class LocationAutocomplete extends StatelessWidget {
+/// The supplied [controller] is the single source of truth: it is passed
+/// straight through to the underlying field so typed (or programmatically
+/// entered) text always lands on it. The previous implementation kept a
+/// second, Autocomplete-owned controller and copied `controller.text` into
+/// it on every build, which clobbered freshly entered text before the caller
+/// could read it back.
+class LocationAutocomplete extends StatefulWidget {
   final TextEditingController controller;
   final String label;
   final List<String> suggestions;
@@ -17,38 +22,72 @@ class LocationAutocomplete extends StatelessWidget {
   });
 
   @override
+  State<LocationAutocomplete> createState() => _LocationAutocompleteState();
+}
+
+class _LocationAutocompleteState extends State<LocationAutocomplete> {
+  final FocusNode _focusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Autocomplete<String>(
+    return RawAutocomplete<String>(
+      textEditingController: widget.controller,
+      focusNode: _focusNode,
       optionsBuilder: (textEditingValue) {
         final text = textEditingValue.text.toLowerCase();
-        if (text.isEmpty) return suggestions;
-        return suggestions.where((s) => s.toLowerCase().contains(text));
+        if (text.isEmpty) return widget.suggestions;
+        return widget.suggestions.where((s) => s.toLowerCase().contains(text));
       },
-      onSelected: (value) {
-        controller.text = value;
-        controller.selection = TextSelection.fromPosition(
-          TextPosition(offset: value.length),
-        );
-        // Close the options overlay: it stays open while the field keeps
-        // focus and the (now-matching) suggestion list is non-empty.
+      onSelected: (_) {
+        // RawAutocomplete already wrote the selection into the shared
+        // controller; just close the options overlay.
         FocusManager.instance.primaryFocus?.unfocus();
       },
-      fieldViewBuilder: (context, autocompleteCtrl, focusNode, onSubmitted) {
-        autocompleteCtrl.text = controller.text;
+      fieldViewBuilder: (context, fieldController, focusNode, onFieldSubmitted) {
         return TextField(
-          controller: autocompleteCtrl,
+          controller: fieldController,
           focusNode: focusNode,
           decoration: InputDecoration(
-            labelText: label,
+            labelText: widget.label,
             border: const OutlineInputBorder(),
             suffixIcon: GestureDetector(
               onTap: () => focusNode.requestFocus(),
-              child: const Icon(Icons.arrow_drop_down),
+              child: const Icon(Symbols.arrow_drop_down),
             ),
           ),
-          onChanged: (v) {
-            controller.text = v;
-          },
+          onSubmitted: (_) => onFieldSubmitted(),
+        );
+      },
+      optionsViewBuilder: (context, onSelected, options) {
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 240, maxWidth: 360),
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                itemCount: options.length,
+                itemBuilder: (context, index) {
+                  final option = options.elementAt(index);
+                  return InkWell(
+                    onTap: () => onSelected(option),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(option),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
         );
       },
     );

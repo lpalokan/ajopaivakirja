@@ -8,7 +8,7 @@ class TripCalculator {
   final Map<int, double>? _kmRates;
 
   TripCalculator(this._settings, {Map<int, double>? kmRates})
-      : _kmRates = kmRates;
+    : _kmRates = kmRates;
 
   double get allowance6h => _settings.allowance6h;
   double get allowance10h => _settings.allowance10h;
@@ -55,14 +55,14 @@ class TripCalculator {
   /// Calculate daily allowance for a list of legs on the same date.
   /// Returns the daily allowance amount and total hours away.
   ({double allowance, double totalHours}) calculateDailyAllowance(
-      List<TripLeg> legs) {
+    List<TripLeg> legs,
+  ) {
     if (legs.isEmpty) return (allowance: 0, totalHours: 0);
 
     final firstStart = legs.first.startTime;
     final lastEnd = legs.last.endTime ?? legs.last.startTime;
 
-    final totalHours =
-        lastEnd.difference(firstStart).inMinutes / 60.0;
+    final totalHours = lastEnd.difference(firstStart).inMinutes / 60.0;
 
     double allowance = 0;
     if (totalHours > 10) {
@@ -131,18 +131,17 @@ class TripCalculator {
       allowance = daily.allowance;
       mode = 'auto(hours: ${daily.totalHours})';
     }
-    LogService().info('Calc: finalizeDay ${updated.length} legs, allowance=$allowance€ ($mode)');
+    LogService().info(
+      'Calc: finalizeDay ${updated.length} legs, allowance=$allowance€ ($mode)',
+    );
 
     // Apply daily allowance to the last leg
-    updated[updated.length - 1] = last.copyWith(
-      dailyAllowance: allowance,
-    );
+    updated[updated.length - 1] = last.copyWith(dailyAllowance: allowance);
 
     // Calculate total day hours and place on last leg
     if (last.endTime != null) {
-      final totalHours = last.endTime!
-          .difference(updated.first.startTime)
-          .inMinutes / 60.0;
+      final totalHours =
+          last.endTime!.difference(updated.first.startTime).inMinutes / 60.0;
       updated[updated.length - 1] = updated.last.copyWith(
         legDurationHours: double.parse(totalHours.toStringAsFixed(2)),
       );
@@ -157,21 +156,34 @@ class TripCalculator {
   }
 
   /// Calculate a day summary: total km, total allowances.
-  ({double totalKm, double totalKmAllowance, double totalDailyAllowance,
-      double grandTotal}) summarizeDay(List<TripLeg> legs) {
+  /// Returns [estimated] = true if any leg in the day is a draft.
+  ({
+    double totalKm,
+    double totalKmAllowance,
+    double totalDailyAllowance,
+    double grandTotal,
+    bool estimated,
+  })
+  summarizeDay(List<TripLeg> legs) {
     final totalKm = legs.fold<double>(0, (sum, l) => sum + l.kmDriven);
-    final totalKmAllowance =
-        legs.fold<double>(0, (sum, l) => sum + l.kmAllowance);
-    final totalDailyAllowance =
-        legs.fold<double>(0, (sum, l) => sum + l.dailyAllowance);
+    final totalKmAllowance = legs.fold<double>(
+      0,
+      (sum, l) => sum + l.kmAllowance,
+    );
+    final totalDailyAllowance = legs.fold<double>(
+      0,
+      (sum, l) => sum + l.dailyAllowance,
+    );
+    final hasDraft = legs.any((l) => l.isDraft);
 
     return (
       totalKm: double.parse(totalKm.toStringAsFixed(2)),
       totalKmAllowance: double.parse(totalKmAllowance.toStringAsFixed(2)),
-      totalDailyAllowance:
-          double.parse(totalDailyAllowance.toStringAsFixed(2)),
+      totalDailyAllowance: double.parse(totalDailyAllowance.toStringAsFixed(2)),
       grandTotal: double.parse(
-          (totalKmAllowance + totalDailyAllowance).toStringAsFixed(2)),
+        (totalKmAllowance + totalDailyAllowance).toStringAsFixed(2),
+      ),
+      estimated: hasDraft,
     );
   }
 }
