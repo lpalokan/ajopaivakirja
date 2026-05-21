@@ -324,7 +324,18 @@ Future<void> expectContains(WidgetTester tester, String text) async {
 Future<void> tapText(WidgetTester tester, String text) async {
   final f = find.text(text);
   if (f.evaluate().isEmpty) await scrollIntoView(tester, f);
-  await tester.tap(f.first);
+  // When the same label appears in both an interactive widget (chip,
+  // button) and a non-interactive one (heading, preview card), `f.first`
+  // is whichever comes earlier in tree order — that's not necessarily
+  // the tappable one. Prefer a Text descendant of an InkWell so the tap
+  // hits the chip/button rather than a label that just happens to
+  // display the same string.
+  final tappable = find.descendant(
+    of: find.byType(InkWell),
+    matching: find.text(text),
+  );
+  final target = tappable.evaluate().isNotEmpty ? tappable.first : f.first;
+  await tester.tap(target);
   await settle(tester);
 }
 
