@@ -2,18 +2,14 @@
 // callers; the lint doesn't account for StateNotifier-as-orchestrator usage.
 // ignore_for_file: use_build_context_synchronously
 
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import '../models/route.dart' as model;
 import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
 import '../services/database_service.dart';
 import '../services/trip_calculator.dart';
-import '../services/location_service.dart';
 import '../services/log_service.dart';
 import '../widgets/odometer_dialog.dart';
 import '../main.dart';
@@ -48,10 +44,6 @@ class TripNotifier extends StateNotifier<TripState> {
   DateTime? _backgroundEnterTime;
   static const _idleTimeoutMinutes = 30;
 
-  // GPS live-distance tracking for the active trip.
-  StreamSubscription<Position>? _positionSub;
-  final ValueNotifier<double> _liveDistance = ValueNotifier<double>(0);
-  Position? _lastPosition;
   bool _callbacksWired = false;
 
   TripNotifier(this._ref) : super(const TripState());
@@ -68,10 +60,6 @@ class TripNotifier extends StateNotifier<TripState> {
   String get _today => DateFormat('yyyy-MM-dd').format(DateTime.now());
 
   bool get isDriving => state.activeLeg != null;
-
-  /// The live GPS distance accumulated during the active trip (in km).
-  /// Consumers listen via [ValueNotifier.addListener] or watch in widgets.
-  ValueNotifier<double> get liveDistanceKm => _liveDistance;
 
   Future<void> load() async {
     final legs = await DatabaseService.getLegsForDate(_today);
@@ -290,7 +278,6 @@ class TripNotifier extends StateNotifier<TripState> {
     }
 
     await backgroundService.onDrivingStarted(leg);
-    _startGpsTracking();
   }
 
   /// Stop the active trip, showing the arrival dialog first so the user
@@ -375,36 +362,9 @@ class TripNotifier extends StateNotifier<TripState> {
     _resetTripState();
   }
 
-  // ── GPS tracking ─────────────────────────────────────────────────────
-
-  void _startGpsTracking() {
-    _liveDistance.value = 0;
-    _lastPosition = null;
-    _positionSub?.cancel();
-
-    final locationService = _ref.read(locationServiceProvider);
-    _positionSub = locationService.positionStream.listen((pos) {
-      final last = _lastPosition;
-      _lastPosition = pos;
-      if (last != null) {
-        final dist = LocationService.haversineDistance(
-          last.latitude,
-          last.longitude,
-          pos.latitude,
-          pos.longitude,
-        );
-        _liveDistance.value += dist / 1000.0;
-      }
-    });
-  }
-
-  /// Clean up after a trip ends or is cancelled: reset GPS, stop
-  /// background service, stop detection, restart detection.
+  /// Clean up after a trip ends or is cancelled: stop background service,
+  /// stop detection, restart detection.
   void _resetTripState() {
-    _liveDistance.value = 0;
-    _lastPosition = null;
-    _positionSub?.cancel();
-    _positionSub = null;
     _ref.read(backgroundServiceProvider).onDrivingStopped();
     final detectionService = _ref.read(tripDetectionServiceProvider);
     detectionService.stop();
