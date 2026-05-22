@@ -17,3 +17,7 @@ Feature: Ad-hoc driving without a predefined route
     And I finish driving at {'Asiakas'} at {3050} km
     And I open routes
     Then I see text containing {'Siba → Asiakas'}
+
+  Scenario: Active ad-hoc trip shows elapsed time as the primary metric
+    When I start an ad-hoc trip from {'Siba'} at {3000} km
+    Then I see {'0 h 00 min'}

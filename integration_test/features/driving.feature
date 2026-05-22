@@ -47,3 +47,9 @@ Feature: Driving flow
     When I start the {'Töihin'} route at {1000} km
     Then I see text containing {'Täydennä'}
     And I see text containing {'Tänään'}
+
+  Scenario: GPS movement does not inflate the displayed route distance
+    When I start the {'Töihin'} route at {1000} km
+    And GPS reports {5} km of movement
+    Then I see {'54.0 km'}
+    And I do not see {'59.0 km'}

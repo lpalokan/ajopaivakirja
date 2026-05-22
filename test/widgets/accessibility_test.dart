@@ -4,10 +4,13 @@
 //   A1  Active-trip "Olen perillä" button reads as a discrete shape.
 //   A2  Every interactive element has a ≥ 48 × 48 dp tap target.
 //   A3  Active-trip state is conveyed as text, not colour alone.
-//   A6  Live distance counter has a long-press freeze affordance.
 //   A7  Tertiary / success palette meets ≥ 4.5:1 on the surfaces they
 //       render text against.
 //   A8  Every IconButton is labelled (tooltip → semantic label).
+//
+// A6 ("long-press to freeze the live counter") was removed when the
+// counter became static — see ActiveTripCard's class doc for the
+// rationale.
 //
 // Run via `flutter test test/widgets/accessibility_test.dart`.
 
@@ -146,41 +149,6 @@ void main() {
         reason: 'card must expose state as a labelled Semantics container',
       );
       handle.dispose();
-    });
-  });
-
-  // ─── A6 · Long-press counter freeze (WCAG 2.2.2) ─────────────────────────
-
-  group('A6 · Long-press freezes the live distance counter', () {
-    testWidgets('long-press shows a "Pinjattu" badge and freezes the value', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _wrap(ActiveTripCard(leg: _activeLeg(kmDriven: 54.0))),
-      );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-
-      // No pin indicator initially.
-      expect(find.text('Pinjattu'), findsNothing);
-
-      // Long-press on the live counter.
-      await tester.longPress(find.text('54.0 km'));
-      await tester.pumpAndSettle();
-
-      expect(
-        find.text('Pinjattu'),
-        findsOneWidget,
-        reason: 'a visible "pinned" indicator must appear while frozen',
-      );
-
-      // The displayed value remains the snapshot taken at freeze time even
-      // when a new build rebuilds the card with a larger liveDistanceKm —
-      // tap restores live updates.
-      await tester.tap(find.text('54.0 km'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
-      expect(find.text('Pinjattu'), findsNothing);
     });
   });
 

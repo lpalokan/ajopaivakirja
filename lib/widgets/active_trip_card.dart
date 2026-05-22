@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_symbols_icons/material_symbols_icons.dart';
@@ -11,8 +13,25 @@ import 'expense_dialog.dart';
 
 /// Full-bleed hero card for an active (in-progress) trip.
 ///
-/// Renders a gradient surface, oversized live distance counter, and a
-/// pulse dot. An overflow menu houses _Kulu_ and _Peru matka_.
+/// Renders a gradient surface, an oversized primary metric, and a pulse
+/// dot. An overflow menu houses _Kulu_ and _Peru matka_.
+///
+/// Primary metric per trip kind:
+/// - **Route trip** — the route's predefined distance (e.g. "54.0 km").
+///   Static for the duration of the trip; the actual km is computed from
+///   the start/end odometer when the user enters arrival.
+/// - **Ad-hoc trip** — elapsed time since start ("0 h 23 min"). km is not
+///   shown while driving because, without a predefined estimate or a
+///   reliable background-GPS counter, "0.0 km" would be misleading.
+///
+/// Why not GPS-based live km? `flutter_background_service` is pulled in
+/// but never started, and Android suspends `whileInUse` location updates
+/// once the app backgrounds — users typically lock the screen and drive.
+/// A counter that ticks only when the app is in the foreground was both
+/// unreliable and, for route trips, wrong: the predefined route length
+/// was used as the baseline and live deltas were added on top, so the
+/// number grew past the real route length. The GPS subscription was
+/// dropped from `TripNotifier` accordingly.
 ///
 /// The card calls [TripNotifier.stopTrip] / [TripNotifier.cancelTrip]
 /// directly via Riverpod — it no longer receives callback props.
@@ -21,12 +40,10 @@ import 'expense_dialog.dart';
 /// - A1: the "Olen perillä" CTA uses a solid surface, not a translucent
 ///   white-on-gradient — readable as a discrete shape ≥ 13:1 against the
 ///   gradient.
-/// - A3: the whole card exposes a Semantics container so TalkBack announces
-///   "Ajo käynnissä, X kilometriä" instead of ungrouped fragments.
-/// - A5: muted text uses `SemanticColors.onPrimaryMuted` (an explicit colour)
-///   rather than opacity, so its contrast is computable.
-/// - A6: long-press on the counter freezes the displayed value and the
-///   pulse animation (WCAG 2.2.2); tap to resume.
+/// - A3: the whole card exposes a Semantics container so TalkBack
+///   announces "Ajo käynnissä, …" with the primary metric.
+/// - A5: muted text uses `SemanticColors.onPrimaryMuted` (an explicit
+///   colour) rather than opacity, so its contrast is computable.
 class ActiveTripCard extends ConsumerStatefulWidget {
   final TripLeg leg;
 
@@ -37,36 +54,57 @@ class ActiveTripCard extends ConsumerStatefulWidget {
 }
 
 class _ActiveTripCardState extends ConsumerState<ActiveTripCard> {
-  /// When non-null, the counter and pulse are paused — the displayed value
-  /// is frozen at this snapshot. Tap to clear and resume live updates.
+  /// Retained for a possible future re-introduction of a live counter.
+  /// Currently unreachable — the freeze gesture (WCAG 2.2.2) was bound to
+  /// a long-press on the primary metric, but the primary metric no longer
+  /// moves, so the gesture binding is removed. Restoring the freeze just
+  /// requires wrapping the primary-metric Column in a GestureDetector
+  /// again with `onLongPress: _toggleFreeze` and
+  /// `onTap: isPinned ? _toggleFreeze : null`.
   double? _frozenDistanceKm;
 
-  late final ValueNotifier<double> _liveDistance;
+  Timer? _ticker;
 
   @override
   void initState() {
     super.initState();
-    _liveDistance = ref.read(tripProvider.notifier).liveDistanceKm;
-    _liveDistance.addListener(_onLiveDistanceChanged);
+    if (_isAdHoc) _startTicker();
+  }
+
+  @override
+  void didUpdateWidget(covariant ActiveTripCard old) {
+    super.didUpdateWidget(old);
+    if (_isAdHoc) {
+      _startTicker();
+    } else {
+      _ticker?.cancel();
+      _ticker = null;
+    }
   }
 
   @override
   void dispose() {
-    _liveDistance.removeListener(_onLiveDistanceChanged);
+    _ticker?.cancel();
     super.dispose();
   }
 
-  void _onLiveDistanceChanged() {
-    if (mounted) setState(() {});
+  bool get _isAdHoc =>
+      widget.leg.routeId == null && widget.leg.routeDescription == null;
+
+  void _startTicker() {
+    if (_ticker != null) return;
+    // 30 s is fine: the unit displayed is whole minutes, so a faster tick
+    // would just re-render the same string.
+    _ticker = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
   }
 
+  // ignore: unused_element
   void _toggleFreeze() {
     setState(() {
-      if (_frozenDistanceKm == null) {
-        _frozenDistanceKm = widget.leg.kmDriven + _liveDistance.value;
-      } else {
-        _frozenDistanceKm = null;
-      }
+      _frozenDistanceKm =
+          _frozenDistanceKm == null ? widget.leg.kmDriven : null;
     });
   }
 
@@ -87,14 +125,18 @@ class _ActiveTripCardState extends ConsumerState<ActiveTripCard> {
       context,
     ).extension<NumeralTypography>()!.large;
 
-    final liveKm = widget.leg.kmDriven + _liveDistance.value;
-    final displayedKm = _frozenDistanceKm ?? liveKm;
-    final displayedKmStr = '${displayedKm.toStringAsFixed(1)} km';
+    final isAdHoc = _isAdHoc;
+    final displayedKm = _frozenDistanceKm ?? widget.leg.kmDriven;
+    final primaryStr =
+        isAdHoc ? durationStr : '${displayedKm.toStringAsFixed(1)} km';
+    final semanticsLabel = isAdHoc
+        ? 'Ajo käynnissä, $durationStr'
+        : 'Ajo käynnissä, ${displayedKm.toStringAsFixed(1)} kilometriä';
     final isPinned = _frozenDistanceKm != null;
 
     return Semantics(
       container: true,
-      label: 'Ajo käynnissä, ${displayedKm.toStringAsFixed(1)} kilometriä',
+      label: semanticsLabel,
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 16),
         decoration: BoxDecoration(
@@ -176,64 +218,59 @@ class _ActiveTripCardState extends ConsumerState<ActiveTripCard> {
               ],
             ),
             const SizedBox(height: 16),
-            // Live distance counter — long-press freezes (A6 · WCAG 2.2.2).
+            // Primary metric: km for route trips (static — see class doc),
+            // elapsed time for ad-hoc trips.
             Center(
-              child: GestureDetector(
-                onLongPress: _toggleFreeze,
-                onTap: isPinned ? _toggleFreeze : null,
-                behavior: HitTestBehavior.opaque,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      displayedKmStr,
-                      key: const ValueKey('active-trip-counter'),
-                      style: numeralLarge.copyWith(
-                        color: colorScheme.onPrimary,
-                      ),
-                    ),
-                    if (isPinned)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: colorScheme.surface,
-                            borderRadius: BorderRadius.circular(100),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Symbols.push_pin,
-                                size: 14,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    primaryStr,
+                    key: const ValueKey('active-trip-counter'),
+                    style: numeralLarge.copyWith(color: colorScheme.onPrimary),
+                  ),
+                  if (isPinned)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: colorScheme.surface,
+                          borderRadius: BorderRadius.circular(100),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Symbols.push_pin,
+                              size: 14,
+                              color: colorScheme.onPrimaryContainer,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Pinjattu',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
                                 color: colorScheme.onPrimaryContainer,
                               ),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Pinjattu',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: colorScheme.onPrimaryContainer,
-                                ),
-                              ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
-                  ],
-                ),
+                    ),
+                ],
               ),
             ),
             const SizedBox(height: 4),
-            // Start time + duration — explicit muted colour (A5).
+            // Start time (+ duration for route trips; duration is already
+            // the primary metric for ad-hoc, so don't repeat it).
             Center(
               child: Text(
-                'Lähtö $startTime · $durationStr',
+                isAdHoc ? 'Lähtö $startTime' : 'Lähtö $startTime · $durationStr',
                 style: TextStyle(color: semColors.onPrimaryMuted, fontSize: 13),
               ),
             ),

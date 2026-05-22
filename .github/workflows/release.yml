@@ -1,0 +1,124 @@
+name: Build and release APKs
+
+# Runs on every push to main. Builds both debug and release APKs and
+# publishes them as a GitHub Release tagged with the version currently
+# in pubspec.yaml. The release APK is signed with the Android debug key
+# (see android/app/build.gradle.kts) — installable on any device, but
+# you cannot upgrade an existing install signed with a different key.
+#
+# Versioning: this workflow reads pubspec.yaml as-is. To cut a new
+# release version, bump `version:` in pubspec.yaml and lib/app_version.dart
+# (or run `./scripts/version.sh --release` locally) and push the commit.
+# If two main pushes share the same pubspec version, the second one
+# overwrites the first release's assets at the same tag.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  # Only one release pipeline per ref; a quick second push supersedes
+  # the first instead of racing to publish two releases at the same tag.
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Generate Gherkin test runners
+        # integration_test/all_features_test.dart imports *_test.dart
+        # files that are git-ignored (bdd_widget_test generates them).
+        # `flutter analyze` would otherwise fail on missing imports.
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Run host tests
+        # Host-side unit/widget tests only. The integration_test/ suite
+        # needs an Android emulator and is run locally via
+        # scripts/integration-report.sh.
+        run: flutter test test/
+
+      - name: Build debug APK
+        # Bypass scripts/build.sh because its version.sh step would
+        # overwrite the manually-maintained pubspec.yaml/app_version.dart
+        # back to "1.0.0+<count>" (no git tags exist).
+        run: flutter build apk --debug
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Read version
+        id: version
+        run: |
+          version=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          # GitHub Release asset filenames must not contain '+' (URL-
+          # encodes to space and breaks copy-pasted install URLs).
+          safe="${version/+/-build}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${version}" >> "$GITHUB_OUTPUT"
+          echo "safe=${safe}" >> "$GITHUB_OUTPUT"
+
+      - name: Stage APKs for upload
+        run: |
+          src=build/app/outputs/flutter-apk
+          mkdir -p dist
+          cp "${src}/app-release.apk" "dist/kilometrikorvaus-${{ steps.version.outputs.safe }}-release.apk"
+          cp "${src}/app-debug.apk"   "dist/kilometrikorvaus-${{ steps.version.outputs.safe }}-debug.apk"
+          ls -lh dist
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          notes_file=$(mktemp)
+          {
+            echo "Automated build for commit ${GITHUB_SHA}."
+            echo
+            echo "**Release APK** — signed with the Android debug key. Installable on any device, but cannot upgrade an existing install signed with a different key."
+            echo
+            echo "**Debug APK** — same caveat, plus debug instrumentation."
+            echo
+            echo "Commit: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
+          } > "${notes_file}"
+
+          # Reuse the release if a previous run already created it for
+          # this tag (e.g. multiple pushes without a version bump, or a
+          # re-run after a transient failure). Refresh both assets and
+          # notes so the page reflects the latest commit.
+          if gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "Release ${tag} already exists — refreshing assets and notes."
+            gh release upload "${tag}" dist/*.apk --repo "${GITHUB_REPOSITORY}" --clobber
+            gh release edit "${tag}" --repo "${GITHUB_REPOSITORY}" --notes-file "${notes_file}"
+          else
+            gh release create "${tag}" dist/*.apk \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${tag}" \
+              --notes-file "${notes_file}" \
+              --target "${GITHUB_SHA}"
+          fi

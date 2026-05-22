@@ -11,11 +11,13 @@
 // builds HomeScreen seeds two routes ("Töihin" Koti→Työ 54 km, "Kotiin"
 // Työ→Koti 54 km), so every scenario starts from that deterministic state.
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:material_symbols_icons/material_symbols_icons.dart';
 
 import 'package:kilometrikorvaus/main.dart';
@@ -48,6 +50,16 @@ class _FakeNotificationService extends NotificationService {
 }
 
 class _FakeLocationService extends LocationService {
+  // Owns its own broadcast controller so scenarios can synthesise GPS
+  // updates without touching real Geolocator. Used by the regression
+  // scenario for the kilometer-tracking-predefined-routes bug to prove
+  // that nothing in the app subscribes to live position updates anymore.
+  final StreamController<Position> _fakeController =
+      StreamController<Position>.broadcast();
+
+  @override
+  Stream<Position> get positionStream => _fakeController.stream;
+
   @override
   Future<bool> hasPermission() async => false;
   @override
@@ -60,7 +72,15 @@ class _FakeLocationService extends LocationService {
   ) async {}
   @override
   Future<void> stopMonitoring() async {}
+
+  void pushFakePosition(Position p) {
+    if (!_fakeController.isClosed) _fakeController.add(p);
+  }
 }
+
+// Single fake instance per launch so scenarios can reach it via
+// `simulateGpsMovement` without going through the ProviderContainer.
+_FakeLocationService _fakeLocation = _FakeLocationService();
 
 class _FakeBackgroundService extends BackgroundService {
   _FakeBackgroundService()
@@ -233,13 +253,14 @@ Finder _dialogField(String label) =>
 
 Future<void> launchApp(WidgetTester tester) async {
   _fakeFileOpener.openedPath = null;
+  _fakeLocation = _FakeLocationService();
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         notificationServiceProvider.overrideWithValue(
           _FakeNotificationService(),
         ),
-        locationServiceProvider.overrideWithValue(_FakeLocationService()),
+        locationServiceProvider.overrideWithValue(_fakeLocation),
         backgroundServiceProvider.overrideWithValue(_FakeBackgroundService()),
         sheetsServiceProvider.overrideWithValue(_FakeSheetsService()),
         odometerVisionServiceProvider.overrideWithValue(
@@ -275,7 +296,10 @@ Future<void> openRoutes(WidgetTester tester) async {
 }
 
 Future<void> openHistory(WidgetTester tester) async {
-  await tester.tap(find.byIcon(Symbols.history));
+  // Home AppBar uses Icons.history (not Symbols.history) since the
+  // Material Symbols variable-font axis was not rendering the 0xe8b3
+  // glyph reliably — see lib/screens/home_screen.dart.
+  await tester.tap(find.byIcon(Icons.history));
   await settle(tester);
 }
 
@@ -578,18 +602,31 @@ Future<void> arriveAdHoc(WidgetTester tester, String to, int odometer) async {
   await settle(tester);
 }
 
-Future<void> longPressLiveCounter(WidgetTester tester) async {
-  // The active-trip card renders the live km counter as "<x.x> km" inside
-  // a Semantics-wrapped widget. Long-press triggers the WCAG 2.2.2 freeze
-  // affordance — counter and pulse pause, "Pinjattu" badge appears.
-  await waitFor(tester, find.textContaining(RegExp(r'^\d+\.\d km$')));
-  final counter = find.byKey(const ValueKey('active-trip-counter'));
-  if (counter.evaluate().isNotEmpty) {
-    await tester.longPress(counter.first);
-  } else {
-    await tester.longPress(find.textContaining(RegExp(r'^\d+\.\d km$')).first);
-  }
-  await settle(tester);
+/// Push two synthetic GPS fixes ~[km] kilometres apart through the fake
+/// LocationService's broadcast stream. Used to prove that the active-trip
+/// distance is not inflated by GPS deltas (the kilometer-tracking-
+/// predefined-routes regression). One degree of latitude is ~111.32 km, so
+/// shifting the second fix by `km / 111.32` degrees gives the expected
+/// haversine delta.
+Future<void> simulateGpsMovement(WidgetTester tester, double km) async {
+  final now = DateTime.now();
+  Position make(double lat, double lon) => Position(
+        latitude: lat,
+        longitude: lon,
+        timestamp: now,
+        accuracy: 5.0,
+        altitude: 0.0,
+        altitudeAccuracy: 0.0,
+        heading: 0.0,
+        headingAccuracy: 0.0,
+        speed: 0.0,
+        speedAccuracy: 0.0,
+      );
+
+  _fakeLocation.pushFakePosition(make(60.0, 25.0));
+  await tester.pump(const Duration(milliseconds: 50));
+  _fakeLocation.pushFakePosition(make(60.0 + km / 111.32, 25.0));
+  await tester.pump(const Duration(milliseconds: 50));
 }
 
 Future<void> arrive(WidgetTester tester, int odometer) async {

@@ -92,7 +92,7 @@ feature). The suite is run via this aggregator. **When you add a new
 | `When I tap the {string} dialog button` | Taps a dialog button by label |
 | `When I sync to sheets` | Taps the History sync button |
 | `When I toggle debug logging` | Flips the debug-logging switch |
-| `When I long press the live distance counter` | Long-presses the active-trip card counter (A6 freeze) |
+| `When GPS reports {int} km of movement` | Pushes synthetic GPS fixes through the fake LocationService (regression guard for the kilometer-tracking-predefined-routes bug — distance must not be inflated by GPS deltas) |
 | `Then I see {string}` | Asserts text is visible (scrolls if needed) |
 | `Then I do not see {string}` | Asserts text is absent |
 | `Then I see text containing {string}` | Substring assertion |
