@@ -19,41 +19,27 @@ class RouteManagementScreen extends ConsumerStatefulWidget {
       _RouteManagementScreenState();
 }
 
-class _RouteManagementScreenState
-    extends ConsumerState<RouteManagementScreen> {
+class _RouteManagementScreenState extends ConsumerState<RouteManagementScreen> {
   @override
   Widget build(BuildContext context) {
     final routes = ref.watch(routeProvider);
     final tripState = ref.watch(tripProvider);
-    final tripNotifier = ref.read(tripProvider.notifier);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Reitit')),
       body: Column(
         children: [
           if (tripState.activeLeg != null)
-            ActiveTripCard(
-              leg: tripState.activeLeg!,
-              onStopDriving: (odometer, {endTime, endLocation, purpose}) async {
-                await tripNotifier.stopDriving(odometer,
-                    endTime: endTime,
-                    endLocation: endLocation,
-                    purpose: purpose);
-                await ref.read(backgroundServiceProvider).onDrivingStopped();
-              },
-              onCancel: () async {
-                await tripNotifier.cancelDriving();
-                await ref.read(backgroundServiceProvider).onDrivingStopped();
-              },
-              visionService: ref.read(odometerVisionServiceProvider),
-            ),
+            ActiveTripCard(leg: tripState.activeLeg!),
           Expanded(
             child: routes.isEmpty
                 ? GestureDetector(
                     onTap: () => _showRouteDialog(),
                     behavior: HitTestBehavior.opaque,
                     child: const Center(
-                      child: Text('Ei reittejä. Lisää uusi napauttamalla tästä.'),
+                      child: Text(
+                        'Ei reittejä. Lisää uusi napauttamalla tästä.',
+                      ),
                     ),
                   )
                 : ListView.builder(
@@ -103,12 +89,17 @@ class _RouteManagementScreenState
                             color: Theme.of(context).colorScheme.error,
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: const Icon(Symbols.delete, color: Colors.white),
+                          child: const Icon(
+                            Symbols.delete,
+                            color: Colors.white,
+                          ),
                         ),
                         child: Card(
                           margin: const EdgeInsets.only(bottom: 8),
                           child: ListTile(
-                            onTap: isDriving ? null : () => _startDrivingFromRoute(route),
+                            onTap: isDriving
+                                ? null
+                                : () => _startDrivingFromRoute(route),
                             title: Text(route.name),
                             subtitle: Text(
                               '${route.startLocation} → ${route.endLocation} · '
@@ -126,14 +117,13 @@ class _RouteManagementScreenState
     );
   }
 
-
-
   Future<void> _showRouteDialog({route_model.Route? route}) async {
     final nameController = TextEditingController(text: route?.name);
     final startController = TextEditingController(text: route?.startLocation);
     final endController = TextEditingController(text: route?.endLocation);
-    final distController =
-        TextEditingController(text: route?.distanceKm.toString() ?? '');
+    final distController = TextEditingController(
+      text: route?.distanceKm.toString() ?? '',
+    );
     final purposeController = TextEditingController(text: route?.lastPurpose);
 
     // Load known locations for autocomplete
@@ -173,8 +163,9 @@ class _RouteManagementScreenState
               const SizedBox(height: 12),
               TextField(
                 controller: distController,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 decoration: const InputDecoration(
                   labelText: 'Matkan pituus (km)',
                   suffixText: 'km',
@@ -215,11 +206,12 @@ class _RouteManagementScreenState
 
     if (result == true) {
       final now = DateTime.now();
-      final dist = double.tryParse(
-          distController.text.replaceAll(',', '.'));
+      final dist = double.tryParse(distController.text.replaceAll(',', '.'));
 
       if (route != null) {
-        await ref.read(routeProvider.notifier).update(
+        await ref
+            .read(routeProvider.notifier)
+            .update(
               route.copyWith(
                 name: nameController.text.trim(),
                 startLocation: startController.text.trim(),
@@ -232,7 +224,9 @@ class _RouteManagementScreenState
               ),
             );
       } else {
-        await ref.read(routeProvider.notifier).add(
+        await ref
+            .read(routeProvider.notifier)
+            .add(
               route_model.Route(
                 name: nameController.text.trim(),
                 startLocation: startController.text.trim(),
@@ -250,10 +244,7 @@ class _RouteManagementScreenState
   }
 
   Future<void> _startDrivingFromRoute(route_model.Route route) async {
-    final tripNotifier = ref.read(tripProvider.notifier);
     final settings = ref.read(settingsProvider);
-    final backgroundService = ref.read(backgroundServiceProvider);
-    final routeNotifier = ref.read(routeProvider.notifier);
 
     final lastLeg = await DatabaseService.getLastLeg();
     final initialOdometer = lastLeg?.endOdometer;
@@ -263,7 +254,8 @@ class _RouteManagementScreenState
     final result = await showOdometerDialog(
       context: context,
       title: 'Aloita ajo',
-      subtitle: 'Reitti: ${route.name}\n'
+      subtitle:
+          'Reitti: ${route.name}\n'
           '${route.startLocation} → ${route.endLocation}\n'
           'Matka: ${route.distanceKm.toStringAsFixed(1)} km',
       label: 'Matkamittari (km)',
@@ -279,19 +271,16 @@ class _RouteManagementScreenState
 
     if (result == null) return;
 
-    backgroundService.updateSettings(settings);
-    final leg = await tripNotifier.startDriving(
-      route: route,
-      startOdometer: result.odometer,
-      purpose: result.purpose ?? '',
-      driver: settings.driverName,
-      startTime: result.time,
-    );
-    await backgroundService.onDrivingStarted(leg);
-    if (route.id != null && result.purpose != null && result.purpose!.isNotEmpty) {
-      await routeNotifier.savePurpose(route.id!, result.purpose!);
-    }
-    await routeNotifier.markUsed(route.id!);
+    await ref
+        .read(tripProvider.notifier)
+        .startTrip(
+          startOdometer: result.odometer,
+          startLocation: route.startLocation,
+          route: route,
+          purpose: result.purpose ?? '',
+          driver: settings.driverName,
+          startTime: result.time,
+        );
 
     if (mounted) Navigator.of(context).pop();
   }
@@ -322,4 +311,3 @@ class _RouteManagementScreenState
     return false;
   }
 }
-

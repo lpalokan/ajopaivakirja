@@ -1,18 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:intl/intl.dart';
 import '../models/trip_leg.dart';
 import '../models/expense.dart';
 import '../services/database_service.dart';
 import '../main.dart';
-import 'odometer_dialog.dart';
+import '../providers/trip_provider.dart';
 import 'expense_dialog.dart';
-import '../services/odometer_vision_service.dart';
 
 /// Full-bleed hero card for an active (in-progress) trip.
 ///
 /// Renders a gradient surface, oversized live distance counter, and a
 /// pulse dot. An overflow menu houses _Kulu_ and _Peru matka_.
+///
+/// The card calls [TripNotifier.stopTrip] / [TripNotifier.cancelTrip]
+/// directly via Riverpod — it no longer receives callback props.
 ///
 /// Accessibility (issue #46):
 /// - A1: the "Olen perillä" CTA uses a solid surface, not a translucent
@@ -24,41 +27,43 @@ import '../services/odometer_vision_service.dart';
 ///   rather than opacity, so its contrast is computable.
 /// - A6: long-press on the counter freezes the displayed value and the
 ///   pulse animation (WCAG 2.2.2); tap to resume.
-class ActiveTripCard extends StatefulWidget {
+class ActiveTripCard extends ConsumerStatefulWidget {
   final TripLeg leg;
-  final double liveDistanceKm;
-  final Future<void> Function(
-    int odometer, {
-    DateTime? endTime,
-    String? endLocation,
-    String? purpose,
-  })
-  onStopDriving;
-  final VoidCallback? onCancel;
-  final OdometerVisionService? visionService;
 
-  const ActiveTripCard({
-    super.key,
-    required this.leg,
-    this.liveDistanceKm = 0,
-    required this.onStopDriving,
-    this.onCancel,
-    this.visionService,
-  });
+  const ActiveTripCard({super.key, required this.leg});
 
   @override
-  State<ActiveTripCard> createState() => _ActiveTripCardState();
+  ConsumerState<ActiveTripCard> createState() => _ActiveTripCardState();
 }
 
-class _ActiveTripCardState extends State<ActiveTripCard> {
+class _ActiveTripCardState extends ConsumerState<ActiveTripCard> {
   /// When non-null, the counter and pulse are paused — the displayed value
   /// is frozen at this snapshot. Tap to clear and resume live updates.
   double? _frozenDistanceKm;
 
+  late final ValueNotifier<double> _liveDistance;
+
+  @override
+  void initState() {
+    super.initState();
+    _liveDistance = ref.read(tripProvider.notifier).liveDistanceKm;
+    _liveDistance.addListener(_onLiveDistanceChanged);
+  }
+
+  @override
+  void dispose() {
+    _liveDistance.removeListener(_onLiveDistanceChanged);
+    super.dispose();
+  }
+
+  void _onLiveDistanceChanged() {
+    if (mounted) setState(() {});
+  }
+
   void _toggleFreeze() {
     setState(() {
       if (_frozenDistanceKm == null) {
-        _frozenDistanceKm = widget.leg.kmDriven + widget.liveDistanceKm;
+        _frozenDistanceKm = widget.leg.kmDriven + _liveDistance.value;
       } else {
         _frozenDistanceKm = null;
       }
@@ -82,7 +87,7 @@ class _ActiveTripCardState extends State<ActiveTripCard> {
       context,
     ).extension<NumeralTypography>()!.large;
 
-    final liveKm = widget.leg.kmDriven + widget.liveDistanceKm;
+    final liveKm = widget.leg.kmDriven + _liveDistance.value;
     final displayedKm = _frozenDistanceKm ?? liveKm;
     final displayedKmStr = '${displayedKm.toStringAsFixed(1)} km';
     final isPinned = _frozenDistanceKm != null;
@@ -143,7 +148,7 @@ class _ActiveTripCardState extends State<ActiveTripCard> {
                     if (value == 'expense') {
                       _addExpense(context);
                     } else if (value == 'cancel') {
-                      _cancelDriving(context);
+                      ref.read(tripProvider.notifier).cancelTrip(context);
                     }
                   },
                   itemBuilder: (ctx) => [
@@ -183,7 +188,9 @@ class _ActiveTripCardState extends State<ActiveTripCard> {
                     Text(
                       displayedKmStr,
                       key: const ValueKey('active-trip-counter'),
-                      style: numeralLarge.copyWith(color: colorScheme.onPrimary),
+                      style: numeralLarge.copyWith(
+                        color: colorScheme.onPrimary,
+                      ),
                     ),
                     if (isPinned)
                       Padding(
@@ -227,10 +234,7 @@ class _ActiveTripCardState extends State<ActiveTripCard> {
             Center(
               child: Text(
                 'Lähtö $startTime · $durationStr',
-                style: TextStyle(
-                  color: semColors.onPrimaryMuted,
-                  fontSize: 13,
-                ),
+                style: TextStyle(color: semColors.onPrimaryMuted, fontSize: 13),
               ),
             ),
             const SizedBox(height: 16),
@@ -239,7 +243,8 @@ class _ActiveTripCardState extends State<ActiveTripCard> {
               width: double.infinity,
               height: 48,
               child: FilledButton(
-                onPressed: () => _stopDriving(context),
+                onPressed: () =>
+                    ref.read(tripProvider.notifier).stopTrip(context),
                 style: FilledButton.styleFrom(
                   backgroundColor: colorScheme.surface,
                   foregroundColor: colorScheme.onPrimaryContainer,
@@ -269,73 +274,6 @@ class _ActiveTripCardState extends State<ActiveTripCard> {
           createdAt: DateTime.now().toIso8601String(),
         ),
       );
-    }
-  }
-
-  Future<void> _stopDriving(BuildContext context) async {
-    final leg = widget.leg;
-    final isAdHoc = leg.routeId == null && leg.routeDescription == null;
-    final expectedOdometer = leg.startOdometer + leg.kmDriven.toInt();
-
-    List<String> suggestions = const [];
-    if (isAdHoc) {
-      try {
-        suggestions = await DatabaseService.getUniqueLocations();
-      } catch (_) {}
-    }
-    if (!context.mounted) return;
-
-    final result = await showOdometerDialog(
-      context: context,
-      title: 'Olen perillä',
-      subtitle: isAdHoc
-          ? 'Lähtö: ${leg.startLocation}'
-          : 'Kohde: ${leg.endLocation ?? leg.routeDescription}',
-      label: 'Matkamittari perillä (km)',
-      actionLabel: 'Lopeta ajo',
-      initialValue: isAdHoc ? null : expectedOdometer,
-      expectedHint: isAdHoc ? null : expectedOdometer,
-      showTime: true,
-      initialTime: DateTime.now(),
-      timeLabel: 'Päättymisaika',
-      locationLabel: isAdHoc ? 'Määränpää' : null,
-      locationSuggestions: suggestions,
-      relatedField: isAdHoc ? 'Tarkoitus' : null,
-      initialPurpose: isAdHoc ? leg.purpose : null,
-      visionService: widget.visionService,
-    );
-    if (result != null) {
-      await widget.onStopDriving(
-        result.odometer,
-        endTime: result.time,
-        endLocation: result.location,
-        purpose: result.purpose,
-      );
-    }
-  }
-
-  Future<void> _cancelDriving(BuildContext context) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Peru matka'),
-        content: const Text(
-          'Haluatko varmasti peruuttaa käynnissä olevan matkan?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Ei'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Peru'),
-          ),
-        ],
-      ),
-    );
-    if (confirm == true) {
-      widget.onCancel?.call();
     }
   }
 }

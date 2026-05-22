@@ -1,0 +1,75 @@
+name: Integration Suite
+
+on:
+  workflow_dispatch: # manual trigger only
+
+# Only one integration run at a time (emulator is heavy)
+concurrency:
+  group: integration-suite
+  cancel-in-progress: false
+
+jobs:
+  bdd-suite:
+    runs-on: macos-latest # Apple Silicon (arm64) — native emulator acceleration
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # version.sh needs git tags + full history
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Run BDD suite on Android emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: arm64-v8a
+          target: google_apis
+          avd-name: test_pixel
+          force-avd-creation: false
+          emulator-options: -no-window -no-snapshot -no-boot-anim -netdelay none -netspeed full
+          disable-animations: true
+          enable-avd-caching: true
+          emulator-boot-timeout: 600
+          # Pre-grant notification permission as soon as the app is installed
+          # (the test framework installs it automatically on first flutter test).
+          # The subshell polls until the package appears, then grants.
+          pre-run-steps: |
+            ( for i in $(seq 1 60); do
+                adb shell pm grant fi.lpalokan.kilometrikorvaus android.permission.POST_NOTIFICATIONS 2>/dev/null && break
+                sleep 2
+              done ) &
+          script: |
+            echo "::group::Generate Gherkin tests (build_runner)"
+            dart run build_runner build --delete-conflicting-outputs
+            echo "::endgroup::"
+
+            echo "::group::Run BDD suite"
+            flutter test integration_test/all_features_test.dart --reporter expanded
+            echo "::endgroup::"
+
+      - name: Collect artifacts on failure
+        if: failure()
+        run: |
+          mkdir -p test-results
+          adb logcat -d > test-results/logcat.txt 2>/dev/null || true
+          adb exec-out screencap -p > test-results/last-screen.png 2>/dev/null || true
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-artifacts
+          path: test-results/
+          retention-days: 7

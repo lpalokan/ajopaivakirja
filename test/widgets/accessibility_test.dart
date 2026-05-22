@@ -14,6 +14,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kilometrikorvaus/main.dart';
 import 'package:kilometrikorvaus/models/trip_leg.dart';
@@ -22,10 +23,15 @@ import 'package:kilometrikorvaus/widgets/status_chip_row.dart';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
-/// Pumps [child] under the real app's light theme so accessibility
-/// assertions check the actual configuration, not a copy that drifts.
+/// Pumps [child] under the real app's light theme and a [ProviderScope] so
+/// [ActiveTripCard] (a [ConsumerStatefulWidget]) can read providers.
 Widget _wrap(Widget child) {
-  return MaterialApp(theme: buildLightTheme(), home: Scaffold(body: child));
+  return ProviderScope(
+    child: MaterialApp(
+      theme: buildLightTheme(),
+      home: Scaffold(body: child),
+    ),
+  );
 }
 
 TripLeg _activeLeg({double kmDriven = 54.0}) => TripLeg(
@@ -46,9 +52,7 @@ double _luminance(Color c) {
   double channel(double v) =>
       v <= 0.03928 ? v / 12.92 : math.pow((v + 0.055) / 1.055, 2.4) as double;
 
-  return 0.2126 * channel(c.r) +
-      0.7152 * channel(c.g) +
-      0.0722 * channel(c.b);
+  return 0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b);
 }
 
 double contrastRatio(Color a, Color b) {
@@ -59,23 +63,18 @@ double contrastRatio(Color a, Color b) {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-Future<void> _noopStop(
-  int odometer, {
-  DateTime? endTime,
-  String? endLocation,
-  String? purpose,
-}) async {}
-
 // ─── A1 · Olen perillä button is a solid, discrete shape ───────────────────
 
 void main() {
   group('A1 · Active-trip "Olen perillä" button contrast', () {
-    testWidgets('button background is fully opaque (alpha == 255)',
-        (tester) async {
-      await tester.pumpWidget(
-        _wrap(ActiveTripCard(leg: _activeLeg(), onStopDriving: _noopStop)),
-      );
-      await tester.pumpAndSettle();
+    testWidgets('button background is fully opaque (alpha == 255)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_wrap(ActiveTripCard(leg: _activeLeg())));
+      // _LivePulse has an infinite repeating animation — pump several
+      // frames instead of pumpAndSettle which would time out.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
       final btnFinder = find.widgetWithText(FilledButton, 'Olen perillä');
       expect(btnFinder, findsOneWidget);
@@ -107,13 +106,13 @@ void main() {
   // ─── A2 · 48 dp tap targets ──────────────────────────────────────────────
 
   group('A2 · 48 dp minimum tap targets', () {
-    testWidgets('ActiveTripCard meets the Android tap-target guideline',
-        (tester) async {
+    testWidgets('ActiveTripCard meets the Android tap-target guideline', (
+      tester,
+    ) async {
       final handle = tester.ensureSemantics();
-      await tester.pumpWidget(
-        _wrap(ActiveTripCard(leg: _activeLeg(), onStopDriving: _noopStop)),
-      );
-      await tester.pumpAndSettle();
+      await tester.pumpWidget(_wrap(ActiveTripCard(leg: _activeLeg())));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
       await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
       handle.dispose();
     });
@@ -122,17 +121,15 @@ void main() {
   // ─── A3 · Active-trip state in text, not colour ──────────────────────────
 
   group('A3 · Active-trip card exposes its state as text', () {
-    testWidgets('Semantics tree carries "Ajo käynnissä" with the km value',
-        (tester) async {
+    testWidgets('Semantics tree carries "Ajo käynnissä" with the km value', (
+      tester,
+    ) async {
       final handle = tester.ensureSemantics();
       await tester.pumpWidget(
-        _wrap(ActiveTripCard(
-          leg: _activeLeg(kmDriven: 54.0),
-          liveDistanceKm: 0,
-          onStopDriving: _noopStop,
-        )),
+        _wrap(ActiveTripCard(leg: _activeLeg(kmDriven: 54.0))),
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
       // The whole card should declare a Semantics container labelled
       // "Ajo käynnissä, X kilometriä" so TalkBack reads the state in text,
@@ -155,16 +152,14 @@ void main() {
   // ─── A6 · Long-press counter freeze (WCAG 2.2.2) ─────────────────────────
 
   group('A6 · Long-press freezes the live distance counter', () {
-    testWidgets('long-press shows a "Pinjattu" badge and freezes the value',
-        (tester) async {
+    testWidgets('long-press shows a "Pinjattu" badge and freezes the value', (
+      tester,
+    ) async {
       await tester.pumpWidget(
-        _wrap(ActiveTripCard(
-          leg: _activeLeg(kmDriven: 54.0),
-          liveDistanceKm: 0,
-          onStopDriving: _noopStop,
-        )),
+        _wrap(ActiveTripCard(leg: _activeLeg(kmDriven: 54.0))),
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
       // No pin indicator initially.
       expect(find.text('Pinjattu'), findsNothing);
@@ -183,7 +178,8 @@ void main() {
       // when a new build rebuilds the card with a larger liveDistanceKm —
       // tap restores live updates.
       await tester.tap(find.text('54.0 km'));
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('Pinjattu'), findsNothing);
     });
   });
@@ -191,8 +187,9 @@ void main() {
   // ─── A7 · Palette contrast ───────────────────────────────────────────────
 
   group('A7 · Tertiary & success palette meet body-text contrast', () {
-    testWidgets('tertiary contrast on the lightest surface ≥ 4.5:1',
-        (tester) async {
+    testWidgets('tertiary contrast on the lightest surface ≥ 4.5:1', (
+      tester,
+    ) async {
       await tester.pumpWidget(_wrap(const SizedBox.shrink()));
       final ctx = tester.element(find.byType(Scaffold));
       final scheme = Theme.of(ctx).colorScheme;
@@ -220,19 +217,20 @@ void main() {
   // ─── A8 · IconButtons are labelled ───────────────────────────────────────
 
   group('A8 · Icon-only IconButtons carry an accessible name', () {
-    testWidgets('every IconButton in the card subtree has a tooltip',
-        (tester) async {
-      await tester.pumpWidget(
-        _wrap(ActiveTripCard(leg: _activeLeg(), onStopDriving: _noopStop)),
-      );
-      await tester.pumpAndSettle();
+    testWidgets('every IconButton in the card subtree has a tooltip', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_wrap(ActiveTripCard(leg: _activeLeg())));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
       final buttons = tester.widgetList<IconButton>(find.byType(IconButton));
       for (final b in buttons) {
         expect(
           b.tooltip,
           isNotNull,
-          reason: 'IconButton without tooltip leaves TalkBack reading the '
+          reason:
+              'IconButton without tooltip leaves TalkBack reading the '
               'icon name only',
         );
         expect(b.tooltip, isNotEmpty);

@@ -1,11 +1,9 @@
-import 'dart:async';
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../main.dart';
-import '../services/location_service.dart';
 import '../models/route.dart' as model;
 import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
@@ -20,7 +18,6 @@ import '../widgets/route_chip_row.dart';
 import '../widgets/location_chip.dart';
 import '../widgets/day_timeline.dart';
 import '../widgets/top_context_card.dart';
-import '../widgets/odometer_dialog.dart';
 import 'settings_screen.dart';
 import 'route_management_screen.dart';
 import 'trip_history_screen.dart';
@@ -50,9 +47,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // Live mirror of the StartCard's odometer field, read by the route
   // preview card to compute the expected end odometer.
   final ValueNotifier<int?> _odometerNotifier = ValueNotifier<int?>(null);
-  double _liveDistanceKm = 0;
-  StreamSubscription<dynamic>? _positionSub;
-  dynamic _lastPosition;
 
   @override
   void initState() {
@@ -99,77 +93,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       }
 
       final backgroundService = ref.read(backgroundServiceProvider);
-
       await backgroundService.initialize();
 
       final notificationService = ref.read(notificationServiceProvider);
       await notificationService.requestPermission();
 
-      backgroundService.onArrived = () {
-        final activeLeg = ref.read(tripProvider).activeLeg;
-        if (activeLeg != null) {
-          final expectedOdometer =
-              activeLeg.startOdometer + activeLeg.kmDriven.toInt();
-          _showArrivalDialog(context, activeLeg, expectedOdometer);
-        }
-      };
-
-      backgroundService.onStillDriving = () {
-        backgroundService.onStillDrivingPressed();
-      };
-
-      // Set up trip detection callbacks
-      final detectionService = ref.read(tripDetectionServiceProvider);
-      final ns = ref.read(notificationServiceProvider);
-
-      detectionService.onStartTripRequested = () {
-        final routes = ref.read(routeProvider);
-        if (routes.isNotEmpty) {
-          _startWithRoute(routes.first);
-        }
-      };
-
-      ns.onStartTrip = () {
-        detectionService.onStartTripRequested?.call();
-      };
-
-      ns.onEndTrip = () {
-        if (ref.read(tripProvider).activeLeg != null) {
-          backgroundService.onArrived?.call();
-        }
-      };
-
-      ns.flushPendingLaunchAction();
-
-      if (!ref.read(tripProvider.notifier).isDriving) {
-        detectionService.updateSettings(settings);
-        detectionService.start();
-      }
-
-      // Subscribe to live GPS position updates for active-trip distance
-      _positionSub = ref.read(locationServiceProvider).positionStream.listen((
-        pos,
-      ) {
-        if (!mounted) return;
-        final last = _lastPosition;
-        _lastPosition = pos;
-        if (last != null && ref.read(tripProvider).activeLeg != null) {
-          final dist = LocationService.haversineDistance(
-            last.latitude,
-            last.longitude,
-            pos.latitude,
-            pos.longitude,
-          );
-          // Convert meters to km and add to running total
-          _liveDistanceKm += dist / 1000.0;
-        }
-      });
+      // Delegate all callback wiring and detection lifecycle to
+      // TripNotifier — the orchestration seam for trip state.
+      ref.read(tripProvider.notifier).initialize();
     });
   }
 
   @override
   void dispose() {
-    _positionSub?.cancel();
     _odometerNotifier.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -185,36 +121,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
   }
 
-  void _showArrivalDialog(
-    BuildContext context,
-    TripLeg activeLeg,
-    int expectedOdometer,
-  ) {
-    // Delegate to the standard arrival dialog in odometer_dialog.dart
-    // This is triggered from background service callback.
-    final tripNotif = ref.read(tripProvider.notifier);
-    final backgroundService = ref.read(backgroundServiceProvider);
-
-    // Use a post-frame callback because we might not have a valid context
-    // from the background callback.
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) return;
-
-      // The arrival dialog was previously in home_screen
-      // We keep the same flow but simplified.
-      tripNotif.stopDriving(expectedOdometer, endTime: DateTime.now());
-      backgroundService.onDrivingStopped();
-      ref.read(tripDetectionServiceProvider).stop();
-      ref.read(tripDetectionServiceProvider).start();
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final routes = ref.watch(routeProvider);
     final tripState = ref.watch(tripProvider);
     final settings = ref.watch(settingsProvider);
-    final tripNotifier = ref.read(tripProvider.notifier);
     final allRecent = ref
         .read(routeProvider.notifier)
         .getRecentRoutes(limit: 1000);
@@ -229,7 +140,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         title: const Text('Ajopäiväkirja'),
         actions: [
           IconButton(
-            icon: const Icon(Symbols.history),
+            icon: const Icon(Icons.history),
             tooltip: 'Historia',
             onPressed: () {
               Navigator.of(context).push(
@@ -249,50 +160,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         ],
       ),
       body: tripState.activeLeg != null
-          ? _buildActiveBody(tripState, tripNotifier)
+          ? _buildActiveBody(tripState)
           : _buildIdleBody(
               tripState,
               routes,
               settings,
-              tripNotifier,
               recentRoutes,
               lastOdometerFuture,
             ),
     );
   }
 
-  Widget _buildActiveBody(TripState tripState, TripNotifier tripNotifier) {
+  Widget _buildActiveBody(TripState tripState) {
     final colorScheme = Theme.of(context).colorScheme;
+    final tripNotifier = ref.read(tripProvider.notifier);
 
     return Column(
       children: [
         // Hero active trip card at the top
-        ActiveTripCard(
-          leg: tripState.activeLeg!,
-          liveDistanceKm: _liveDistanceKm,
-          onStopDriving: (odometer, {endTime, endLocation, purpose}) async {
-            await tripNotifier.stopDriving(
-              odometer,
-              endTime: endTime,
-              endLocation: endLocation,
-              purpose: purpose,
-            );
-            _liveDistanceKm = 0;
-            _lastPosition = null;
-            await ref.read(backgroundServiceProvider).onDrivingStopped();
-            ref.read(tripDetectionServiceProvider).stop();
-            ref.read(tripDetectionServiceProvider).start();
-          },
-          onCancel: () async {
-            await tripNotifier.cancelDriving();
-            _liveDistanceKm = 0;
-            _lastPosition = null;
-            await ref.read(backgroundServiceProvider).onDrivingStopped();
-            ref.read(tripDetectionServiceProvider).stop();
-            ref.read(tripDetectionServiceProvider).start();
-          },
-          visionService: ref.read(odometerVisionServiceProvider),
-        ),
+        ActiveTripCard(leg: tripState.activeLeg!),
         const SizedBox(height: 16),
         // Day timeline in the middle
         if (tripState.todayLegs.isNotEmpty)
@@ -303,7 +189,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 DayTimeline(
                   legs: tripState.todayLegs,
                   onTapLeg: (leg) {
-                    // Navigate to history for editing
                     Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) => const TripHistoryScreen(),
@@ -324,7 +209,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               width: double.infinity,
               height: 56,
               child: FilledButton.icon(
-                onPressed: _onBottomArrivePressed,
+                onPressed: () => tripNotifier.stopTrip(context),
                 icon: const Icon(Symbols.flag),
                 label: const Text('Olen perillä'),
                 style: FilledButton.styleFrom(
@@ -343,7 +228,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     TripState tripState,
     List<model.Route> routes,
     AppSettings settings,
-    TripNotifier tripNotifier,
     List<model.Route> recentRoutes,
     Future<TripLeg?>? lastOdometerFuture,
   ) {
@@ -401,7 +285,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 selectedRouteLabel: selectedRoute != null
                     ? 'Reitti: ${selectedRoute.name} → ${selectedRoute.endLocation}'
                     : null,
-                onStart: () => _onStartTap(tripNotifier, settings),
+                onStart: () => _onStartTap(),
                 visionService: ref.read(odometerVisionServiceProvider),
                 locationChip: LocationChip(
                   key: _locationChipKey,
@@ -453,10 +337,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     return const SingleChildScrollView(child: AdHocCard());
   }
 
-  Future<void> _onStartTap(
-    TripNotifier tripNotifier,
-    AppSettings settings,
-  ) async {
+  Future<void> _onStartTap() async {
     final odometer = _startCardKey.currentState?.odometerValue;
     if (odometer == null) {
       if (mounted) {
@@ -467,13 +348,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       return;
     }
 
+    final settings = ref.read(settingsProvider);
     final startLocation = _pickedLocation ?? settings.homeLocation;
     final purpose = _selectedPurpose ?? '';
-
-    // Stop auto-detection while driving
-    ref.read(tripDetectionServiceProvider).stop();
-    final backgroundService = ref.read(backgroundServiceProvider);
-    backgroundService.updateSettings(settings);
 
     model.Route? selectedRoute;
     if (_selectedRouteId != null) {
@@ -482,131 +359,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           .firstWhere((r) => r.id == _selectedRouteId);
     }
 
-    TripLeg leg;
-    if (selectedRoute != null) {
-      leg = await tripNotifier.startDriving(
-        route: selectedRoute,
-        startOdometer: odometer,
-        purpose: purpose,
-        driver: settings.driverName,
-      );
-      if (selectedRoute.id != null && purpose.isNotEmpty) {
-        await ref
-            .read(routeProvider.notifier)
-            .savePurpose(selectedRoute.id!, purpose);
-      }
-      if (selectedRoute.id != null) {
-        await ref.read(routeProvider.notifier).markUsed(selectedRoute.id!);
-      }
-    } else {
-      leg = await tripNotifier.startAdHocDriving(
-        startOdometer: odometer,
-        startLocation: startLocation,
-        purpose: purpose,
-        driver: settings.driverName,
-      );
-    }
+    await ref
+        .read(tripProvider.notifier)
+        .startTrip(
+          startOdometer: odometer,
+          startLocation: startLocation,
+          route: selectedRoute,
+          purpose: purpose,
+          driver: settings.driverName,
+        );
 
-    await backgroundService.onDrivingStarted(leg);
-
-    _liveDistanceKm = 0;
-    _lastPosition = null;
-
+    if (!mounted) return;
     setState(() {
       _selectedRouteId = null;
       _pickedLocation = null;
       _selectedPurpose = null;
     });
-  }
-
-  /// Shows the arrival dialog for the active leg when the bottom
-  /// "Olen perillä" button is tapped. Mirrors the same dialog flow as
-  /// ActiveTripCard._stopDriving.
-  Future<void> _onBottomArrivePressed() async {
-    final tripState = ref.read(tripProvider);
-    final activeLeg = tripState.activeLeg;
-    if (activeLeg == null) return;
-
-    final tripNotifier = ref.read(tripProvider.notifier);
-    final isAdHoc =
-        activeLeg.routeId == null && activeLeg.routeDescription == null;
-    final expectedOdometer =
-        activeLeg.startOdometer + activeLeg.kmDriven.toInt();
-
-    List<String> suggestions = const [];
-    if (isAdHoc) {
-      try {
-        suggestions = await DatabaseService.getUniqueLocations();
-      } catch (_) {}
-    }
-
-    if (!mounted) return;
-
-    final result = await showOdometerDialog(
-      context: context,
-      title: 'Olen perillä',
-      subtitle: isAdHoc
-          ? 'Lähtö: ${activeLeg.startLocation}'
-          : 'Kohde: ${activeLeg.endLocation ?? activeLeg.routeDescription}',
-      label: 'Matkamittari perillä (km)',
-      actionLabel: 'Lopeta ajo',
-      initialValue: isAdHoc ? null : expectedOdometer,
-      expectedHint: isAdHoc ? null : expectedOdometer,
-      showTime: true,
-      initialTime: DateTime.now(),
-      timeLabel: 'Päättymisaika',
-      locationLabel: isAdHoc ? 'Määränpää' : null,
-      locationSuggestions: suggestions,
-      relatedField: isAdHoc ? 'Tarkoitus' : null,
-      initialPurpose: isAdHoc ? activeLeg.purpose : null,
-      visionService: ref.read(odometerVisionServiceProvider),
-    );
-
-    if (result != null && mounted) {
-      await tripNotifier.stopDriving(
-        result.odometer,
-        endTime: result.time,
-        endLocation: result.location,
-        purpose: result.purpose,
-      );
-      _liveDistanceKm = 0;
-      _lastPosition = null;
-      await ref.read(backgroundServiceProvider).onDrivingStopped();
-      ref.read(tripDetectionServiceProvider).stop();
-      ref.read(tripDetectionServiceProvider).start();
-    }
-  }
-
-  Future<void> _startWithRoute(model.Route route) async {
-    final tripNotifier = ref.read(tripProvider.notifier);
-    final settings = ref.read(settingsProvider);
-
-    final lastLeg = await DatabaseService.getLastLeg();
-    final initialOdometer = lastLeg?.endOdometer;
-    if (initialOdometer == null) return;
-
-    ref.read(tripDetectionServiceProvider).stop();
-    final backgroundService = ref.read(backgroundServiceProvider);
-    backgroundService.updateSettings(settings);
-
-    final leg = await tripNotifier.startDriving(
-      route: route,
-      startOdometer: initialOdometer,
-      purpose: route.lastPurpose ?? '',
-      driver: settings.driverName,
-    );
-    await backgroundService.onDrivingStarted(leg);
-    _liveDistanceKm = 0;
-    _lastPosition = null;
-    if (route.id != null &&
-        route.lastPurpose != null &&
-        route.lastPurpose!.isNotEmpty) {
-      await ref
-          .read(routeProvider.notifier)
-          .savePurpose(route.id!, route.lastPurpose!);
-    }
-    if (route.id != null) {
-      await ref.read(routeProvider.notifier).markUsed(route.id!);
-    }
   }
 }
