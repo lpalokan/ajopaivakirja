@@ -260,7 +260,21 @@ flutter pub get
 flutter run
 ```
 
-### Versiointi ja APK:n rakentaminen
+### Valmiit APK:t (GitHub Releases)
+
+Jokainen `main`-haaraan tehty merge rakentaa sekä debug- että
+release-APK:n ja julkaisee ne GitHub Releasesissa. Uusin asennettava
+versio löytyy aina osoitteesta:
+
+- [Releases](https://github.com/lpalokan/ajopaivakirja/releases) –
+  lataa `kilometrikorvaus-…-release.apk` ja asenna laitteelle.
+
+Release-APK allekirjoitetaan toistaiseksi Androidin debug-avaimella,
+joten se asentuu mille tahansa laitteelle, mutta päälleasennus jonkin
+toisella avaimella allekirjoitetun version päälle vaatii vanhan version
+poistamisen ensin.
+
+### Versiointi ja APK:n rakentaminen paikallisesti
 
 Versionumero generoituu git-tageista:
 
