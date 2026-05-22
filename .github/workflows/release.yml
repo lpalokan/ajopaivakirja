@@ -2,9 +2,10 @@ name: Build and release APKs
 
 # Runs on every push to main. Builds both debug and release APKs and
 # publishes them as a GitHub Release tagged with the version currently
-# in pubspec.yaml. The release APK is signed with the Android debug key
-# (see android/app/build.gradle.kts) — installable on any device, but
-# you cannot upgrade an existing install signed with a different key.
+# in pubspec.yaml. The release APK is signed with a project-owned
+# keystore reconstructed from GitHub Actions secrets (see the
+# "Decode release signing key" step below), so every CI build carries
+# the same certificate and SHA-1.
 #
 # Versioning: the version name (1.0.X) is read from pubspec.yaml and
 # stays manually controlled. The build code (+N) is rewritten on every
@@ -35,6 +36,32 @@ jobs:
           # Full history so `git rev-list --count HEAD` produces a
           # stable, monotonically increasing build code per merge.
           fetch-depth: 0
+
+      - name: Decode release signing key
+        # Reconstructs android/keystore/{release.jks, keystore.properties}
+        # from GitHub Actions secrets. The runner is ephemeral, so these
+        # files exist only for the duration of this job. Secret values are
+        # masked in logs by Actions; the keystore itself is binary and is
+        # decoded via stdin redirection so it never appears in the run log.
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          if [ -z "$RELEASE_KEYSTORE_BASE64" ]; then
+            echo "::error::RELEASE_KEYSTORE_BASE64 secret is not set; release APK would be unsigned."
+            exit 1
+          fi
+          mkdir -p android/keystore
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 -d > android/keystore/release.jks
+          umask 077
+          {
+            echo "storeFile=release.jks"
+            echo "storePassword=${RELEASE_KEYSTORE_PASSWORD}"
+            echo "keyAlias=${RELEASE_KEY_ALIAS}"
+            echo "keyPassword=${RELEASE_KEY_PASSWORD}"
+          } > android/keystore/keystore.properties
 
       - name: Bump build code
         # Each push to main must yield a build code higher than any
@@ -122,9 +149,9 @@ jobs:
           {
             echo "Automated build for commit ${GITHUB_SHA}."
             echo
-            echo "**Release APK** — signed with the Android debug key. Installable on any device, but cannot upgrade an existing install signed with a different key."
+            echo "**Release APK** — signed with the project's stable release key. Upgrades existing installs signed with the same key."
             echo
-            echo "**Debug APK** — same caveat, plus debug instrumentation."
+            echo "**Debug APK** — signed with the runner's debug keystore; for local diagnostics only."
             echo
             echo "Commit: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
           } > "${notes_file}"
