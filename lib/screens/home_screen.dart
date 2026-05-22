@@ -136,29 +136,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         : null;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Ajopäiväkirja'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.history),
-            tooltip: 'Historia',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const TripHistoryScreen()),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Symbols.settings),
-            tooltip: 'Asetukset',
-            onPressed: () {
-              Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
-            },
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Ajopäiväkirja')),
       body: tripState.activeLeg != null
           ? _buildActiveBody(tripState)
           : _buildIdleBody(
@@ -168,6 +146,47 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               recentRoutes,
               lastOdometerFuture,
             ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: 0,
+        onDestinationSelected: (i) {
+          switch (i) {
+            case 0:
+              return;
+            case 1:
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const RouteManagementScreen(),
+                ),
+              );
+            case 2:
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const TripHistoryScreen()),
+              );
+            case 3:
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              );
+          }
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Symbols.home),
+            label: 'Etusivu',
+          ),
+          NavigationDestination(
+            icon: Icon(Symbols.alt_route),
+            label: 'Reitit',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.history),
+            label: 'Historia',
+          ),
+          NavigationDestination(
+            icon: Icon(Symbols.settings),
+            label: 'Asetukset',
+          ),
+        ],
+      ),
     );
   }
 

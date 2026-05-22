@@ -279,26 +279,25 @@ Future<void> launchApp(WidgetTester tester) async {
 }
 
 Future<void> openSettings(WidgetTester tester) async {
+  // Lives on the home NavigationBar (was: AppBar action).
   await waitFor(tester, find.byIcon(Symbols.settings));
   await tester.tap(find.byIcon(Symbols.settings));
   await settle(tester);
 }
 
 Future<void> openRoutes(WidgetTester tester) async {
-  final link = find.textContaining('Kaikki reitit');
-  if (link.evaluate().isEmpty) await scrollIntoView(tester, link);
-  if (link.evaluate().isNotEmpty) {
-    await tester.ensureVisible(link.first);
-    await settle(tester);
-  }
-  await tester.tap(link.first);
+  // Reached via the home NavigationBar's Reitit destination — doesn't
+  // depend on having any routes seeded, so empty-state scenarios can
+  // still open the screen.
+  await waitFor(tester, find.byIcon(Symbols.alt_route));
+  await tester.tap(find.byIcon(Symbols.alt_route));
   await settle(tester);
 }
 
 Future<void> openHistory(WidgetTester tester) async {
-  // Home AppBar uses Icons.history (not Symbols.history) since the
-  // Material Symbols variable-font axis was not rendering the 0xe8b3
-  // glyph reliably — see lib/screens/home_screen.dart.
+  // Home NavigationBar's Historia destination uses Icons.history (not
+  // Symbols.history) — the Material Symbols variable-font axis was not
+  // rendering the 0xe8b3 glyph reliably.
   await tester.tap(find.byIcon(Icons.history));
   await settle(tester);
 }

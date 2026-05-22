@@ -32,3 +32,9 @@ Feature: App boot and navigation
   Scenario: History is empty before any trips
     When I open history
     Then I see {'Ei ajohistoriaa'}
+
+  Scenario: Home bottom navigation shows the main destinations
+    Then I see {'Etusivu'}
+    And I see {'Reitit'}
+    And I see {'Historia'}
+    And I see {'Asetukset'}
