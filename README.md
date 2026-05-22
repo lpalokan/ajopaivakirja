@@ -404,13 +404,54 @@ Sovellus tarvitsee Google Cloud -projektin toimiakseen Google Sheetsin kanssa.
 
 ### SHA-1-sormenjäljen haku
 
+Debug-buildit (paikallinen `flutter run` / `flutter build apk --debug`)
+allekirjoitetaan koneen omalla debug-avaimella:
 ```bash
 keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android 2>/dev/null | grep SHA1
-
-keytool -list -v -keystore oma-avain.jks -alias avaimen-nimi 2>/dev/null | grep SHA1
 ```
 
-### Release APK -konfigurointi
-Release-versio tarvitsee oman OAuth Client ID:n (eri SHA-1 kuin debug):
-1. Luo **toinen** OAuth Client ID -tunnus Android-tyypillä release-SHA-1:llä
-2. Lisää molemmat Client ID:t OAuth consent screenin testikäyttäjiin tarvittaessa
+Release-buildit (sekä paikalliset että CI) allekirjoitetaan
+projektin omalla release-avaimella, jota säilytetään
+salaisuudenhallinnassa — ei repossa. SHA-1:n saa kun avain on paikallisessa
+koneessa kohdassa `android/keystore/release.jks`:
+```bash
+keytool -list -v -keystore android/keystore/release.jks -alias release 2>/dev/null | grep SHA1
+```
+
+### Release-allekirjoituksen konfigurointi
+
+Release-buildit allekirjoitetaan aina samalla, projektin omalla avaimella —
+sekä paikallisesti että GitHub Actions -CI:ssä. Avain ja salasanat
+*eivät koskaan* käy repossa: paikallisesti ne ovat git-ignoroidussa
+`android/keystore/`-kansiossa, ja CI rakentaa ne uudelleen
+GitHub Actions -salaisuuksista joka buildissä.
+
+**GitHub Actions -salaisuudet** (Settings → Secrets and variables → Actions → New repository secret):
+
+| Salaisuus | Arvo |
+|-----------|------|
+| `RELEASE_KEYSTORE_BASE64` | `base64 -w0 android/keystore/release.jks` -tulos yhdellä rivillä |
+| `RELEASE_KEYSTORE_PASSWORD` | keystoren salasana |
+| `RELEASE_KEY_ALIAS` | avaimen alias (esim. `release`) |
+| `RELEASE_KEY_PASSWORD` | avaimen salasana (usein sama kuin keystoren) |
+
+`release.yml`-työnkulku purkaa nämä `android/keystore/release.jks` -tiedostoksi
+ja `keystore.properties`-tiedostoksi rakennusvaiheessa ja siivoaa ne
+kun runner vapautuu.
+
+**Paikallinen release-build:** sijoita oma kopiosi tiedostoista
+`android/keystore/release.jks` ja `android/keystore/keystore.properties`
+(esim. `storeFile=release.jks`, `storePassword=…`, `keyAlias=release`,
+`keyPassword=…`). Molemmat ovat `.gitignore`ssa. Jos kansio puuttuu,
+release-build käyttää debug-avainta — käytännöllistä paikalliseen testaukseen,
+mutta tällainen APK ei ole asennettavissa CI:stä tulleen päälle.
+
+**Avaimen varmuuskopiointi on kriittistä.** Jos `release.jks` katoaa ja
+sitä ei ole salasanahallinnassa, et voi enää koskaan julkaista
+päivityksiä olemassa oleviin asennuksiin — Android hylkää eri
+sertifikaatilla allekirjoitetun APK:n.
+
+**Google OAuth Client ID:** Release-buildilla on yksi vakaa SHA-1, joten
+sitä varten riittää yksi Android-tyyppinen OAuth Client ID. Lisää
+debug-SHA-1 omaksi Client ID:kseen, jos haluat että `flutter run`
+sisäänkirjautuu myös paikallisesti.

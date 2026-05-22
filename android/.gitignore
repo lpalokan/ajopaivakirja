@@ -12,3 +12,7 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+
+# Release signing material is rebuilt from GitHub Actions secrets in CI,
+# or placed here by hand for local release builds — never committed.
+keystore/
