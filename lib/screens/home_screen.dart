@@ -140,7 +140,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         title: const Text('Ajopäiväkirja'),
         actions: [
           IconButton(
-            icon: const Icon(Symbols.history),
+            icon: const Icon(Icons.history),
             tooltip: 'Historia',
             onPressed: () {
               Navigator.of(context).push(
