@@ -296,7 +296,10 @@ Future<void> openRoutes(WidgetTester tester) async {
 }
 
 Future<void> openHistory(WidgetTester tester) async {
-  await tester.tap(find.byIcon(Symbols.history));
+  // Home AppBar uses Icons.history (not Symbols.history) since the
+  // Material Symbols variable-font axis was not rendering the 0xe8b3
+  // glyph reliably — see lib/screens/home_screen.dart.
+  await tester.tap(find.byIcon(Icons.history));
   await settle(tester);
 }
 
