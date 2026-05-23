@@ -18,7 +18,7 @@ import '../widgets/route_chip_row.dart';
 import '../widgets/location_chip.dart';
 import '../widgets/day_timeline.dart';
 import '../widgets/top_context_card.dart';
-import 'settings_screen.dart';
+import '../widgets/main_bottom_nav.dart';
 import 'route_management_screen.dart';
 import 'trip_history_screen.dart';
 
@@ -136,29 +136,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         : null;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Ajopäiväkirja'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.history),
-            tooltip: 'Historia',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const TripHistoryScreen()),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Symbols.settings),
-            tooltip: 'Asetukset',
-            onPressed: () {
-              Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
-            },
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Ajopäiväkirja')),
       body: tripState.activeLeg != null
           ? _buildActiveBody(tripState)
           : _buildIdleBody(
@@ -168,6 +146,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               recentRoutes,
               lastOdometerFuture,
             ),
+      bottomNavigationBar: const MainBottomNav(selectedIndex: 0),
     );
   }
 

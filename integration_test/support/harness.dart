@@ -278,28 +278,34 @@ Future<void> launchApp(WidgetTester tester) async {
   await settle(tester);
 }
 
+// The MainBottomNav now renders on every primary destination, so when a
+// sub-screen is pushed both Home's NavigationBar (offstage under the
+// pushed route) and the sub-screen's own NavigationBar are in the tree,
+// and a bare `find.byIcon(...)` matches twice. We always tap `.first`
+// (Home's icon in tree order): tapping it triggers Home's MainBottomNav
+// which popUntil(isFirst) + push, so a "re-open" from a sub-screen
+// yields a fresh target screen — exactly what scenarios like "Km rate
+// persists across reopen" depend on.
+
 Future<void> openSettings(WidgetTester tester) async {
   await waitFor(tester, find.byIcon(Symbols.settings));
-  await tester.tap(find.byIcon(Symbols.settings));
+  await tester.tap(find.byIcon(Symbols.settings).first);
   await settle(tester);
 }
 
 Future<void> openRoutes(WidgetTester tester) async {
-  final link = find.textContaining('Kaikki reitit');
-  if (link.evaluate().isEmpty) await scrollIntoView(tester, link);
-  if (link.evaluate().isNotEmpty) {
-    await tester.ensureVisible(link.first);
-    await settle(tester);
-  }
-  await tester.tap(link.first);
+  // Doesn't depend on any routes being seeded, so empty-state scenarios
+  // can still open the screen.
+  await waitFor(tester, find.byIcon(Symbols.alt_route));
+  await tester.tap(find.byIcon(Symbols.alt_route).first);
   await settle(tester);
 }
 
 Future<void> openHistory(WidgetTester tester) async {
-  // Home AppBar uses Icons.history (not Symbols.history) since the
-  // Material Symbols variable-font axis was not rendering the 0xe8b3
-  // glyph reliably — see lib/screens/home_screen.dart.
-  await tester.tap(find.byIcon(Icons.history));
+  // Historia uses Icons.history (not Symbols.history) — the Material
+  // Symbols variable-font axis was not rendering the 0xe8b3 glyph
+  // reliably.
+  await tester.tap(find.byIcon(Icons.history).first);
   await settle(tester);
 }
 
@@ -417,23 +423,33 @@ Future<void> saveSettings(WidgetTester tester) async {
   await tester.pump(const Duration(milliseconds: 300));
   await settle(tester);
 
+  // Scope the scroll target to the Settings Form's ListView. After the
+  // home NavigationBar landed, Home's body lost ~80px and its top-zone
+  // SingleChildScrollView now has non-zero maxScrollExtent. Home stays
+  // in the tree under the pushed Settings route, so a generic "first
+  // vertical scrollable" probe lands on Home's top zone instead of
+  // Settings and the Tallenna button never builds. Form is used only by
+  // Settings (lib/screens/settings_screen.dart), so scoping by Form
+  // pins the scroll to the right list.
+  final settingsScrollable = find.descendant(
+    of: find.byType(Form),
+    matching: find.byType(Scrollable),
+  );
+
   // The Save button is the last child of a lazy ListView, so its
   // maxScrollExtent grows as more rows build. A single jumpTo can land
   // short and never build the button — re-jump to the (growing) bottom
-  // until the button is actually in the tree. Pick the first vertical,
-  // scrollable candidate — `sc.first` could land on a text-field's
-  // internal Scrollable (horizontal / maxScrollExtent==0).
+  // until the button is actually in the tree.
   final btn = find.widgetWithText(FilledButton, 'Tallenna');
   for (var i = 0; i < 12 && btn.evaluate().isEmpty; i++) {
-    final scrollables = find.byType(Scrollable);
-    final count = scrollables.evaluate().length;
-    for (var j = 0; j < count; j++) {
+    if (settingsScrollable.evaluate().isNotEmpty) {
       try {
-        final pos = tester.state<ScrollableState>(scrollables.at(j)).position;
-        if (pos.axis != Axis.vertical) continue;
-        if (pos.maxScrollExtent <= 0.0) continue;
-        pos.jumpTo(pos.maxScrollExtent);
-        break;
+        final pos = tester
+            .state<ScrollableState>(settingsScrollable.first)
+            .position;
+        if (pos.axis == Axis.vertical && pos.maxScrollExtent > 0.0) {
+          pos.jumpTo(pos.maxScrollExtent);
+        }
       } catch (_) {}
     }
     await tester.pump(const Duration(milliseconds: 200));
@@ -446,9 +462,10 @@ Future<void> saveSettings(WidgetTester tester) async {
     // test report points at the actual problem.
     fail(
       'saveSettings: "Tallenna" FilledButton never appeared after 12 '
-      'jumpTo(maxScrollExtent) attempts. The Settings ListView did not '
-      'build down to its last child — either the list is too long for the '
-      'scroll budget, or the button moved.',
+      'jumpTo(maxScrollExtent) attempts on the Settings Form scrollable. '
+      'The Settings ListView did not build down to its last child — '
+      'either the list is too long for the scroll budget, or the button '
+      'moved.',
     );
   }
   await tester.ensureVisible(btn.first);
