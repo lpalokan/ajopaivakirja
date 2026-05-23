@@ -18,7 +18,7 @@ import '../widgets/route_chip_row.dart';
 import '../widgets/location_chip.dart';
 import '../widgets/day_timeline.dart';
 import '../widgets/top_context_card.dart';
-import 'settings_screen.dart';
+import '../widgets/main_bottom_nav.dart';
 import 'route_management_screen.dart';
 import 'trip_history_screen.dart';
 
@@ -146,47 +146,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               recentRoutes,
               lastOdometerFuture,
             ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: 0,
-        onDestinationSelected: (i) {
-          switch (i) {
-            case 0:
-              return;
-            case 1:
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const RouteManagementScreen(),
-                ),
-              );
-            case 2:
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const TripHistoryScreen()),
-              );
-            case 3:
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              );
-          }
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Symbols.home),
-            label: 'Etusivu',
-          ),
-          NavigationDestination(
-            icon: Icon(Symbols.alt_route),
-            label: 'Reitit',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.history),
-            label: 'Historia',
-          ),
-          NavigationDestination(
-            icon: Icon(Symbols.settings),
-            label: 'Asetukset',
-          ),
-        ],
-      ),
+      bottomNavigationBar: const MainBottomNav(selectedIndex: 0),
     );
   }
 

@@ -278,27 +278,34 @@ Future<void> launchApp(WidgetTester tester) async {
   await settle(tester);
 }
 
+// The MainBottomNav now renders on every primary destination, so when a
+// sub-screen is pushed both Home's NavigationBar (offstage under the
+// pushed route) and the sub-screen's own NavigationBar are in the tree,
+// and a bare `find.byIcon(...)` matches twice. We always tap `.first`
+// (Home's icon in tree order): tapping it triggers Home's MainBottomNav
+// which popUntil(isFirst) + push, so a "re-open" from a sub-screen
+// yields a fresh target screen — exactly what scenarios like "Km rate
+// persists across reopen" depend on.
+
 Future<void> openSettings(WidgetTester tester) async {
-  // Lives on the home NavigationBar (was: AppBar action).
   await waitFor(tester, find.byIcon(Symbols.settings));
-  await tester.tap(find.byIcon(Symbols.settings));
+  await tester.tap(find.byIcon(Symbols.settings).first);
   await settle(tester);
 }
 
 Future<void> openRoutes(WidgetTester tester) async {
-  // Reached via the home NavigationBar's Reitit destination — doesn't
-  // depend on having any routes seeded, so empty-state scenarios can
-  // still open the screen.
+  // Doesn't depend on any routes being seeded, so empty-state scenarios
+  // can still open the screen.
   await waitFor(tester, find.byIcon(Symbols.alt_route));
-  await tester.tap(find.byIcon(Symbols.alt_route));
+  await tester.tap(find.byIcon(Symbols.alt_route).first);
   await settle(tester);
 }
 
 Future<void> openHistory(WidgetTester tester) async {
-  // Home NavigationBar's Historia destination uses Icons.history (not
-  // Symbols.history) — the Material Symbols variable-font axis was not
-  // rendering the 0xe8b3 glyph reliably.
-  await tester.tap(find.byIcon(Icons.history));
+  // Historia uses Icons.history (not Symbols.history) — the Material
+  // Symbols variable-font axis was not rendering the 0xe8b3 glyph
+  // reliably.
+  await tester.tap(find.byIcon(Icons.history).first);
   await settle(tester);
 }
 

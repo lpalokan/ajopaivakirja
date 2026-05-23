@@ -10,6 +10,7 @@ import '../services/database_service.dart';
 import '../widgets/odometer_dialog.dart';
 import '../widgets/active_trip_card.dart';
 import '../widgets/location_autocomplete.dart';
+import '../widgets/main_bottom_nav.dart';
 
 class RouteManagementScreen extends ConsumerStatefulWidget {
   const RouteManagementScreen({super.key});
@@ -27,6 +28,7 @@ class _RouteManagementScreenState extends ConsumerState<RouteManagementScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Reitit')),
+      bottomNavigationBar: const MainBottomNav(selectedIndex: 1),
       body: Column(
         children: [
           if (tripState.activeLeg != null)

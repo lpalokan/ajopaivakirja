@@ -11,6 +11,7 @@ import '../app_version.dart';
 import '../services/database_service.dart';
 import '../services/log_service.dart';
 import '../models/location_zone.dart';
+import '../widgets/main_bottom_nav.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -85,6 +86,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Asetukset')),
+      bottomNavigationBar: const MainBottomNav(selectedIndex: 3),
       body: Form(
         key: _formKey,
         child: ListView(

@@ -15,6 +15,7 @@ import '../services/pdf_report_service.dart';
 import '../services/csv_export_service.dart';
 import '../models/expense.dart';
 import '../widgets/status_chip_row.dart';
+import '../widgets/main_bottom_nav.dart';
 
 class TripHistoryScreen extends ConsumerStatefulWidget {
   const TripHistoryScreen({super.key});
@@ -489,6 +490,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      bottomNavigationBar: const MainBottomNav(selectedIndex: 2),
       appBar: AppBar(
         title: const Text('Historia'),
         actions: [
