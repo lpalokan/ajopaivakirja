@@ -1047,8 +1047,13 @@ void setUpdateServiceMode(String mode) {
 /// "When the app checks for updates" step explicitly re-run the check
 /// after the fake has been configured.
 Future<void> triggerUpdateCheck(WidgetTester tester) async {
-  final scopeElement = tester.element(find.byType(ProviderScope));
-  final container = ProviderScope.containerOf(scopeElement, listen: false);
+  // `ProviderScope.containerOf` walks UP from the given context looking
+  // for an `UncontrolledProviderScope` ancestor — which `ProviderScope`
+  // builds as its CHILD. Passing the ProviderScope's own element finds
+  // nothing and throws "No ProviderScope found". Use an inner widget's
+  // context instead.
+  final scopeContext = tester.element(find.byType(KilometrikorvausApp));
+  final container = ProviderScope.containerOf(scopeContext, listen: false);
   await container.read(updateCheckProvider.notifier).check();
   await settle(tester);
 }
