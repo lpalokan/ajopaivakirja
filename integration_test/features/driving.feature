@@ -55,14 +55,14 @@ Feature: Driving flow
     And I do not see {'59.0 km'}
 
   Scenario: The 45-min reminder is suppressed while activity is in_vehicle
+    Given activity recognition reports {'in_vehicle'}
     When I start the {'Töihin'} route at {1000} km
-    And activity recognition reports {'in_vehicle'}
     And the reminder backstop elapses
     Then no arrival reminder has been shown
 
   Scenario: The 45-min reminder fires when activity has left the vehicle
+    Given activity recognition reports {'still'}
     When I start the {'Töihin'} route at {1000} km
-    And activity recognition reports {'still'}
     And the reminder backstop elapses
     Then an arrival reminder has been shown
 
@@ -72,8 +72,8 @@ Feature: Driving flow
     Then an arrival reminder has been shown
 
   Scenario: Tapping still driving defers the reminder and the next tick suppresses while in_vehicle
+    Given activity recognition reports {'still'}
     When I start the {'Töihin'} route at {1000} km
-    And activity recognition reports {'still'}
     And the reminder backstop elapses
     And the still driving notification action is tapped
     And activity recognition reports {'in_vehicle'}

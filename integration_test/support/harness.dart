@@ -57,8 +57,28 @@ class _FakeNotificationService extends NotificationService {
 }
 
 class _FakeActivityRecognitionService extends ActivityRecognitionService {
-  final StreamController<DrivingActivity> _ctrl =
-      StreamController<DrivingActivity>.broadcast();
+  /// Latest activity that has been pushed into this fake. Cached so that a
+  /// `Given activity recognition reports X` step placed BEFORE the
+  /// `When I start the route` step still reaches BackgroundService: when
+  /// BG subscribes, `onListen` replays this value into the controller.
+  ///
+  /// Without the replay, scenarios that push activity before the trip
+  /// starts hit a dead window (no listener yet → broadcast `add` drops
+  /// the event) and BG never learns the current activity; the 45-min
+  /// Timer then fires with `_lastActivity = unknown` and the reminder is
+  /// not suppressed.
+  DrivingActivity _last = DrivingActivity.unknown;
+  late final StreamController<DrivingActivity> _ctrl;
+
+  _FakeActivityRecognitionService() {
+    _ctrl = StreamController<DrivingActivity>.broadcast(
+      onListen: () {
+        if (_last != DrivingActivity.unknown && !_ctrl.isClosed) {
+          _ctrl.add(_last);
+        }
+      },
+    );
+  }
 
   @override
   Stream<DrivingActivity> get activityStream => _ctrl.stream;
@@ -72,6 +92,7 @@ class _FakeActivityRecognitionService extends ActivityRecognitionService {
   }
 
   void push(DrivingActivity a) {
+    _last = a;
     if (!_ctrl.isClosed) _ctrl.add(a);
   }
 }
