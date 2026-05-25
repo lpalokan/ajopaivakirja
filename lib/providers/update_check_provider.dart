@@ -20,7 +20,13 @@ class UpdateCheckNotifier extends StateNotifier<UpdateCheckState> {
   /// Runs a manifest check and folds the result into [state]. Errors
   /// are stored in [state] rather than thrown so the home banner and
   /// settings dialog can both surface them without separate plumbing.
+  ///
+  /// Guards each post-await `state =` with `mounted`: the home screen
+  /// fires this from a postFrame callback, so a fast scenario teardown
+  /// (or any first-frame disposal) can race the async check and try to
+  /// land the result on an already-disposed notifier.
   Future<void> check() async {
+    if (!mounted) return;
     state = const AsyncValue.loading();
     try {
       final service = _ref.read(updateServiceProvider);
@@ -28,8 +34,10 @@ class UpdateCheckNotifier extends StateNotifier<UpdateCheckState> {
         currentBuildNumber: appBuildNumber,
         useReleaseChannel: kReleaseMode,
       );
+      if (!mounted) return;
       state = AsyncValue.data(info);
     } catch (e, st) {
+      if (!mounted) return;
       state = AsyncValue.error(e, st);
     }
   }
