@@ -22,6 +22,8 @@ import 'package:material_symbols_icons/material_symbols_icons.dart';
 
 import 'package:kilometrikorvaus/main.dart';
 import 'package:kilometrikorvaus/models/trip_leg.dart';
+import 'package:kilometrikorvaus/models/update_info.dart';
+import 'package:kilometrikorvaus/providers/update_check_provider.dart';
 import 'package:kilometrikorvaus/services/activity_recognition_service.dart';
 import 'package:kilometrikorvaus/services/background_service.dart';
 import 'package:kilometrikorvaus/services/database_service.dart';
@@ -30,6 +32,7 @@ import 'package:kilometrikorvaus/services/location_service.dart';
 import 'package:kilometrikorvaus/services/notification_service.dart';
 import 'package:kilometrikorvaus/services/odometer_vision_service.dart';
 import 'package:kilometrikorvaus/services/sheets_service.dart';
+import 'package:kilometrikorvaus/services/update_service.dart';
 
 // ─── Fakes ─────────────────────────────────────────────────────────────────
 
@@ -97,12 +100,37 @@ class _FakeActivityRecognitionService extends ActivityRecognitionService {
   }
 }
 
+class _FakeUpdateService extends UpdateService {
+  /// `null` → checkForUpdate returns null (i.e. "up to date").
+  /// non-null → returned verbatim from checkForUpdate.
+  UpdateInfo? mockUpdate;
+
+  /// Set true when downloadAndInstall is called, so scenarios can
+  /// assert the install path is reached without actually invoking the
+  /// system package installer (which would fail in the test env).
+  bool installCalled = false;
+
+  @override
+  Future<UpdateInfo?> checkForUpdate({
+    required int currentBuildNumber,
+    required bool useReleaseChannel,
+  }) async {
+    return mockUpdate;
+  }
+
+  @override
+  Future<void> downloadAndInstall(UpdateInfo info) async {
+    installCalled = true;
+  }
+}
+
 // Held outside the launchApp closure so step helpers
 // (`pushActivity`, `expectArrivalReminderShownCount`, …) can reach them
 // without going through the ProviderContainer.
 _FakeNotificationService _fakeNotification = _FakeNotificationService();
 _FakeActivityRecognitionService _fakeActivity =
     _FakeActivityRecognitionService();
+_FakeUpdateService _fakeUpdate = _FakeUpdateService();
 
 class _FakeLocationService extends LocationService {
   // Owns its own broadcast controller so scenarios can synthesise GPS
@@ -330,6 +358,7 @@ Future<void> launchApp(WidgetTester tester) async {
   _fakeLocation = _FakeLocationService();
   _fakeNotification = _FakeNotificationService();
   _fakeActivity = _FakeActivityRecognitionService();
+  _fakeUpdate = _FakeUpdateService();
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -344,6 +373,7 @@ Future<void> launchApp(WidgetTester tester) async {
           _FakeOdometerVisionService(),
         ),
         fileOpenerServiceProvider.overrideWithValue(_fakeFileOpener),
+        updateServiceProvider.overrideWithValue(_fakeUpdate),
       ],
       child: const KilometrikorvausApp(),
     ),
@@ -955,6 +985,47 @@ void expectArrivalReminderShownAtLeastOnce() {
         'Expected the 45-min arrival reminder to fire at least once, '
         'but showArrivalReminder was never called.',
   );
+}
+
+// ─── Update check ──────────────────────────────────────────────────────────
+
+/// Configure what the fake [UpdateService] returns on the next check.
+/// `mode` is a short keyword from the scenario:
+///   - 'up_to_date'        → checkForUpdate returns null.
+///   - 'update_available'  → checkForUpdate returns a synthetic UpdateInfo
+///     with a buildNumber strictly greater than the running app's, so
+///     UpdateCheckNotifier surfaces it as "update available".
+void setUpdateServiceMode(String mode) {
+  switch (mode) {
+    case 'up_to_date':
+      _fakeUpdate.mockUpdate = null;
+      break;
+    case 'update_available':
+      _fakeUpdate.mockUpdate = UpdateInfo(
+        buildNumber: 99999,
+        version: '99.0.0',
+        apkUrl: 'https://example.invalid/app-release.apk',
+        publishedAt: DateTime(2099, 1, 1),
+      );
+      break;
+    default:
+      throw ArgumentError('Unknown update mode: $mode');
+  }
+}
+
+/// Manually re-run [updateCheckProvider]'s check, using whatever the
+/// fake service is currently configured to return. The HomeScreen
+/// postFrame already fires a check during launchApp, but at that
+/// moment the scenario hasn't yet had a chance to call
+/// [setUpdateServiceMode] — so the on-startup check sees the default
+/// (null) and the banner stays hidden. This helper lets the
+/// "When the app checks for updates" step explicitly re-run the check
+/// after the fake has been configured.
+Future<void> triggerUpdateCheck(WidgetTester tester) async {
+  final scopeElement = tester.element(find.byType(ProviderScope));
+  final container = ProviderScope.containerOf(scopeElement, listen: false);
+  await container.read(updateCheckProvider.notifier).check();
+  await settle(tester);
 }
 
 /// Simulates the user tapping the "Ajan yhä" action button on the

@@ -128,9 +128,13 @@ jobs:
           # GitHub Release asset filenames must not contain '+' (URL-
           # encodes to space and breaks copy-pasted install URLs).
           safe="${version/+/-build}"
+          name_part="${version%%+*}"
+          build_part="${version##*+}"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag=v${version}" >> "$GITHUB_OUTPUT"
           echo "safe=${safe}" >> "$GITHUB_OUTPUT"
+          echo "name=${name_part}" >> "$GITHUB_OUTPUT"
+          echo "build=${build_part}" >> "$GITHUB_OUTPUT"
 
       - name: Stage APKs for upload
         run: |
@@ -169,5 +173,73 @@ jobs:
               --repo "${GITHUB_REPOSITORY}" \
               --title "${tag}" \
               --notes-file "${notes_file}" \
+              --target "${GITHUB_SHA}"
+          fi
+
+      - name: Publish rolling "latest" release + update manifest
+        # The in-app "Tarkista päivitykset" button (see
+        # lib/services/update_service.dart) fetches
+        #   https://github.com/<repo>/releases/download/latest/manifest.json
+        # so the URL stays stable across versions. We force-update a
+        # single release tagged `latest` with three assets:
+        #   - app-release.apk   (fixed filename, clobbered each run)
+        #   - app-debug.apk     (fixed filename, clobbered each run)
+        #   - manifest.json     (tiny JSON pointing at the two URLs +
+        #                        current buildNumber for each channel)
+        # The versioned release published in the previous step is kept
+        # as immutable history; the rolling release is only what the
+        # app reads.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p dist/latest
+          cp "build/app/outputs/flutter-apk/app-release.apk" "dist/latest/app-release.apk"
+          cp "build/app/outputs/flutter-apk/app-debug.apk"   "dist/latest/app-debug.apk"
+
+          published_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          name="${{ steps.version.outputs.name }}"
+          build="${{ steps.version.outputs.build }}"
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/latest"
+
+          cat > dist/latest/manifest.json <<EOF
+          {
+            "release": {
+              "buildNumber": ${build},
+              "version": "${name}",
+              "apkUrl": "${base}/app-release.apk",
+              "publishedAt": "${published_at}",
+              "commitSha": "${GITHUB_SHA}"
+            },
+            "debug": {
+              "buildNumber": ${build},
+              "version": "${name}",
+              "apkUrl": "${base}/app-debug.apk",
+              "publishedAt": "${published_at}",
+              "commitSha": "${GITHUB_SHA}"
+            }
+          }
+          EOF
+
+          notes="Rolling latest build (${name}+${build}). Updated on every push to main. See the v${name}+${build} release for human-readable history."
+
+          if gh release view latest --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload latest \
+              dist/latest/app-release.apk \
+              dist/latest/app-debug.apk \
+              dist/latest/manifest.json \
+              --repo "${GITHUB_REPOSITORY}" --clobber
+            gh release edit latest \
+              --repo "${GITHUB_REPOSITORY}" \
+              --notes "${notes}" \
+              --prerelease=false \
+              --draft=false
+          else
+            gh release create latest \
+              dist/latest/app-release.apk \
+              dist/latest/app-debug.apk \
+              dist/latest/manifest.json \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "Latest build" \
+              --notes "${notes}" \
               --target "${GITHUB_SHA}"
           fi

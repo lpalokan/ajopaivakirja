@@ -10,6 +10,7 @@ import '../models/app_settings.dart';
 import '../providers/route_provider.dart';
 import '../providers/trip_provider.dart';
 import '../providers/settings_provider.dart';
+import '../providers/update_check_provider.dart';
 import '../services/database_service.dart';
 import '../services/log_service.dart';
 import '../widgets/start_card.dart';
@@ -18,6 +19,7 @@ import '../widgets/route_chip_row.dart';
 import '../widgets/location_chip.dart';
 import '../widgets/day_timeline.dart';
 import '../widgets/top_context_card.dart';
+import '../widgets/update_banner.dart';
 import '../widgets/main_bottom_nav.dart';
 import 'route_management_screen.dart';
 import 'trip_history_screen.dart';
@@ -101,6 +103,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       // Delegate all callback wiring and detection lifecycle to
       // TripNotifier — the orchestration seam for trip state.
       ref.read(tripProvider.notifier).initialize();
+
+      // Silent update check on startup. Result lands in
+      // updateCheckProvider; the UpdateBanner widget watches the same
+      // state and surfaces the banner only when an update is found.
+      // Errors stay in the provider state — we don't bubble them into
+      // a snackbar so a flaky network doesn't nag the user.
+      ref.read(updateCheckProvider.notifier).check();
     });
   }
 
@@ -219,6 +228,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
     return Column(
       children: [
+        // Surfaces the latest result from `updateCheckProvider`; renders
+        // nothing while up-to-date or while a check is still in flight.
+        const UpdateBanner(),
         // Top zone — context card. Priority: a selected route preview
         // wins over the day timeline, which wins over the ad-hoc card.
         Expanded(flex: 3, child: _buildTopZone(tripState, selectedRoute)),

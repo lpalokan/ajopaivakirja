@@ -10,6 +10,7 @@ import 'services/sheets_service.dart';
 import 'services/odometer_vision_service.dart';
 import 'services/trip_detection_service.dart';
 import 'services/file_opener_service.dart';
+import 'services/update_service.dart';
 
 final notificationServiceProvider = Provider<NotificationService>((ref) {
   return NotificationService();
@@ -51,6 +52,10 @@ final tripDetectionServiceProvider = Provider<TripDetectionService>((ref) {
   final ls = ref.watch(locationServiceProvider);
   final ns = ref.watch(notificationServiceProvider);
   return TripDetectionService(locationService: ls, notificationService: ns);
+});
+
+final updateServiceProvider = Provider<UpdateService>((ref) {
+  return UpdateService();
 });
 
 // ── Theme extensions ───────────────────────────────────────────────────────

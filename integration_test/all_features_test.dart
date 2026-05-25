@@ -22,6 +22,7 @@ import 'features/navigation_test.dart' as navigation;
 import 'features/route_management_test.dart' as route_management;
 import 'features/seeded_routes_test.dart' as seeded_routes;
 import 'features/settings_test.dart' as settings;
+import 'features/update_check_test.dart' as update_check;
 
 void main() {
   smoke.main();
@@ -36,4 +37,5 @@ void main() {
   calculations.main();
   drafts.main();
   accessibility.main();
+  update_check.main();
 }

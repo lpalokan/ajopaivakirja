@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../main.dart';
 import '../providers/settings_provider.dart';
+import '../providers/update_check_provider.dart';
 import '../app_version.dart';
 import '../services/database_service.dart';
 import '../services/log_service.dart';
@@ -350,12 +351,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            // Tietoja
+            // Tietoja + päivitysten tarkistus
             Card(
-              child: ListTile(
-                title: const Text('Sovelluksen versio'),
-                subtitle: Text(appVersion),
-                leading: const Icon(Symbols.info),
+              child: Column(
+                children: [
+                  ListTile(
+                    title: const Text('Sovelluksen versio'),
+                    subtitle: Text(appVersion),
+                    leading: const Icon(Symbols.info),
+                  ),
+                  const Divider(height: 1),
+                  _UpdateCheckTile(),
+                ],
               ),
             ),
             const SizedBox(height: 24),
@@ -849,6 +856,60 @@ class _FilePickerDialogState extends State<_FilePickerDialog> {
           child: const Text('Peruuta'),
         ),
       ],
+    );
+  }
+}
+
+/// "Tarkista päivitykset" row: kicks off a fresh check against the
+/// GitHub-hosted manifest, then surfaces the result inline — either
+/// "Sovellus on ajan tasalla" or "Päivitys saatavilla" with an
+/// install button.
+class _UpdateCheckTile extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(updateCheckProvider);
+    final theme = Theme.of(context);
+
+    String resultLine;
+    Color? resultColor;
+    Widget? trailing;
+
+    if (state.isLoading) {
+      resultLine = 'Tarkistetaan...';
+      trailing = const SizedBox(
+        width: 20,
+        height: 20,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    } else if (state.hasError) {
+      resultLine = 'Tarkistus epäonnistui';
+      resultColor = theme.colorScheme.error;
+    } else if (state.value != null) {
+      final info = state.value!;
+      resultLine = 'Päivitys saatavilla: v${info.version} (build ${info.buildNumber})';
+      trailing = FilledButton(
+        onPressed: () => ref.read(updateCheckProvider.notifier).install(),
+        child: const Text('Asenna'),
+      );
+    } else {
+      resultLine = 'Sovellus on ajan tasalla';
+    }
+
+    return ListTile(
+      leading: const Icon(Symbols.system_update),
+      title: const Text('Tarkista päivitykset'),
+      subtitle: Text(resultLine, style: TextStyle(color: resultColor)),
+      trailing: trailing ??
+          IconButton(
+            icon: const Icon(Symbols.refresh),
+            tooltip: 'Tarkista uudelleen',
+            onPressed: state.isLoading
+                ? null
+                : () => ref.read(updateCheckProvider.notifier).check(),
+          ),
+      onTap: state.isLoading
+          ? null
+          : () => ref.read(updateCheckProvider.notifier).check(),
     );
   }
 }
