@@ -4,14 +4,16 @@ import 'package:flutter_activity_recognition/flutter_activity_recognition.dart'
     as plugin;
 
 /// Coarse on-device motion state we care about for trip reminders.
+///
+/// Mirrors the values that `flutter_activity_recognition` v4 actually emits.
+/// (v2 also exposed `ON_FOOT` and `TILTING`; v4 dropped them, so we don't
+/// model them.)
 enum DrivingActivity {
   inVehicle,
   onBicycle,
-  onFoot,
   walking,
   running,
   still,
-  tilting,
   unknown,
 }
 
@@ -21,16 +23,12 @@ DrivingActivity _fromPlugin(plugin.ActivityType t) {
       return DrivingActivity.inVehicle;
     case plugin.ActivityType.ON_BICYCLE:
       return DrivingActivity.onBicycle;
-    case plugin.ActivityType.ON_FOOT:
-      return DrivingActivity.onFoot;
     case plugin.ActivityType.WALKING:
       return DrivingActivity.walking;
     case plugin.ActivityType.RUNNING:
       return DrivingActivity.running;
     case plugin.ActivityType.STILL:
       return DrivingActivity.still;
-    case plugin.ActivityType.TILTING:
-      return DrivingActivity.tilting;
     case plugin.ActivityType.UNKNOWN:
       return DrivingActivity.unknown;
   }

@@ -887,11 +887,9 @@ Future<void> pushActivity(WidgetTester tester, String activity) async {
   final mapped = switch (activity) {
     'in_vehicle' => DrivingActivity.inVehicle,
     'on_bicycle' => DrivingActivity.onBicycle,
-    'on_foot' => DrivingActivity.onFoot,
     'walking' => DrivingActivity.walking,
     'running' => DrivingActivity.running,
     'still' => DrivingActivity.still,
-    'tilting' => DrivingActivity.tilting,
     'unknown' => DrivingActivity.unknown,
     _ => throw ArgumentError('Unknown activity: $activity'),
   };

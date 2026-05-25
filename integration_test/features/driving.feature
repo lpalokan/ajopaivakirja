@@ -62,7 +62,7 @@ Feature: Driving flow
 
   Scenario: The 45-min reminder fires when activity has left the vehicle
     When I start the {'Töihin'} route at {1000} km
-    And activity recognition reports {'on_foot'}
+    And activity recognition reports {'still'}
     And the reminder backstop elapses
     Then an arrival reminder has been shown
 
@@ -73,7 +73,7 @@ Feature: Driving flow
 
   Scenario: Tapping still driving defers the reminder and the next tick suppresses while in_vehicle
     When I start the {'Töihin'} route at {1000} km
-    And activity recognition reports {'on_foot'}
+    And activity recognition reports {'still'}
     And the reminder backstop elapses
     And the still driving notification action is tapped
     And activity recognition reports {'in_vehicle'}
