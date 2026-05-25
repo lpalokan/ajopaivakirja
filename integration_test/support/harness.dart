@@ -22,6 +22,9 @@ import 'package:material_symbols_icons/material_symbols_icons.dart';
 
 import 'package:kilometrikorvaus/main.dart';
 import 'package:kilometrikorvaus/models/trip_leg.dart';
+import 'package:kilometrikorvaus/models/update_info.dart';
+import 'package:kilometrikorvaus/providers/update_check_provider.dart';
+import 'package:kilometrikorvaus/services/activity_recognition_service.dart';
 import 'package:kilometrikorvaus/services/background_service.dart';
 import 'package:kilometrikorvaus/services/database_service.dart';
 import 'package:kilometrikorvaus/services/file_opener_service.dart';
@@ -29,10 +32,13 @@ import 'package:kilometrikorvaus/services/location_service.dart';
 import 'package:kilometrikorvaus/services/notification_service.dart';
 import 'package:kilometrikorvaus/services/odometer_vision_service.dart';
 import 'package:kilometrikorvaus/services/sheets_service.dart';
+import 'package:kilometrikorvaus/services/update_service.dart';
 
 // ─── Fakes ─────────────────────────────────────────────────────────────────
 
 class _FakeNotificationService extends NotificationService {
+  int arrivalReminderShownCount = 0;
+
   @override
   Future<void> initialize() async {}
   @override
@@ -40,14 +46,91 @@ class _FakeNotificationService extends NotificationService {
   @override
   Future<void> showDrivingNotification(TripLeg leg) async {}
   @override
-  Future<void> showArrivalReminder(String destination) async {}
+  Future<void> showArrivalReminder(String destination) async {
+    arrivalReminderShownCount++;
+  }
   @override
   Future<void> scheduleTimeBasedReminder(String d, DateTime t) async {}
   @override
   Future<void> cancelDrivingNotification() async {}
   @override
   Future<void> cancelReminders() async {}
+  @override
+  Future<void> cancelScheduledReminder() async {}
 }
+
+class _FakeActivityRecognitionService extends ActivityRecognitionService {
+  /// Latest activity that has been pushed into this fake. Cached so that a
+  /// `Given activity recognition reports X` step placed BEFORE the
+  /// `When I start the route` step still reaches BackgroundService: when
+  /// BG subscribes, `onListen` replays this value into the controller.
+  ///
+  /// Without the replay, scenarios that push activity before the trip
+  /// starts hit a dead window (no listener yet → broadcast `add` drops
+  /// the event) and BG never learns the current activity; the 45-min
+  /// Timer then fires with `_lastActivity = unknown` and the reminder is
+  /// not suppressed.
+  DrivingActivity _last = DrivingActivity.unknown;
+  late final StreamController<DrivingActivity> _ctrl;
+
+  _FakeActivityRecognitionService() {
+    _ctrl = StreamController<DrivingActivity>.broadcast(
+      onListen: () {
+        if (_last != DrivingActivity.unknown && !_ctrl.isClosed) {
+          _ctrl.add(_last);
+        }
+      },
+    );
+  }
+
+  @override
+  Stream<DrivingActivity> get activityStream => _ctrl.stream;
+  @override
+  Future<void> start() async {}
+  @override
+  Future<void> stop() async {}
+  @override
+  void dispose() {
+    if (!_ctrl.isClosed) _ctrl.close();
+  }
+
+  void push(DrivingActivity a) {
+    _last = a;
+    if (!_ctrl.isClosed) _ctrl.add(a);
+  }
+}
+
+class _FakeUpdateService extends UpdateService {
+  /// `null` → checkForUpdate returns null (i.e. "up to date").
+  /// non-null → returned verbatim from checkForUpdate.
+  UpdateInfo? mockUpdate;
+
+  /// Set true when downloadAndInstall is called, so scenarios can
+  /// assert the install path is reached without actually invoking the
+  /// system package installer (which would fail in the test env).
+  bool installCalled = false;
+
+  @override
+  Future<UpdateInfo?> checkForUpdate({
+    required int currentBuildNumber,
+    required bool useReleaseChannel,
+  }) async {
+    return mockUpdate;
+  }
+
+  @override
+  Future<void> downloadAndInstall(UpdateInfo info) async {
+    installCalled = true;
+  }
+}
+
+// Held outside the launchApp closure so step helpers
+// (`pushActivity`, `expectArrivalReminderShownCount`, …) can reach them
+// without going through the ProviderContainer.
+_FakeNotificationService _fakeNotification = _FakeNotificationService();
+_FakeActivityRecognitionService _fakeActivity =
+    _FakeActivityRecognitionService();
+_FakeUpdateService _fakeUpdate = _FakeUpdateService();
 
 class _FakeLocationService extends LocationService {
   // Owns its own broadcast controller so scenarios can synthesise GPS
@@ -82,24 +165,38 @@ class _FakeLocationService extends LocationService {
 // `simulateGpsMovement` without going through the ProviderContainer.
 _FakeLocationService _fakeLocation = _FakeLocationService();
 
-class _FakeBackgroundService extends BackgroundService {
-  _FakeBackgroundService()
-    : super(
-        notificationService: _FakeNotificationService(),
-        locationService: _FakeLocationService(),
-      );
-  @override
-  Future<void> initialize() async {}
-  @override
-  void updateSettings(settings) {}
-  @override
-  Future<void> onDrivingStarted(TripLeg leg) async {}
-  @override
-  Future<void> onDrivingStopped() async {}
-  @override
-  Future<void> onStillDrivingPressed() async {}
-  @override
-  void dispose() {}
+/// Real [BackgroundService] driven by fake dependencies and a millisecond-
+/// scale reminder duration, so scenarios can actually exercise the
+/// "suppress reminder while in_vehicle / fire when not" logic without
+/// waiting 45 minutes.
+///
+/// Wired with the same `_fakeNotification` / `_fakeLocation` /
+/// `_fakeActivity` instances that the ProviderScope hands to the rest of
+/// the app, so the scenario step `activity recognition reports X` can
+/// push events to the very stream this service is subscribed to.
+/// 1500ms — long enough that `startTrip` (which does several pumpAndSettle
+/// rounds) finishes before the timer fires, so scenarios have a chance to
+/// `pushActivity` before the backstop tick. Combined with the 2000ms
+/// `waitForReminderBackstop` pump that gives the listener ~500ms slack to
+/// run.
+const Duration _testReminderDuration = Duration(milliseconds: 1500);
+
+/// Live reference to the real [BackgroundService] handed to the
+/// ProviderScope this scenario is running against. Held so step helpers
+/// (`tapStillDrivingAction`) can invoke methods on it directly, the same
+/// way the `_stillDrivingActionId` action button would via the
+/// NotificationService → BackgroundService callback chain.
+BackgroundService? _testBackgroundService;
+
+BackgroundService _buildTestBackgroundService() {
+  final bg = BackgroundService(
+    notificationService: _fakeNotification,
+    locationService: _fakeLocation,
+    activityService: _fakeActivity,
+    reminderDuration: _testReminderDuration,
+  );
+  _testBackgroundService = bg;
+  return bg;
 }
 
 class _FakeSheetsService extends SheetsService {
@@ -253,20 +350,30 @@ Finder _dialogField(String label) =>
 
 Future<void> launchApp(WidgetTester tester) async {
   _fakeFileOpener.openedPath = null;
+  // Dispose the previous scenario's BackgroundService so its in-process
+  // Timer (which, after the "still driving" test, can keep rescheduling
+  // itself while it observes in_vehicle) doesn't leak into this run.
+  _testBackgroundService?.dispose();
+  _testBackgroundService = null;
   _fakeLocation = _FakeLocationService();
+  _fakeNotification = _FakeNotificationService();
+  _fakeActivity = _FakeActivityRecognitionService();
+  _fakeUpdate = _FakeUpdateService();
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        notificationServiceProvider.overrideWithValue(
-          _FakeNotificationService(),
-        ),
+        notificationServiceProvider.overrideWithValue(_fakeNotification),
         locationServiceProvider.overrideWithValue(_fakeLocation),
-        backgroundServiceProvider.overrideWithValue(_FakeBackgroundService()),
+        activityRecognitionServiceProvider.overrideWithValue(_fakeActivity),
+        backgroundServiceProvider.overrideWithValue(
+          _buildTestBackgroundService(),
+        ),
         sheetsServiceProvider.overrideWithValue(_FakeSheetsService()),
         odometerVisionServiceProvider.overrideWithValue(
           _FakeOdometerVisionService(),
         ),
         fileOpenerServiceProvider.overrideWithValue(_fakeFileOpener),
+        updateServiceProvider.overrideWithValue(_fakeUpdate),
       ],
       child: const KilometrikorvausApp(),
     ),
@@ -392,17 +499,42 @@ Future<void> enterSettingsField(
   // change listeners that matter for our forms (FormField validators,
   // save-button-state listeners) all fire from the controller, so this
   // is observationally equivalent to a real keystroke.
-  final tfWidget = tester.widget<TextFormField>(f.first);
-  final ctrl = tfWidget.controller;
-  if (ctrl != null) {
+  //
+  // We retry the write up to 5 times because Settings has several
+  // async-rebuild sources (ref.watch(settingsProvider).debugLogging,
+  // ref.watch(updateCheckProvider) inside the version card, FormField
+  // validators) that can fire a rebuild right after the controller
+  // write — and in some races the rebuild lands a stale value on
+  // `tfWidget.controller`. Re-reading the controller each iteration
+  // also protects against the TextFormField rebuilding with a fresh
+  // widget reference.
+  String observed = '';
+  for (var attempt = 0; attempt < 5; attempt++) {
+    final tfWidget = tester.widget<TextFormField>(f.first);
+    final ctrl = tfWidget.controller;
+    if (ctrl == null) {
+      // No controller — fall back to enterText so we still type
+      // *something* and the failure shows up at the assertion.
+      await tester.enterText(f, value);
+      await tester.pump(const Duration(milliseconds: 200));
+      observed = value;
+      break;
+    }
     ctrl.text = value;
     ctrl.selection = TextSelection.collapsed(offset: value.length);
-  } else {
-    // No controller on the widget — fall back to enterText so we still
-    // type *something* and the failure shows up at the assertion.
-    await tester.enterText(f, value);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    observed = ctrl.text;
+    if (observed == value) break;
   }
-  await tester.pump(const Duration(milliseconds: 200));
+  expect(
+    observed,
+    value,
+    reason:
+        "enterSettingsField('$value', '$label'): the controller still "
+        "reads '$observed' after 5 write retries — Settings form has a "
+        'rebuild source that reverts the write.',
+  );
 }
 
 Future<void> enterDialogField(
@@ -546,36 +678,45 @@ Future<void> startAdHoc(WidgetTester tester, String from, int odometer) async {
   // the "Käytä" button still reads ctrl.text on press, so the rest of
   // the flow is identical to a real keystroke.
   await tester.tap(locField.first);
-  await tester.pump(const Duration(milliseconds: 200));
-  final tfWidget = tester.widget<TextField>(locField.first);
-  final ctrl = tfWidget.controller;
+  // pumpAndSettle (via settle) instead of a fixed 200ms pump: wait until
+  // the dialog stops rebuilding before we read the controller. On the
+  // 3rd ad-hoc scenario in a run, the fixed pump occasionally landed
+  // mid-rebuild and a subsequent write was reverted to the dialog's
+  // initial value ('Koti' from AppSettings.homeLocation).
+  await settle(tester);
+  // Retry the controller write a few times. The first write can still
+  // race with RawAutocomplete's listener wiring on the first focus —
+  // the controller write itself succeeds, but a follow-up frame can
+  // revert ctrl.text back to its initial value as the options overlay
+  // settles. Re-reading the controller each iteration also protects
+  // against the TextField rebuilding with a fresh controller reference.
+  // The Käytä button reads ctrl.text.trim() on press, so the controller
+  // is the source of truth that matters for propagation downstream.
+  String observed = '';
+  for (var attempt = 0; attempt < 5; attempt++) {
+    final tfWidget = tester.widget<TextField>(locField.first);
+    final ctrl = tfWidget.controller;
+    expect(
+      ctrl,
+      isNotNull,
+      reason:
+          "Muuta sijainti dialog's TextField has no controller — the "
+          'LocationAutocomplete API changed and the harness needs updating.',
+    );
+    ctrl!.text = from;
+    ctrl.selection = TextSelection.collapsed(offset: from.length);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    observed = ctrl.text;
+    if (observed == from) break;
+  }
   expect(
-    ctrl,
-    isNotNull,
-    reason:
-        "Muuta sijainti dialog's TextField has no controller — the "
-        'LocationAutocomplete API changed and the harness needs updating.',
-  );
-  ctrl!.text = from;
-  ctrl.selection = TextSelection.collapsed(offset: from.length);
-  // One sync pump for the controller's notifyListeners → EditableText
-  // rebuild, plus a longer pump to let RawAutocomplete settle its
-  // options overlay before we tap "Käytä".
-  await tester.pump();
-  await tester.pump(const Duration(milliseconds: 300));
-
-  // Verify the controller — NOT find.text — that the write actually
-  // stuck. find.text against EditableText was flaking on cold-start
-  // first scenarios while the controller itself reliably had the value;
-  // the Käytä button reads ctrl.text.trim() on press anyway, so the
-  // controller is the source of truth that matters for propagation.
-  expect(
-    ctrl.text,
+    observed,
     from,
     reason:
-        "Direct controller write to 'Muuta sijainti' dialog field "
-        "did not stick: expected '$from' but controller has "
-        "'${ctrl.text}'. The TextField finder may be matching a stale "
+        "Direct controller write to 'Muuta sijainti' dialog field did "
+        "not stick after 5 retries: expected '$from' but controller "
+        "has '$observed'. The TextField finder may be matching a stale "
         'or different field.',
   );
 
@@ -820,4 +961,120 @@ Future<void> expectArrivalOdometerFieldValue(
   await waitFor(tester, _arrivalOdoField);
   final tf = tester.widget<TextField>(_arrivalOdoField);
   expect(tf.controller?.text, value.toString());
+}
+
+// ─── Activity recognition & reminder backstop ──────────────────────────────
+
+/// Push a synthetic activity event into the stream the running
+/// [BackgroundService] is subscribed to. Accepts the lowercase string form
+/// used in scenarios (`'in_vehicle'`, `'on_foot'`, `'still'`, …).
+Future<void> pushActivity(WidgetTester tester, String activity) async {
+  final mapped = switch (activity) {
+    'in_vehicle' => DrivingActivity.inVehicle,
+    'on_bicycle' => DrivingActivity.onBicycle,
+    'walking' => DrivingActivity.walking,
+    'running' => DrivingActivity.running,
+    'still' => DrivingActivity.still,
+    'unknown' => DrivingActivity.unknown,
+    _ => throw ArgumentError('Unknown activity: $activity'),
+  };
+  _fakeActivity.push(mapped);
+  // Let the BackgroundService stream listener record the update before
+  // the scenario advances to the next step.
+  await tester.pump(const Duration(milliseconds: 50));
+}
+
+/// Pump real time forward past the test-scale reminder duration
+/// (see `_testReminderDuration`), giving the in-process Timer a chance to
+/// fire and the resulting notification call to land.
+Future<void> waitForReminderBackstop(WidgetTester tester) async {
+  await pumpFor(tester, 2000);
+}
+
+void expectArrivalReminderShownCount(int expected) {
+  expect(
+    _fakeNotification.arrivalReminderShownCount,
+    expected,
+    reason:
+        'Expected showArrivalReminder to be called $expected time(s), '
+        'but was called ${_fakeNotification.arrivalReminderShownCount} '
+        'time(s).',
+  );
+}
+
+void expectArrivalReminderShownAtLeastOnce() {
+  expect(
+    _fakeNotification.arrivalReminderShownCount,
+    greaterThanOrEqualTo(1),
+    reason:
+        'Expected the 45-min arrival reminder to fire at least once, '
+        'but showArrivalReminder was never called.',
+  );
+}
+
+// ─── Update check ──────────────────────────────────────────────────────────
+
+/// Configure what the fake [UpdateService] returns on the next check.
+/// `mode` is a short keyword from the scenario:
+///   - 'up_to_date'        → checkForUpdate returns null.
+///   - 'update_available'  → checkForUpdate returns a synthetic UpdateInfo
+///     with a buildNumber strictly greater than the running app's, so
+///     UpdateCheckNotifier surfaces it as "update available".
+void setUpdateServiceMode(String mode) {
+  switch (mode) {
+    case 'up_to_date':
+      _fakeUpdate.mockUpdate = null;
+      break;
+    case 'update_available':
+      _fakeUpdate.mockUpdate = UpdateInfo(
+        buildNumber: 99999,
+        version: '99.0.0',
+        apkUrl: 'https://example.invalid/app-release.apk',
+        publishedAt: DateTime(2099, 1, 1),
+      );
+      break;
+    default:
+      throw ArgumentError('Unknown update mode: $mode');
+  }
+}
+
+/// Manually re-run [updateCheckProvider]'s check, using whatever the
+/// fake service is currently configured to return. The HomeScreen
+/// postFrame already fires a check during launchApp, but at that
+/// moment the scenario hasn't yet had a chance to call
+/// [setUpdateServiceMode] — so the on-startup check sees the default
+/// (null) and the banner stays hidden. This helper lets the
+/// "When the app checks for updates" step explicitly re-run the check
+/// after the fake has been configured.
+Future<void> triggerUpdateCheck(WidgetTester tester) async {
+  // `ProviderScope.containerOf` walks UP from the given context looking
+  // for an `UncontrolledProviderScope` ancestor — which `ProviderScope`
+  // builds as its CHILD. Passing the ProviderScope's own element finds
+  // nothing and throws "No ProviderScope found". Use an inner widget's
+  // context instead.
+  final scopeContext = tester.element(find.byType(KilometrikorvausApp));
+  final container = ProviderScope.containerOf(scopeContext, listen: false);
+  await container.read(updateCheckProvider.notifier).check();
+  await settle(tester);
+}
+
+/// Simulates the user tapping the "Ajan yhä" action button on the
+/// arrival-reminder notification. The real notification handler routes
+/// `_stillDrivingActionId` → `ns.onStillDriving` → `bg.onStillDriving` →
+/// `bg.onStillDrivingPressed`; calling the last directly produces the
+/// same observable effect (a fresh backstop is scheduled) without going
+/// through the platform notification plugin (which the fake
+/// NotificationService no-ops).
+Future<void> tapStillDrivingAction(WidgetTester tester) async {
+  final bg = _testBackgroundService;
+  expect(
+    bg,
+    isNotNull,
+    reason:
+        'No test BackgroundService is registered — was launchApp() called?',
+  );
+  await bg!.onStillDrivingPressed();
+  // Let the rescheduled Timer settle into the event loop before the next
+  // scenario step runs.
+  await tester.pump(const Duration(milliseconds: 50));
 }

@@ -19,7 +19,12 @@ Sheetsiin, CSV-tiedostoon tai PDF-raportiksi.
 5. **Lisää kuluja** – Voit liittää ajopäivään kuluja (pysäköinti,
    tietulli, ateria, muu).
 6. **Jos unohdat lopettaa** – Sovellus muistuttaa ilmoituksella
-   (GPS-pohjainen + aikaperusteinen).
+   45 minuutin välein (GPS-pohjainen + aikaperusteinen). Muistutus
+   sivuutetaan automaattisesti, jos Androidin liikkumistunnistus (Google
+   Play -palvelut) raportoi, että olet edelleen ajoneuvossa — saat
+   ilmoituksen vasta, kun olet poistunut autosta. "Ajan yhä" -painikkeen
+   painaminen ei avaa sovellusta, vaan siirtää muistutusta 45 minuutilla
+   eteenpäin samalla logiikalla.
 7. **Päivän päätteeksi** – Kun palaat kotiin, sovellus laskee
    päivärahan (6 h / 10 h rajat) ja voit viedä rivit Google Sheetsiin,
    CSV-tiedostoon tai PDF-raporttiin.
@@ -38,9 +43,11 @@ täydennetään muistista.
 | Google-integraatio | googleapis + google_sign_in |
 | Taustapalvelu | flutter_background_service |
 | Sijainti | geolocator (GPS + geofencing) |
+| Liikkumistunnistus | flutter_activity_recognition (Google Play -palvelut) |
 | Ilmoitukset | flutter_local_notifications |
 | Mittarin kuvantunnistus | google_mlkit_text_recognition + image_picker |
 | CSV/PDF-vienti | pdf + printing + share_plus + open_filex |
+| Päivitysten haku | http + open_filex (GitHub-julkaisumanifesti) |
 
 ### Kansiorakenne
 
@@ -65,13 +72,16 @@ lib/
 │   ├── odometer_vision_service.dart# Mittarilukeman tunnistus kuvasta
 │   ├── location_service.dart       # GPS ja geofencing
 │   ├── trip_detection_service.dart # Automaattinen ajon tunnistus
-│   ├── background_service.dart     # Taustapalvelun hallinta
+│   ├── background_service.dart     # Taustapalvelu + 45 min muistutuslogiikka
+│   ├── activity_recognition_service.dart # Liikkumistunnistus (in_vehicle…)
 │   ├── notification_service.dart   # Ilmoitukset
+│   ├── update_service.dart         # Päivitysten haku GitHub-manifestista
 │   └── log_service.dart            # Diagnostiikkaloki
 ├── providers/                      # Riverpod-tarjoajat
 │   ├── route_provider.dart
 │   ├── trip_provider.dart
-│   └── settings_provider.dart
+│   ├── settings_provider.dart
+│   └── update_check_provider.dart  # AsyncValue<UpdateInfo?> (banneri + asetukset)
 ├── screens/                        # Näkymät
 │   ├── home_screen.dart            # Päänäkymä: viimeisimmät reitit, päivän yhteenveto
 │   ├── route_management_screen.dart# Reittien lisäys ja muokkaus
@@ -81,7 +91,8 @@ lib/
     ├── odometer_dialog.dart        # Matkamittarin syöttö (käsin tai kuvasta)
     ├── active_trip_card.dart       # Käynnissä olevan ajon kortti
     ├── expense_dialog.dart         # Kulun syöttö
-    └── location_autocomplete.dart  # Sijaintikenttä automaattitäydennyksellä
+    ├── location_autocomplete.dart  # Sijaintikenttä automaattitäydennyksellä
+    └── update_banner.dart          # Päänäkymän banneri uudesta versiosta
 ```
 
 ### Tietokantarakenne (SQLite, versio 7)
@@ -220,6 +231,13 @@ Sovelluksen asetuksista voit määrittää:
 - **Välilehti** – Taulukon välilehden nimi (oletus "Taulukko1")
 - **Kuljettajan nimi** – Kirjautuu automaattisesti riveille
 - **Diagnostiikkaloki** – Lokituksen voi kytkeä päälle vianselvitystä varten
+- **Tarkista päivitykset** – Kysyy GitHubilta uusimman version
+  buildinumeron ja näyttää joko "Sovellus on ajan tasalla" tai
+  "Päivitys saatavilla" + Asenna-painikkeen. Sama tarkistus käynnistyy
+  automaattisesti sovelluksen avautuessa; jos uudempi versio löytyy,
+  päänäkymään ilmestyy banneri. Asennus avaa ladatun APK:n Androidin
+  pakettiasentajaan; ensimmäisellä kerralla järjestelmä pyytää luvan
+  "Asenna tuntemattomista lähteistä".
 
 ## Korvauslaskenta
 
@@ -263,16 +281,23 @@ flutter run
 ### Valmiit APK:t (GitHub Releases)
 
 Jokainen `main`-haaraan tehty merge rakentaa sekä debug- että
-release-APK:n ja julkaisee ne GitHub Releasesissa. Uusin asennettava
-versio löytyy aina osoitteesta:
+release-APK:n ja julkaisee ne kahteen paikkaan:
 
-- [Releases](https://github.com/lpalokan/ajopaivakirja/releases) –
-  lataa `kilometrikorvaus-…-release.apk` ja asenna laitteelle.
+- **Versioidut julkaisut** – immutable, yksi per buildi.
+  [Releases](https://github.com/lpalokan/ajopaivakirja/releases) – lataa
+  `kilometrikorvaus-…-release.apk` historiaa ja vianetsintää varten.
+- **Rolling `latest`-julkaisu** – sama tagi (`latest`) ylikirjoitetaan
+  joka pushilla. Sisältää kolme tiedostoa kiinteillä nimillä:
+  `app-release.apk`, `app-debug.apk` ja `manifest.json`. Sovelluksen
+  "Tarkista päivitykset" -toiminto lukee manifestia ja vertaa
+  buildinumeroa nykyiseen — jos on uudempi, banneri näyttää linkin
+  suoraan oikeaan APK:hon.
 
-Release-APK allekirjoitetaan toistaiseksi Androidin debug-avaimella,
-joten se asentuu mille tahansa laitteelle, mutta päälleasennus jonkin
-toisella avaimella allekirjoitetun version päälle vaatii vanhan version
-poistamisen ensin.
+Release-APK allekirjoitetaan projektin omalla, vakaalla
+release-avaimella (ks. "Release-allekirjoituksen konfigurointi"
+alempana). Päälleasennus toimii saman avaimen kanssa allekirjoitetuilla
+versioilla — sekä CI:stä että paikallisesti rakennetuilla, kun avain on
+kohdallaan.
 
 ### Versiointi ja APK:n rakentaminen paikallisesti
 

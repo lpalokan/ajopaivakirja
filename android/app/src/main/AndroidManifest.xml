@@ -72,4 +72,12 @@
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <!-- Activity recognition: used to suppress the 45-min "Vieläkö ajat?"
+         reminder while the device reports the user is still in_vehicle. -->
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION"/>
+    <uses-permission android:name="com.google.android.gms.permission.ACTIVITY_RECOGNITION"/>
+    <!-- "Tarkista päivitykset": hand the downloaded APK to the system
+         package installer. The user must still enable "Install unknown
+         apps" for this app the first time (Android 8+ requirement). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
 </manifest>

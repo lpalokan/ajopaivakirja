@@ -148,10 +148,19 @@ class NotificationService {
           'Olen perillä',
           showsUserInterface: true,
         ),
+        // "Ajan yhä" must NOT cold-launch the app — tapping it just defers
+        // the reminder. showsUserInterface=false routes the tap to the
+        // foreground _onNotificationResponse handler (when the app is
+        // alive) without bringing any UI to the front; the handler calls
+        // back into BackgroundService.onStillDrivingPressed, which
+        // reschedules another 45-min backstop. The activity-recognition
+        // check on the next tick then decides whether to fire or
+        // suppress again.
         AndroidNotificationAction(
           _stillDrivingActionId,
           'Ajan yhä',
-          showsUserInterface: true,
+          showsUserInterface: false,
+          cancelNotification: true,
         ),
       ],
     );
@@ -185,10 +194,13 @@ class NotificationService {
           'Olen perillä',
           showsUserInterface: true,
         ),
+        // See the matching comment in showArrivalReminder — "Ajan yhä"
+        // defers, never launches the app.
         AndroidNotificationAction(
           _stillDrivingActionId,
           'Ajan yhä',
-          showsUserInterface: true,
+          showsUserInterface: false,
+          cancelNotification: true,
         ),
       ],
     );
@@ -211,6 +223,15 @@ class NotificationService {
 
   Future<void> cancelReminders() async {
     await _plugin.cancel(2);
+    await _plugin.cancel(3);
+  }
+
+  /// Cancels only the pre-scheduled platform reminder (id 3), leaving any
+  /// already-shown "Oletko perillä?" notification (id 2) in place. Used when
+  /// the in-process timer fires while the user is still in_vehicle and we
+  /// want to defer the reminder by rescheduling — without letting the
+  /// platform fire its own copy at the original time.
+  Future<void> cancelScheduledReminder() async {
     await _plugin.cancel(3);
   }
 
