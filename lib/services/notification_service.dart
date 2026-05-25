@@ -214,6 +214,15 @@ class NotificationService {
     await _plugin.cancel(3);
   }
 
+  /// Cancels only the pre-scheduled platform reminder (id 3), leaving any
+  /// already-shown "Oletko perillä?" notification (id 2) in place. Used when
+  /// the in-process timer fires while the user is still in_vehicle and we
+  /// want to defer the reminder by rescheduling — without letting the
+  /// platform fire its own copy at the original time.
+  Future<void> cancelScheduledReminder() async {
+    await _plugin.cancel(3);
+  }
+
   /// Show notification when potential driving is detected.
   Future<void> showTripDetectionNotification() async {
     const androidDetails = AndroidNotificationDetails(

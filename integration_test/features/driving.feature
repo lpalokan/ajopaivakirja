@@ -53,3 +53,20 @@ Feature: Driving flow
     And GPS reports {5} km of movement
     Then I see {'54.0 km'}
     And I do not see {'59.0 km'}
+
+  Scenario: The 45-min reminder is suppressed while activity is in_vehicle
+    When I start the {'Töihin'} route at {1000} km
+    And activity recognition reports {'in_vehicle'}
+    And the reminder backstop elapses
+    Then no arrival reminder has been shown
+
+  Scenario: The 45-min reminder fires when activity has left the vehicle
+    When I start the {'Töihin'} route at {1000} km
+    And activity recognition reports {'on_foot'}
+    And the reminder backstop elapses
+    Then an arrival reminder has been shown
+
+  Scenario: The 45-min reminder fires when activity recognition is unavailable
+    When I start the {'Töihin'} route at {1000} km
+    And the reminder backstop elapses
+    Then an arrival reminder has been shown

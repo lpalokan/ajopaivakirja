@@ -22,6 +22,7 @@ import 'package:material_symbols_icons/material_symbols_icons.dart';
 
 import 'package:kilometrikorvaus/main.dart';
 import 'package:kilometrikorvaus/models/trip_leg.dart';
+import 'package:kilometrikorvaus/services/activity_recognition_service.dart';
 import 'package:kilometrikorvaus/services/background_service.dart';
 import 'package:kilometrikorvaus/services/database_service.dart';
 import 'package:kilometrikorvaus/services/file_opener_service.dart';
@@ -33,6 +34,8 @@ import 'package:kilometrikorvaus/services/sheets_service.dart';
 // ─── Fakes ─────────────────────────────────────────────────────────────────
 
 class _FakeNotificationService extends NotificationService {
+  int arrivalReminderShownCount = 0;
+
   @override
   Future<void> initialize() async {}
   @override
@@ -40,14 +43,45 @@ class _FakeNotificationService extends NotificationService {
   @override
   Future<void> showDrivingNotification(TripLeg leg) async {}
   @override
-  Future<void> showArrivalReminder(String destination) async {}
+  Future<void> showArrivalReminder(String destination) async {
+    arrivalReminderShownCount++;
+  }
   @override
   Future<void> scheduleTimeBasedReminder(String d, DateTime t) async {}
   @override
   Future<void> cancelDrivingNotification() async {}
   @override
   Future<void> cancelReminders() async {}
+  @override
+  Future<void> cancelScheduledReminder() async {}
 }
+
+class _FakeActivityRecognitionService extends ActivityRecognitionService {
+  final StreamController<DrivingActivity> _ctrl =
+      StreamController<DrivingActivity>.broadcast();
+
+  @override
+  Stream<DrivingActivity> get activityStream => _ctrl.stream;
+  @override
+  Future<void> start() async {}
+  @override
+  Future<void> stop() async {}
+  @override
+  void dispose() {
+    if (!_ctrl.isClosed) _ctrl.close();
+  }
+
+  void push(DrivingActivity a) {
+    if (!_ctrl.isClosed) _ctrl.add(a);
+  }
+}
+
+// Held outside the launchApp closure so step helpers
+// (`pushActivity`, `expectArrivalReminderShownCount`, …) can reach them
+// without going through the ProviderContainer.
+_FakeNotificationService _fakeNotification = _FakeNotificationService();
+_FakeActivityRecognitionService _fakeActivity =
+    _FakeActivityRecognitionService();
 
 class _FakeLocationService extends LocationService {
   // Owns its own broadcast controller so scenarios can synthesise GPS
@@ -82,24 +116,29 @@ class _FakeLocationService extends LocationService {
 // `simulateGpsMovement` without going through the ProviderContainer.
 _FakeLocationService _fakeLocation = _FakeLocationService();
 
-class _FakeBackgroundService extends BackgroundService {
-  _FakeBackgroundService()
-    : super(
-        notificationService: _FakeNotificationService(),
-        locationService: _FakeLocationService(),
-      );
-  @override
-  Future<void> initialize() async {}
-  @override
-  void updateSettings(settings) {}
-  @override
-  Future<void> onDrivingStarted(TripLeg leg) async {}
-  @override
-  Future<void> onDrivingStopped() async {}
-  @override
-  Future<void> onStillDrivingPressed() async {}
-  @override
-  void dispose() {}
+/// Real [BackgroundService] driven by fake dependencies and a millisecond-
+/// scale reminder duration, so scenarios can actually exercise the
+/// "suppress reminder while in_vehicle / fire when not" logic without
+/// waiting 45 minutes.
+///
+/// Wired with the same `_fakeNotification` / `_fakeLocation` /
+/// `_fakeActivity` instances that the ProviderScope hands to the rest of
+/// the app, so the scenario step `activity recognition reports X` can
+/// push events to the very stream this service is subscribed to.
+/// 1500ms — long enough that `startTrip` (which does several pumpAndSettle
+/// rounds) finishes before the timer fires, so scenarios have a chance to
+/// `pushActivity` before the backstop tick. Combined with the 2000ms
+/// `waitForReminderBackstop` pump that gives the listener ~500ms slack to
+/// run.
+const Duration _testReminderDuration = Duration(milliseconds: 1500);
+
+BackgroundService _buildTestBackgroundService() {
+  return BackgroundService(
+    notificationService: _fakeNotification,
+    locationService: _fakeLocation,
+    activityService: _fakeActivity,
+    reminderDuration: _testReminderDuration,
+  );
 }
 
 class _FakeSheetsService extends SheetsService {
@@ -254,14 +293,17 @@ Finder _dialogField(String label) =>
 Future<void> launchApp(WidgetTester tester) async {
   _fakeFileOpener.openedPath = null;
   _fakeLocation = _FakeLocationService();
+  _fakeNotification = _FakeNotificationService();
+  _fakeActivity = _FakeActivityRecognitionService();
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        notificationServiceProvider.overrideWithValue(
-          _FakeNotificationService(),
-        ),
+        notificationServiceProvider.overrideWithValue(_fakeNotification),
         locationServiceProvider.overrideWithValue(_fakeLocation),
-        backgroundServiceProvider.overrideWithValue(_FakeBackgroundService()),
+        activityRecognitionServiceProvider.overrideWithValue(_fakeActivity),
+        backgroundServiceProvider.overrideWithValue(
+          _buildTestBackgroundService(),
+        ),
         sheetsServiceProvider.overrideWithValue(_FakeSheetsService()),
         odometerVisionServiceProvider.overrideWithValue(
           _FakeOdometerVisionService(),
@@ -820,4 +862,55 @@ Future<void> expectArrivalOdometerFieldValue(
   await waitFor(tester, _arrivalOdoField);
   final tf = tester.widget<TextField>(_arrivalOdoField);
   expect(tf.controller?.text, value.toString());
+}
+
+// ─── Activity recognition & reminder backstop ──────────────────────────────
+
+/// Push a synthetic activity event into the stream the running
+/// [BackgroundService] is subscribed to. Accepts the lowercase string form
+/// used in scenarios (`'in_vehicle'`, `'on_foot'`, `'still'`, …).
+Future<void> pushActivity(WidgetTester tester, String activity) async {
+  final mapped = switch (activity) {
+    'in_vehicle' => DrivingActivity.inVehicle,
+    'on_bicycle' => DrivingActivity.onBicycle,
+    'on_foot' => DrivingActivity.onFoot,
+    'walking' => DrivingActivity.walking,
+    'running' => DrivingActivity.running,
+    'still' => DrivingActivity.still,
+    'tilting' => DrivingActivity.tilting,
+    'unknown' => DrivingActivity.unknown,
+    _ => throw ArgumentError('Unknown activity: $activity'),
+  };
+  _fakeActivity.push(mapped);
+  // Let the BackgroundService stream listener record the update before
+  // the scenario advances to the next step.
+  await tester.pump(const Duration(milliseconds: 50));
+}
+
+/// Pump real time forward past the test-scale reminder duration
+/// (see `_testReminderDuration`), giving the in-process Timer a chance to
+/// fire and the resulting notification call to land.
+Future<void> waitForReminderBackstop(WidgetTester tester) async {
+  await pumpFor(tester, 2000);
+}
+
+void expectArrivalReminderShownCount(int expected) {
+  expect(
+    _fakeNotification.arrivalReminderShownCount,
+    expected,
+    reason:
+        'Expected showArrivalReminder to be called $expected time(s), '
+        'but was called ${_fakeNotification.arrivalReminderShownCount} '
+        'time(s).',
+  );
+}
+
+void expectArrivalReminderShownAtLeastOnce() {
+  expect(
+    _fakeNotification.arrivalReminderShownCount,
+    greaterThanOrEqualTo(1),
+    reason:
+        'Expected the 45-min arrival reminder to fire at least once, '
+        'but showArrivalReminder was never called.',
+  );
 }
