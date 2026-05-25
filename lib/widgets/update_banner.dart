@@ -15,7 +15,10 @@ class UpdateBanner extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(updateCheckProvider);
-    final info = state.value;
+    // `state.value` re-throws on AsyncError (Riverpod 2 behaviour);
+    // `valueOrNull` collapses both loading and error to null so the
+    // banner stays hidden when the manifest is unreachable.
+    final info = state.valueOrNull;
     if (info == null) return const SizedBox.shrink();
 
     final theme = Theme.of(context);

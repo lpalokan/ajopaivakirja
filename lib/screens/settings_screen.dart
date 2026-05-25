@@ -874,6 +874,10 @@ class _UpdateCheckTile extends ConsumerWidget {
     Color? resultColor;
     Widget? trailing;
 
+    // Use `valueOrNull` (not `state.value`) — the latter re-throws when
+    // state is AsyncError, which would crash the Settings rebuild if
+    // the manifest is unreachable.
+    final info = state.valueOrNull;
     if (state.isLoading) {
       resultLine = 'Tarkistetaan...';
       trailing = const SizedBox(
@@ -884,9 +888,9 @@ class _UpdateCheckTile extends ConsumerWidget {
     } else if (state.hasError) {
       resultLine = 'Tarkistus epäonnistui';
       resultColor = theme.colorScheme.error;
-    } else if (state.value != null) {
-      final info = state.value!;
-      resultLine = 'Päivitys saatavilla: v${info.version} (build ${info.buildNumber})';
+    } else if (info != null) {
+      resultLine =
+          'Päivitys saatavilla: v${info.version} (build ${info.buildNumber})';
       trailing = FilledButton(
         onPressed: () => ref.read(updateCheckProvider.notifier).install(),
         child: const Text('Asenna'),
