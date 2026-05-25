@@ -70,3 +70,12 @@ Feature: Driving flow
     When I start the {'Töihin'} route at {1000} km
     And the reminder backstop elapses
     Then an arrival reminder has been shown
+
+  Scenario: Tapping still driving defers the reminder and the next tick suppresses while in_vehicle
+    When I start the {'Töihin'} route at {1000} km
+    And activity recognition reports {'on_foot'}
+    And the reminder backstop elapses
+    And the still driving notification action is tapped
+    And activity recognition reports {'in_vehicle'}
+    And the reminder backstop elapses
+    Then exactly {1} arrival reminder has been shown

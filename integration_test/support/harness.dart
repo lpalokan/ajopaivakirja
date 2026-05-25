@@ -132,13 +132,22 @@ _FakeLocationService _fakeLocation = _FakeLocationService();
 /// run.
 const Duration _testReminderDuration = Duration(milliseconds: 1500);
 
+/// Live reference to the real [BackgroundService] handed to the
+/// ProviderScope this scenario is running against. Held so step helpers
+/// (`tapStillDrivingAction`) can invoke methods on it directly, the same
+/// way the `_stillDrivingActionId` action button would via the
+/// NotificationService → BackgroundService callback chain.
+BackgroundService? _testBackgroundService;
+
 BackgroundService _buildTestBackgroundService() {
-  return BackgroundService(
+  final bg = BackgroundService(
     notificationService: _fakeNotification,
     locationService: _fakeLocation,
     activityService: _fakeActivity,
     reminderDuration: _testReminderDuration,
   );
+  _testBackgroundService = bg;
+  return bg;
 }
 
 class _FakeSheetsService extends SheetsService {
@@ -292,6 +301,11 @@ Finder _dialogField(String label) =>
 
 Future<void> launchApp(WidgetTester tester) async {
   _fakeFileOpener.openedPath = null;
+  // Dispose the previous scenario's BackgroundService so its in-process
+  // Timer (which, after the "still driving" test, can keep rescheduling
+  // itself while it observes in_vehicle) doesn't leak into this run.
+  _testBackgroundService?.dispose();
+  _testBackgroundService = null;
   _fakeLocation = _FakeLocationService();
   _fakeNotification = _FakeNotificationService();
   _fakeActivity = _FakeActivityRecognitionService();
@@ -913,4 +927,25 @@ void expectArrivalReminderShownAtLeastOnce() {
         'Expected the 45-min arrival reminder to fire at least once, '
         'but showArrivalReminder was never called.',
   );
+}
+
+/// Simulates the user tapping the "Ajan yhä" action button on the
+/// arrival-reminder notification. The real notification handler routes
+/// `_stillDrivingActionId` → `ns.onStillDriving` → `bg.onStillDriving` →
+/// `bg.onStillDrivingPressed`; calling the last directly produces the
+/// same observable effect (a fresh backstop is scheduled) without going
+/// through the platform notification plugin (which the fake
+/// NotificationService no-ops).
+Future<void> tapStillDrivingAction(WidgetTester tester) async {
+  final bg = _testBackgroundService;
+  expect(
+    bg,
+    isNotNull,
+    reason:
+        'No test BackgroundService is registered — was launchApp() called?',
+  );
+  await bg!.onStillDrivingPressed();
+  // Let the rescheduled Timer settle into the event loop before the next
+  // scenario step runs.
+  await tester.pump(const Duration(milliseconds: 50));
 }
