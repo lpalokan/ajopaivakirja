@@ -623,36 +623,45 @@ Future<void> startAdHoc(WidgetTester tester, String from, int odometer) async {
   // the "Käytä" button still reads ctrl.text on press, so the rest of
   // the flow is identical to a real keystroke.
   await tester.tap(locField.first);
-  await tester.pump(const Duration(milliseconds: 200));
-  final tfWidget = tester.widget<TextField>(locField.first);
-  final ctrl = tfWidget.controller;
+  // pumpAndSettle (via settle) instead of a fixed 200ms pump: wait until
+  // the dialog stops rebuilding before we read the controller. On the
+  // 3rd ad-hoc scenario in a run, the fixed pump occasionally landed
+  // mid-rebuild and a subsequent write was reverted to the dialog's
+  // initial value ('Koti' from AppSettings.homeLocation).
+  await settle(tester);
+  // Retry the controller write a few times. The first write can still
+  // race with RawAutocomplete's listener wiring on the first focus —
+  // the controller write itself succeeds, but a follow-up frame can
+  // revert ctrl.text back to its initial value as the options overlay
+  // settles. Re-reading the controller each iteration also protects
+  // against the TextField rebuilding with a fresh controller reference.
+  // The Käytä button reads ctrl.text.trim() on press, so the controller
+  // is the source of truth that matters for propagation downstream.
+  String observed = '';
+  for (var attempt = 0; attempt < 5; attempt++) {
+    final tfWidget = tester.widget<TextField>(locField.first);
+    final ctrl = tfWidget.controller;
+    expect(
+      ctrl,
+      isNotNull,
+      reason:
+          "Muuta sijainti dialog's TextField has no controller — the "
+          'LocationAutocomplete API changed and the harness needs updating.',
+    );
+    ctrl!.text = from;
+    ctrl.selection = TextSelection.collapsed(offset: from.length);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    observed = ctrl.text;
+    if (observed == from) break;
+  }
   expect(
-    ctrl,
-    isNotNull,
-    reason:
-        "Muuta sijainti dialog's TextField has no controller — the "
-        'LocationAutocomplete API changed and the harness needs updating.',
-  );
-  ctrl!.text = from;
-  ctrl.selection = TextSelection.collapsed(offset: from.length);
-  // One sync pump for the controller's notifyListeners → EditableText
-  // rebuild, plus a longer pump to let RawAutocomplete settle its
-  // options overlay before we tap "Käytä".
-  await tester.pump();
-  await tester.pump(const Duration(milliseconds: 300));
-
-  // Verify the controller — NOT find.text — that the write actually
-  // stuck. find.text against EditableText was flaking on cold-start
-  // first scenarios while the controller itself reliably had the value;
-  // the Käytä button reads ctrl.text.trim() on press anyway, so the
-  // controller is the source of truth that matters for propagation.
-  expect(
-    ctrl.text,
+    observed,
     from,
     reason:
-        "Direct controller write to 'Muuta sijainti' dialog field "
-        "did not stick: expected '$from' but controller has "
-        "'${ctrl.text}'. The TextField finder may be matching a stale "
+        "Direct controller write to 'Muuta sijainti' dialog field did "
+        "not stick after 5 retries: expected '$from' but controller "
+        "has '$observed'. The TextField finder may be matching a stale "
         'or different field.',
   );
 
