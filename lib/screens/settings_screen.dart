@@ -354,6 +354,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             // Tietoja + päivitysten tarkistus
             Card(
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   ListTile(
                     title: const Text('Sovelluksen versio'),

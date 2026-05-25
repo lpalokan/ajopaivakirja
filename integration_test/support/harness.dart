@@ -499,17 +499,42 @@ Future<void> enterSettingsField(
   // change listeners that matter for our forms (FormField validators,
   // save-button-state listeners) all fire from the controller, so this
   // is observationally equivalent to a real keystroke.
-  final tfWidget = tester.widget<TextFormField>(f.first);
-  final ctrl = tfWidget.controller;
-  if (ctrl != null) {
+  //
+  // We retry the write up to 5 times because Settings has several
+  // async-rebuild sources (ref.watch(settingsProvider).debugLogging,
+  // ref.watch(updateCheckProvider) inside the version card, FormField
+  // validators) that can fire a rebuild right after the controller
+  // write — and in some races the rebuild lands a stale value on
+  // `tfWidget.controller`. Re-reading the controller each iteration
+  // also protects against the TextFormField rebuilding with a fresh
+  // widget reference.
+  String observed = '';
+  for (var attempt = 0; attempt < 5; attempt++) {
+    final tfWidget = tester.widget<TextFormField>(f.first);
+    final ctrl = tfWidget.controller;
+    if (ctrl == null) {
+      // No controller — fall back to enterText so we still type
+      // *something* and the failure shows up at the assertion.
+      await tester.enterText(f, value);
+      await tester.pump(const Duration(milliseconds: 200));
+      observed = value;
+      break;
+    }
     ctrl.text = value;
     ctrl.selection = TextSelection.collapsed(offset: value.length);
-  } else {
-    // No controller on the widget — fall back to enterText so we still
-    // type *something* and the failure shows up at the assertion.
-    await tester.enterText(f, value);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    observed = ctrl.text;
+    if (observed == value) break;
   }
-  await tester.pump(const Duration(milliseconds: 200));
+  expect(
+    observed,
+    value,
+    reason:
+        "enterSettingsField('$value', '$label'): the controller still "
+        "reads '$observed' after 5 write retries — Settings form has a "
+        'rebuild source that reverts the write.',
+  );
 }
 
 Future<void> enterDialogField(
