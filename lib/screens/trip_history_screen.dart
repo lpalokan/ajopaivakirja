@@ -285,34 +285,42 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                if (leg.endTime != null)
-                  InkWell(
-                    onTap: () async {
-                      final t = await showTimePicker(
-                        context: ctx,
-                        initialTime: TimeOfDay.fromDateTime(pickedEndTime!),
-                      );
-                      if (t != null) {
-                        setDialogState(() {
-                          pickedEndTime = DateTime(
-                            pickedEndTime!.year,
-                            pickedEndTime!.month,
-                            pickedEndTime!.day,
-                            t.hour,
-                            t.minute,
-                          );
-                        });
-                      }
-                    },
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Päättymisaika',
-                        suffixIcon: Icon(Symbols.access_time),
-                      ),
-                      child: Text(timeFmt.format(pickedEndTime!)),
+                InkWell(
+                  onTap: () async {
+                    // When no end time exists, default to "now" — the user
+                    // is opening this dialog because the arrival was not
+                    // recorded, so the moment of confirmation is the closest
+                    // proxy available. Keeps existing values' date intact
+                    // when editing, so a trip that crossed midnight is not
+                    // pulled back onto the start date.
+                    final base = pickedEndTime ?? DateTime.now();
+                    final t = await showTimePicker(
+                      context: ctx,
+                      initialTime: TimeOfDay.fromDateTime(base),
+                    );
+                    if (t != null) {
+                      setDialogState(() {
+                        pickedEndTime = DateTime(
+                          base.year,
+                          base.month,
+                          base.day,
+                          t.hour,
+                          t.minute,
+                        );
+                      });
+                    }
+                  },
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: 'Päättymisaika',
+                      suffixIcon: Icon(Symbols.access_time),
+                    ),
+                    child: Text(
+                      pickedEndTime != null ? timeFmt.format(pickedEndTime!) : '—',
                     ),
                   ),
-                if (leg.endTime != null) const SizedBox(height: 12),
+                ),
+                const SizedBox(height: 12),
                 TextField(
                   controller: startLocCtrl,
                   decoration: const InputDecoration(labelText: 'Lähtöpaikka'),

@@ -13,6 +13,14 @@ pluginManagement {
     repositories {
         google()
         mavenCentral()
+        // Google-hosted Maven Central GCS mirror, kept as a fallback for the
+        // periodic 403 throttling that repo.maven.apache.org returns to CI
+        // IP ranges. Gradle tries each repo in order, so this only kicks in
+        // when the primary fails.
+        maven {
+            name = "MavenCentralGcsMirror"
+            url = uri("https://maven-central.storage.googleapis.com/maven2/")
+        }
         gradlePluginPortal()
     }
 }

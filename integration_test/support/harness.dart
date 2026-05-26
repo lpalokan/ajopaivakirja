@@ -23,6 +23,7 @@ import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:kilometrikorvaus/main.dart';
 import 'package:kilometrikorvaus/models/trip_leg.dart';
 import 'package:kilometrikorvaus/models/update_info.dart';
+import 'package:kilometrikorvaus/providers/trip_provider.dart';
 import 'package:kilometrikorvaus/providers/update_check_provider.dart';
 import 'package:kilometrikorvaus/services/activity_recognition_service.dart';
 import 'package:kilometrikorvaus/services/background_service.dart';
@@ -1056,6 +1057,32 @@ Future<void> triggerUpdateCheck(WidgetTester tester) async {
   final container = ProviderScope.containerOf(scopeContext, listen: false);
   await container.read(updateCheckProvider.notifier).check();
   await settle(tester);
+}
+
+/// Simulates the user tapping the "Olen perillä" action button on the
+/// driving notification. Mirrors the production path
+/// `_arrivedActionId` → `ns.onArrived` → `bg.onArrived`, by invoking
+/// `bg.onArrived` on the live test BackgroundService.
+Future<void> tapArrivalAction(WidgetTester tester) async {
+  final bg = _testBackgroundService;
+  expect(
+    bg,
+    isNotNull,
+    reason:
+        'No test BackgroundService is registered — was launchApp() called?',
+  );
+  bg!.onArrived?.call();
+  await settle(tester);
+}
+
+/// Drops TripNotifier's in-memory state to simulate the cold-launch race
+/// where `flushPendingLaunchAction` invokes the arrival callback before
+/// HomeScreen's startup `load()` has hydrated state.activeLeg from the DB.
+Future<void> clearInMemoryTripState(WidgetTester tester) async {
+  final scopeContext = tester.element(find.byType(KilometrikorvausApp));
+  final container = ProviderScope.containerOf(scopeContext, listen: false);
+  container.read(tripProvider.notifier).clearInMemoryStateForTesting();
+  await tester.pump();
 }
 
 /// Simulates the user tapping the "Ajan yhä" action button on the

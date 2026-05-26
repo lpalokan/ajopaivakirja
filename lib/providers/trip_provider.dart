@@ -2,6 +2,9 @@
 // callers; the lint doesn't account for StateNotifier-as-orchestrator usage.
 // ignore_for_file: use_build_context_synchronously
 
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -371,6 +374,35 @@ class TripNotifier extends StateNotifier<TripState> {
     detectionService.start();
   }
 
+  /// Implements the arrival flow for the notification "Olen perillä" action.
+  /// Falls back to a fresh DB read when the in-memory state is empty — this
+  /// happens on cold-launch from the notification action, where the
+  /// flushPendingLaunchAction call fires the callback before HomeScreen's
+  /// initial `load()` has populated state.activeLeg. Without the fallback
+  /// the action silently no-ops and the leg stays open as a draft with no
+  /// recorded end time.
+  Future<void> _handleArrival(DateTime arrivedAt) async {
+    var active = state.activeLeg;
+    if (active == null) {
+      active = await DatabaseService.getActiveLeg();
+      if (active == null) return;
+      if (!mounted) return;
+      state = state.copyWith(activeLeg: active);
+    }
+    final expectedOdometer = active.startOdometer + active.kmDriven.toInt();
+    await stopDriving(expectedOdometer, endTime: arrivedAt);
+    if (!mounted) return;
+    _resetTripState();
+  }
+
+  /// Wipes the in-memory TripState without touching the database, so tests
+  /// can simulate the cold-launch race where the notification action fires
+  /// before `load()` has hydrated state.activeLeg.
+  @visibleForTesting
+  void clearInMemoryStateForTesting() {
+    state = const TripState();
+  }
+
   // ── Service callback wiring ──────────────────────────────────────────
 
   void _wireCallbacks() {
@@ -379,14 +411,10 @@ class TripNotifier extends StateNotifier<TripState> {
     final ns = _ref.read(notificationServiceProvider);
 
     backgroundService.onArrived = () {
-      final active = state.activeLeg;
-      if (active != null) {
-        final expectedOdometer = active.startOdometer + active.kmDriven.toInt();
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          stopDriving(expectedOdometer, endTime: DateTime.now());
-          _resetTripState();
-        });
-      }
+      // Capture the tap moment up front so a slow DB hydration (cold-launch
+      // path) doesn't push the recorded arrival into the future.
+      final arrivedAt = DateTime.now();
+      unawaited(_handleArrival(arrivedAt));
     };
 
     backgroundService.onStillDriving = () {
