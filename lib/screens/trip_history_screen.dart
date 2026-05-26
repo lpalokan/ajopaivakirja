@@ -287,13 +287,13 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                 const SizedBox(height: 12),
                 InkWell(
                   onTap: () async {
-                    // When no end time exists yet, pre-fill the picker with
-                    // start + 30 min as a reasonable guess; the user can then
-                    // tweak it. Keeps existing values' date intact when
-                    // editing, so a trip that crossed midnight is not pulled
-                    // back onto the start date.
-                    final base = pickedEndTime ??
-                        pickedStartTime.add(const Duration(minutes: 30));
+                    // When no end time exists, default to "now" — the user
+                    // is opening this dialog because the arrival was not
+                    // recorded, so the moment of confirmation is the closest
+                    // proxy available. Keeps existing values' date intact
+                    // when editing, so a trip that crossed midnight is not
+                    // pulled back onto the start date.
+                    final base = pickedEndTime ?? DateTime.now();
                     final t = await showTimePicker(
                       context: ctx,
                       initialTime: TimeOfDay.fromDateTime(base),
