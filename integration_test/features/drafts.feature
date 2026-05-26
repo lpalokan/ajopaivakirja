@@ -19,6 +19,12 @@ Feature: Draft trips
     And I tap {'Täydennä'}
     Then I see {'Muokkaa merkintää'}
 
+  Scenario: Edit dialog exposes the end-time field even when it is missing
+    When a draft trip from {'Koti'} at {1000} km exists
+    And I open history
+    And I tap {'Täydennä'}
+    Then I see {'Päättymisaika'}
+
   Scenario: Day totals show ± luonnos suffix for dates with drafts
     When a draft trip from {'Koti'} at {1000} km exists
     And I open history
