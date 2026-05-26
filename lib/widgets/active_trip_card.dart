@@ -68,18 +68,11 @@ class _ActiveTripCardState extends ConsumerState<ActiveTripCard> {
   @override
   void initState() {
     super.initState();
-    if (_isAdHoc) _startTicker();
-  }
-
-  @override
-  void didUpdateWidget(covariant ActiveTripCard old) {
-    super.didUpdateWidget(old);
-    if (_isAdHoc) {
-      _startTicker();
-    } else {
-      _ticker?.cancel();
-      _ticker = null;
-    }
+    // Tick for every trip kind: ad-hoc shows duration as the primary
+    // metric, and route trips show it on the secondary "Lähtö … · …"
+    // line. Without the ticker, that secondary line freezes at the
+    // value computed during the first build.
+    _startTicker();
   }
 
   @override

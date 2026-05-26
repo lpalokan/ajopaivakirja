@@ -20,6 +20,10 @@ Feature: Driving flow
     When I start the {'Töihin'} route at {1000} km
     Then I see {'Ajo käynnissä'}
 
+  Scenario: Active route trip displays elapsed time alongside the start time
+    When I start the {'Töihin'} route at {1000} km
+    Then I see text containing {'0 h 00 min'}
+
   Scenario: A completed trip shows in today's summary
     When I start the {'Töihin'} route at {1000} km
     And I arrive at {1054} km
