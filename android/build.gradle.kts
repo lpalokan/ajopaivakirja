@@ -2,6 +2,14 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // Google-hosted Maven Central GCS mirror — fallback for the 403
+        // throttling that repo.maven.apache.org occasionally returns to CI
+        // IP ranges. Gradle tries each repo in order, so this only kicks in
+        // when the primary fails.
+        maven {
+            name = "MavenCentralGcsMirror"
+            url = uri("https://maven-central.storage.googleapis.com/maven2/")
+        }
     }
 }
 
