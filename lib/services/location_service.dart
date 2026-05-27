@@ -3,7 +3,6 @@ import 'dart:math';
 import 'package:geolocator/geolocator.dart';
 import '../models/app_settings.dart';
 import '../models/location_zone.dart';
-import 'notification_service.dart';
 import 'database_service.dart';
 
 class LocationService {
@@ -114,10 +113,17 @@ class LocationService {
     return zone?.name;
   }
 
+  /// Start watching GPS for arrival at [destinationName]. When the
+  /// proximity check sees us inside the home zone, [onNearHome] is invoked
+  /// with the target destination. The decision to actually show a
+  /// notification lives with the caller (typically [BackgroundService]),
+  /// which gates on whether a trip is still active — without that gate
+  /// the timer would re-post "Oletko perillä?" every 30 s long after the
+  /// trip ended.
   Future<void> startMonitoringDestination(
     String destinationName,
     AppSettings settings,
-    NotificationService notificationService,
+    Future<void> Function(String destination) onNearHome,
   ) async {
     if (_isMonitoring) await stopMonitoring();
 
@@ -179,7 +185,7 @@ class LocationService {
       }
 
       if (nearHome) {
-        await notificationService.showArrivalReminder(_targetLocation!);
+        await onNearHome(_targetLocation!);
       }
     });
   }
