@@ -92,12 +92,14 @@ Feature: Driving flow
 
   Scenario: Proximity-based reminder fires while a trip is active
     Given location permission is granted
+    And activity recognition reports {'in_vehicle'}
     When I start the {'Töihin'} route at {1000} km
     And the location service detects proximity to home
     Then an arrival reminder has been shown
 
   Scenario: Proximity-based reminder is suppressed after arrival is confirmed
     Given location permission is granted
+    And activity recognition reports {'in_vehicle'}
     When I start the {'Töihin'} route at {1000} km
     And the arrival notification action is tapped
     And the location service detects proximity to home
