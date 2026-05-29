@@ -30,6 +30,12 @@ Feature: Driving flow
     And the arrival notification action is tapped
     Then I do not see {'Ajo käynnissä'}
 
+  Scenario: Returning to the foreground re-shows the active-trip card when in-memory state was lost
+    When I start the {'Töihin'} route at {1000} km
+    And the in-memory trip state is cleared
+    And the app returns to the foreground
+    Then I see {'Ajo käynnissä'}
+
   Scenario: A completed trip shows in today's summary
     When I start the {'Töihin'} route at {1000} km
     And I arrive at {1054} km

@@ -1085,6 +1085,16 @@ Future<void> clearInMemoryTripState(WidgetTester tester) async {
   await tester.pump();
 }
 
+/// Simulates the app returning to the foreground (e.g. the user reopening it
+/// from the driving notification), driving the same `AppLifecycleState.resumed`
+/// path as production by invoking `TripNotifier.onAppForegrounded`.
+Future<void> appReturnsToForeground(WidgetTester tester) async {
+  final scopeContext = tester.element(find.byType(KilometrikorvausApp));
+  final container = ProviderScope.containerOf(scopeContext, listen: false);
+  await container.read(tripProvider.notifier).onAppForegrounded();
+  await settle(tester);
+}
+
 /// Simulates the user tapping the "Ajan yhä" action button on the
 /// arrival-reminder notification. The real notification handler routes
 /// `_stillDrivingActionId` → `ns.onStillDriving` → `bg.onStillDriving` →

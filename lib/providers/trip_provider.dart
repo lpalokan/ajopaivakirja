@@ -43,8 +43,6 @@ class TripState {
 class TripNotifier extends StateNotifier<TripState> {
   final Ref _ref;
   Map<int, double>? _kmRates;
-  DateTime? _backgroundEnterTime;
-  static const _idleTimeoutMinutes = 30;
 
   bool _callbacksWired = false;
 
@@ -521,45 +519,31 @@ class TripNotifier extends StateNotifier<TripState> {
     await load();
   }
 
-  /// Called when the app is backgrounded. Records the time so we can later
-  /// determine whether the idle timeout (§5) has elapsed.
+  /// Called when the app is backgrounded. Logged for diagnostics only — the
+  /// active trip lives in the database and is re-synced on the next
+  /// foreground.
   void onAppBackgrounded() {
-    if (state.activeLeg != null) {
-      _backgroundEnterTime = DateTime.now();
-      LogService().info(
-        'Trip: app backgrounded with active leg ${state.activeLeg!.id}',
-      );
+    final active = state.activeLeg;
+    if (active != null) {
+      LogService().info('Trip: app backgrounded with active leg ${active.id}');
     }
   }
 
   /// Called when the app returns to the foreground.
-  /// If the active leg was backgrounded for ≥30 min, mark it as a draft.
-  /// If no trip is active, restarts auto-detection.
+  ///
+  /// Re-syncs from the database so the active-trip card always reflects the
+  /// persisted state. The app can be resumed — for example when the user
+  /// reopens it from the driving notification — without HomeScreen.initState,
+  /// and therefore the startup [load], running again. That leaves the
+  /// in-memory [TripState.activeLeg] stale or empty even though the leg is
+  /// still open in the DB, which is why the blue active-trip card could go
+  /// missing until a full cold restart. The database is the source of truth:
+  /// an open leg dated today is still an active trip, so reloading restores
+  /// the card. If no trip is active, restart auto-detection.
   Future<void> onAppForegrounded() async {
-    final active = state.activeLeg;
-    final enteredAt = _backgroundEnterTime;
-    _backgroundEnterTime = null;
+    await load();
+    if (!mounted) return;
 
-    if (active != null && enteredAt != null) {
-      final elapsed = DateTime.now().difference(enteredAt);
-      if (elapsed.inMinutes >= _idleTimeoutMinutes) {
-        LogService().info(
-          'Trip: idle timeout elapsed (${elapsed.inMinutes} min) — '
-          'marking leg ${active.id} as draft',
-        );
-        if (active.id != null) {
-          await DatabaseService.markLegUnsynced(active.id!);
-        }
-        final todayLegs = await DatabaseService.getLegsForDate(_today);
-        if (!mounted) return;
-        state = state.copyWith(activeLeg: null, todayLegs: todayLegs);
-        LogService().info(
-          'Trip: active leg ${active.id} converted to draft after idle timeout',
-        );
-      }
-    }
-
-    // Restart detection if no trip is active.
     if (!isDriving) {
       _ref.read(tripDetectionServiceProvider).start();
     }
