@@ -141,24 +141,50 @@ class _FakeLocationService extends LocationService {
   final StreamController<Position> _fakeController =
       StreamController<Position>.broadcast();
 
+  // Captured during `startMonitoringDestination`. Retained even after
+  // `stopMonitoring` so scenarios can simulate the real-world race where
+  // the proximity Timer in the live LocationService fires AFTER the trip
+  // has ended (which is the bug behind the "notification keeps asking
+  // me Olenko perillä" report). The arrival-reminder gate now lives in
+  // BackgroundService and must short-circuit even when the proximity
+  // callback fires late.
+  Future<void> Function(String destination)? _onNearHome;
+  String? _currentTarget;
+  bool permissionGranted = false;
+
   @override
   Stream<Position> get positionStream => _fakeController.stream;
 
   @override
-  Future<bool> hasPermission() async => false;
+  Future<bool> hasPermission() async => permissionGranted;
   @override
-  Future<bool> hasPermissionGranted() async => false;
+  Future<bool> hasPermissionGranted() async => permissionGranted;
+  @override
+  Future<Position?> getCurrentPosition() async => null;
   @override
   Future<void> startMonitoringDestination(
-    String d,
+    String destinationName,
     settings,
-    NotificationService n,
-  ) async {}
+    Future<void> Function(String destination) onNearHome,
+  ) async {
+    _onNearHome = onNearHome;
+    _currentTarget = destinationName;
+  }
+
   @override
-  Future<void> stopMonitoring() async {}
+  Future<void> stopMonitoring() async {
+    // Deliberately do NOT clear `_onNearHome` / `_currentTarget` — see
+    // the field comment above.
+  }
 
   void pushFakePosition(Position p) {
     if (!_fakeController.isClosed) _fakeController.add(p);
+  }
+
+  Future<void> triggerNearHome() async {
+    final cb = _onNearHome;
+    final t = _currentTarget;
+    if (cb != null && t != null) await cb(t);
   }
 }
 
@@ -990,6 +1016,23 @@ Future<void> pushActivity(WidgetTester tester, String activity) async {
 /// fire and the resulting notification call to land.
 Future<void> waitForReminderBackstop(WidgetTester tester) async {
   await pumpFor(tester, 2000);
+}
+
+/// Simulate the live [LocationService]'s 30-second proximity Timer firing
+/// "you're near the home zone". Invokes whatever callback BackgroundService
+/// registered with `startMonitoringDestination`, exercising the trip-active
+/// gate that prevents post-arrival reminders.
+Future<void> simulateNearHomeProximity(WidgetTester tester) async {
+  await _fakeLocation.triggerNearHome();
+  await tester.pump(const Duration(milliseconds: 50));
+}
+
+/// Flip the fake [LocationService] into "permission granted" so
+/// `BackgroundService.onDrivingStarted` actually wires up the proximity
+/// callback. Default for all scenarios is `false` — opt in only where
+/// the scenario depends on the proximity path running.
+void grantLocationPermission() {
+  _fakeLocation.permissionGranted = true;
 }
 
 void expectArrivalReminderShownCount(int expected) {

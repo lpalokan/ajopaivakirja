@@ -56,7 +56,7 @@ class BackgroundService {
       await _locationService.startMonitoringDestination(
         leg.endLocation ?? leg.routeDescription ?? 'määränpää',
         _settings,
-        _notificationService,
+        _onProximityNearHome,
       );
     }
 
@@ -90,6 +90,16 @@ class BackgroundService {
     _notificationService.scheduleTimeBasedReminder(destination, triggerTime);
 
     _reminderTimer = Timer(_reminderDuration, () => _onReminderTick(leg));
+  }
+
+  /// Callback the [LocationService]'s proximity Timer invokes when the
+  /// user is inside the home zone. Gated on `_activeLeg != null` so a
+  /// proximity tick that fires AFTER the trip ended (race between
+  /// `stopMonitoring` and the 30-second tick, or a leaked Timer from a
+  /// previous session) does not re-post "Oletko perillä?" indefinitely.
+  Future<void> _onProximityNearHome(String destination) async {
+    if (_activeLeg == null) return;
+    await _notificationService.showArrivalReminder(destination);
   }
 
   Future<void> _onReminderTick(TripLeg leg) async {
