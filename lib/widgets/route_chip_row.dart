@@ -2,66 +2,52 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/material_symbols_icons.dart';
 import '../models/route.dart' as model;
 
-/// A horizontal chip row showing the user's most-used routes as shortcuts.
+/// A full-width row of the user's most-recent routes as large shortcut buttons.
 ///
-/// Placed just above the StartCard. Tapping a chip pre-fills the start
-/// location + purpose on the parent's StartCard.
+/// Placed just above the StartCard. Tapping a button pre-fills the start
+/// location + purpose on the parent's StartCard. The home view passes the two
+/// most-recent routes: one route fills the full width, two split it evenly.
 class RouteChipRow extends StatelessWidget {
   final List<model.Route> routes;
   final int? selectedRouteId;
   final ValueChanged<model.Route> onRouteSelected;
-  final VoidCallback onShowAll;
 
   const RouteChipRow({
     super.key,
     required this.routes,
     this.selectedRouteId,
     required this.onRouteSelected,
-    required this.onShowAll,
   });
 
   @override
   Widget build(BuildContext context) {
     if (routes.isEmpty) return const SizedBox.shrink();
 
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return SizedBox(
-      height: 72,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: routes.length + 1, // +1 for "Kaikki reitit" link
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          if (index < routes.length) {
-            final route = routes[index];
-            return RouteChip(
-              route: route,
-              isSelected: route.id == selectedRouteId,
-              onTap: () => onRouteSelected(route),
-            );
-          }
-          // "Kaikki reitit (N)" link
-          return Center(
-            child: TextButton(
-              onPressed: onShowAll,
-              child: Text(
-                'Kaikki reitit (${routes.length})',
-                style: TextStyle(color: colorScheme.primary),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          for (var i = 0; i < routes.length; i++) ...[
+            if (i > 0) const SizedBox(width: 8),
+            Expanded(
+              child: RouteChip(
+                route: routes[i],
+                isSelected: routes[i].id == selectedRouteId,
+                onTap: () => onRouteSelected(routes[i]),
               ),
             ),
-          );
-        },
+          ],
+        ],
       ),
     );
   }
 }
 
-/// Individual route chip: 120×64, name + meta line.
+/// Individual route button: fills its share of the row, ~92px tall, with the
+/// name + meta line.
 ///
 /// Selection cues are deliberately redundant: filled background, 2px primary
-/// border, and a trailing check icon. All unselected chips share the same
+/// border, and a trailing check icon. All unselected buttons share the same
 /// neutral surface so position never reads as "highlighted".
 class RouteChip extends StatelessWidget {
   final model.Route route;
@@ -87,9 +73,7 @@ class RouteChip extends StatelessWidget {
       shape: RoundedRectangleBorder(
         borderRadius: radius,
         side: BorderSide(
-          color: isSelected
-              ? colorScheme.primary
-              : colorScheme.outlineVariant,
+          color: isSelected ? colorScheme.primary : colorScheme.outlineVariant,
           width: isSelected ? 2 : 1,
         ),
       ),
@@ -97,8 +81,8 @@ class RouteChip extends StatelessWidget {
         onTap: onTap,
         borderRadius: radius,
         child: Container(
-          width: 120,
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          height: 92,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.center,
@@ -108,7 +92,7 @@ class RouteChip extends StatelessWidget {
                   Expanded(
                     child: Text(
                       route.name,
-                      style: Theme.of(context).textTheme.titleSmall,
+                      style: Theme.of(context).textTheme.titleMedium,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -116,16 +100,16 @@ class RouteChip extends StatelessWidget {
                   if (isSelected)
                     Icon(
                       Symbols.check_circle,
-                      size: 16,
+                      size: 20,
                       color: colorScheme.primary,
                     ),
                 ],
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 4),
               Text(
                 '${route.startLocation} → ${route.endLocation} · ${route.distanceKm.toStringAsFixed(1)} km',
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: 12,
                   color: colorScheme.onSurfaceVariant,
                 ),
                 maxLines: 2,

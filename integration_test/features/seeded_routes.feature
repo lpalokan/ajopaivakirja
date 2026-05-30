@@ -10,8 +10,8 @@ Feature: Seeded debug routes
     Then I see {'Töihin'}
     And I see {'Kotiin'}
 
-  Scenario: All-routes button shows the count
-    Then I see text containing {'Kaikki reitit (2)'}
+  Scenario: The all-routes link is gone from home
+    Then I do not see {'Kaikki reitit (2)'}
 
   Scenario: Recent routes show their distance
     Then I see text containing {'54.0 km'}

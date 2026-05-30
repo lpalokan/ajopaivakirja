@@ -50,3 +50,7 @@ app.*.map.json
 
 # Generated integration test artifacts
 test-results/
+
+# Local Claude Code session state (personal, not shared)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
