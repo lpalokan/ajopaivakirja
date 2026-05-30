@@ -13,6 +13,7 @@ import '../services/database_service.dart';
 import '../services/trip_calculator.dart';
 import '../services/pdf_report_service.dart';
 import '../services/csv_export_service.dart';
+import '../services/trip_history_view.dart';
 import '../models/expense.dart';
 import '../widgets/status_chip_row.dart';
 import '../widgets/main_bottom_nav.dart';
@@ -41,12 +42,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     _load();
   }
 
-  bool get _hasUnsynced {
-    for (final legs in _legsByDate.values) {
-      if (legs.any((l) => !l.synced)) return true;
-    }
-    return false;
-  }
+  bool get _hasUnsynced => TripHistoryView.hasUnsynced(_legsByDate);
 
   Future<void> _load() async {
     if (!mounted) return;
@@ -67,34 +63,11 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     final draftCount = await DatabaseService.getDraftCount();
 
     // Find the most recent month where all legs are completed and synced.
-    String? completeMonth;
-    if (draftCount == 0) {
-      final monthNames = {
-        1: 'Tammikuu',
-        2: 'Helmikuu',
-        3: 'Maaliskuu',
-        4: 'Huhtikuu',
-        5: 'Toukokuu',
-        6: 'Kesäkuu',
-        7: 'Heinäkuu',
-        8: 'Elokuu',
-        9: 'Syyskuu',
-        10: 'Lokakuu',
-        11: 'Marraskuu',
-        12: 'Joulukuu',
-      };
-      // Check months in reverse chronological order from dates list
-      for (final date in dates) {
-        final legs = legsByDate[date]!;
-        if (legs.isEmpty) continue;
-        final allComplete = legs.every((l) => l.isCompleted && l.synced);
-        if (allComplete) {
-          final month = int.parse(date.substring(5, 7));
-          completeMonth = monthNames[month];
-          break;
-        }
-      }
-    }
+    final completeMonth = TripHistoryView.completeMonthName(
+      dates: dates,
+      legsByDate: legsByDate,
+      draftCount: draftCount,
+    );
 
     if (mounted) {
       setState(() {
