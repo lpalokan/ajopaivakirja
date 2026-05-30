@@ -7,6 +7,7 @@ import '../providers/route_provider.dart';
 import '../providers/trip_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/database_service.dart';
+import '../services/decimal_input.dart';
 import '../widgets/odometer_dialog.dart';
 import '../widgets/active_trip_card.dart';
 import '../widgets/location_autocomplete.dart';
@@ -208,7 +209,7 @@ class _RouteManagementScreenState extends ConsumerState<RouteManagementScreen> {
 
     if (result == true) {
       final now = DateTime.now();
-      final dist = double.tryParse(distController.text.replaceAll(',', '.'));
+      final dist = parseDecimal(distController.text);
 
       if (route != null) {
         await ref

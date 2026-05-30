@@ -190,7 +190,7 @@ class TripNotifier extends StateNotifier<TripState> {
     if (leg.isReturnHome) {
       final dayLegs = await DatabaseService.getLegsForDate(_today);
       LogService().info('Trip: finalizing day with ${dayLegs.length} legs');
-      final updatedDayLegs = await _calculator.finalizeDay(dayLegs);
+      final updatedDayLegs = await _calculator.finalizeAndPersistDay(dayLegs);
       _syncToSheets(updatedDayLegs);
     }
 
@@ -514,7 +514,7 @@ class TripNotifier extends StateNotifier<TripState> {
   Future<void> finalizeDay() async {
     final legs = await DatabaseService.getLegsForDate(_today);
     if (legs.isNotEmpty) {
-      await _calculator.finalizeDay(legs);
+      await _calculator.finalizeAndPersistDay(legs);
     }
     await load();
   }

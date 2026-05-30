@@ -125,19 +125,28 @@ APP_ID="fi.lpalokan.kilometrikorvaus"
 GRANT_PID=$!
 
 # Screen-record the whole run in ≤170s chunks (screenrecord caps at 180s).
+# Set ITEST_SKIP_VIDEO=1 to skip recording: on a loaded machine the continuous
+# screenrecord adds enough load to slow a long run to a crawl (and has been
+# seen to wedge the emulator past ~40 min). The report .txt is identical
+# either way — only the failure-case video artifact is dropped.
 REC_DIR="$REPORT_DIR/video"
-mkdir -p "$REC_DIR"
-RECORD_FLAG="/tmp/ajopaivakirja-recording.on"
-: > "$RECORD_FLAG"
-(
-  i=0
-  while [ -f "$RECORD_FLAG" ]; do
-    adb shell screenrecord --time-limit 170 --bit-rate 1500000 \
-      --size 540x1140 "/sdcard/ajo-rec-$i.mp4" >/dev/null 2>&1 || true
-    i=$((i + 1))
-  done
-) &
-REC_PID=$!
+REC_PID=""
+if [ -z "${ITEST_SKIP_VIDEO:-}" ]; then
+  mkdir -p "$REC_DIR"
+  RECORD_FLAG="/tmp/ajopaivakirja-recording.on"
+  : > "$RECORD_FLAG"
+  (
+    i=0
+    while [ -f "$RECORD_FLAG" ]; do
+      adb shell screenrecord --time-limit 170 --bit-rate 1500000 \
+        --size 540x1140 "/sdcard/ajo-rec-$i.mp4" >/dev/null 2>&1 || true
+      i=$((i + 1))
+    done
+  ) &
+  REC_PID=$!
+else
+  info "Skipping screen recording (ITEST_SKIP_VIDEO set)"
+fi
 
 set -o pipefail
 flutter test integration_test/all_features_test.dart --reporter expanded 2>&1 \
@@ -146,15 +155,17 @@ RESULT=${PIPESTATUS[0]}
 kill "$GRANT_PID" 2>/dev/null || true
 
 # Stop recording, finalize the current segment, pull everything.
-rm -f "$RECORD_FLAG"
-adb shell pkill -INT screenrecord >/dev/null 2>&1 || true
-sleep 3
-kill "$REC_PID" 2>/dev/null || true
-for seg in $(adb shell ls /sdcard/ 2>/dev/null | tr -d '\r' \
-    | grep -E '^ajo-rec-[0-9]+\.mp4$' || true); do
-  adb pull "/sdcard/$seg" "$REC_DIR/$seg" >/dev/null 2>&1 || true
-  adb shell rm "/sdcard/$seg" >/dev/null 2>&1 || true
-done
+if [ -n "$REC_PID" ]; then
+  rm -f "$RECORD_FLAG"
+  adb shell pkill -INT screenrecord >/dev/null 2>&1 || true
+  sleep 3
+  kill "$REC_PID" 2>/dev/null || true
+  for seg in $(adb shell ls /sdcard/ 2>/dev/null | tr -d '\r' \
+      | grep -E '^ajo-rec-[0-9]+\.mp4$' || true); do
+    adb pull "/sdcard/$seg" "$REC_DIR/$seg" >/dev/null 2>&1 || true
+    adb shell rm "/sdcard/$seg" >/dev/null 2>&1 || true
+  done
+fi
 adb exec-out screencap -p > "$REPORT_DIR/last-screen.png" 2>/dev/null || true
 
 {

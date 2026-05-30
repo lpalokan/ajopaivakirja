@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/expense.dart';
+import '../services/decimal_input.dart';
 
 /// Dialog to add or edit an expense for a trip leg.
 class ExpenseDialog extends StatefulWidget {
@@ -85,9 +86,7 @@ class _ExpenseDialogState extends State<ExpenseDialog> {
         ),
         FilledButton(
           onPressed: () {
-            final amount = double.tryParse(
-              _amountController.text.trim().replaceAll(',', '.'),
-            );
+            final amount = parseDecimal(_amountController.text);
             if (amount == null || amount <= 0) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Anna kelvollinen summa')),

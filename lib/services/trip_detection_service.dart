@@ -3,26 +3,26 @@ import 'package:geolocator/geolocator.dart';
 import '../models/route.dart' as model;
 import '../models/app_settings.dart';
 import 'database_service.dart';
+import 'driving_detector.dart';
 import 'location_service.dart';
 import 'notification_service.dart';
 import 'log_service.dart';
 
-enum DetectionState { idle, monitoring, driving, arrived }
+export 'driving_detector.dart' show DetectionState;
 
+/// Platform adapter around the pure [DrivingDetector]: wires the Geolocator
+/// position stream and a periodic timer to the state machine, and turns the
+/// machine's transition events into notifications. All detection *logic* lives
+/// in [DrivingDetector]; this class only does the IO.
 class TripDetectionService {
   final LocationService _locationService;
   final NotificationService _notificationService;
+  final DrivingDetector _detector;
 
   StreamSubscription<Position>? _positionStream;
   Timer? _speedCheckTimer;
-  Timer? _stopCheckTimer;
 
-  DetectionState _state = DetectionState.idle;
-  DetectionState get state => _state;
-
-  int _highSpeedSeconds = 0;
-  int _lowSpeedSeconds = 0;
-  bool _wasDriving = false;
+  DetectionState get state => _detector.state;
 
   void Function()? onStartTripRequested;
   void Function()? onEndTripRequested;
@@ -30,8 +30,10 @@ class TripDetectionService {
   TripDetectionService({
     required LocationService locationService,
     required NotificationService notificationService,
+    DetectionConfig config = const DetectionConfig(),
   })  : _locationService = locationService,
-        _notificationService = notificationService;
+        _notificationService = notificationService,
+        _detector = DrivingDetector(config: config);
 
   /// Update app settings (reserved for future configuration).
   void updateSettings(AppSettings settings) {
@@ -39,7 +41,7 @@ class TripDetectionService {
   }
 
   Future<void> start() async {
-    if (_state != DetectionState.idle) return;
+    if (_detector.state != DetectionState.idle) return;
 
     final hasPerm = await _locationService.hasPermissionGranted();
     if (!hasPerm) {
@@ -47,10 +49,7 @@ class TripDetectionService {
       return;
     }
 
-    _state = DetectionState.monitoring;
-    _highSpeedSeconds = 0;
-    _lowSpeedSeconds = 0;
-    _wasDriving = false;
+    _detector.startMonitoring();
 
     // No timeLimit: a stationary device produces no updates, and a
     // timeLimit makes the stream throw TimeoutException every time that
@@ -62,7 +61,7 @@ class TripDetectionService {
         distanceFilter: 50,
       ),
     ).listen(
-      _onPosition,
+      (p) => _detector.onSample(p.speed),
       onError: (Object e) {
         LogService().info('TripDetection: position stream error: $e');
         stop();
@@ -70,82 +69,41 @@ class TripDetectionService {
       cancelOnError: true,
     );
 
-    _speedCheckTimer = Timer.periodic(const Duration(seconds: 10), (_) {
-      _checkDrivingState();
-    });
+    _speedCheckTimer = Timer.periodic(
+      Duration(seconds: _detector.config.sampleIntervalSeconds),
+      (_) => _onTick(),
+    );
 
     LogService().info('TripDetection: started monitoring');
   }
 
   Future<void> stop() async {
-    _state = DetectionState.idle;
+    _detector.reset();
     await _positionStream?.cancel();
     _positionStream = null;
     _speedCheckTimer?.cancel();
     _speedCheckTimer = null;
-    _stopCheckTimer?.cancel();
-    _stopCheckTimer = null;
-    _highSpeedSeconds = 0;
-    _lowSpeedSeconds = 0;
     LogService().info('TripDetection: stopped');
   }
 
   void resetAfterTripStart() {
-    _state = DetectionState.driving;
-    _highSpeedSeconds = 0;
-    _lowSpeedSeconds = 0;
-    _stopCheckTimer?.cancel();
-    _stopCheckTimer = null;
+    _detector.markTripStarted();
     LogService().info('TripDetection: trip started, now monitoring arrival');
   }
 
-  void _onPosition(Position position) {
-    if (position.speed >= 5.0) {
-      _highSpeedSeconds += 10; // ~10s between updates with 30s timeLimit
-      _lowSpeedSeconds = 0;
-    } else if (position.speed < 1.0 && _state == DetectionState.driving) {
-      _lowSpeedSeconds += 10;
-    } else {
-      // Between 1-5 m/s: reset low speed counter but don't count high
-      _lowSpeedSeconds = 0;
-    }
-  }
-
-  void _checkDrivingState() {
-    switch (_state) {
-      case DetectionState.monitoring:
-        if (_highSpeedSeconds >= 30) {
-          _onDrivingDetected();
-        }
+  void _onTick() {
+    switch (_detector.tick()) {
+      case DetectionEvent.drivingDetected:
+        LogService().info('TripDetection: driving detected');
+        _notificationService.showTripDetectionNotification();
         break;
-
-      case DetectionState.driving:
-        if (_lowSpeedSeconds >= 60 && _wasDriving) {
-          _onArrivedDetected();
-        }
+      case DetectionEvent.arrivedDetected:
+        LogService().info('TripDetection: arrival detected');
+        _notificationService.showTripEndDetectionNotification();
         break;
-
-      default:
+      case null:
         break;
     }
-  }
-
-  void _onDrivingDetected() {
-    _state = DetectionState.driving;
-    _wasDriving = true;
-    LogService().info('TripDetection: driving detected');
-
-    _notificationService.showTripDetectionNotification();
-  }
-
-  void _onArrivedDetected() {
-    _state = DetectionState.arrived;
-    _wasDriving = false;
-    _highSpeedSeconds = 0;
-    _lowSpeedSeconds = 0;
-    LogService().info('TripDetection: arrival detected');
-
-    _notificationService.showTripEndDetectionNotification();
   }
 
   /// Auto-detect the best route for the current trip based on start/end locations.

@@ -127,6 +127,34 @@ flutter test
 attached, runs `build_runner`, runs the suite, and writes
 `reports/integration-report-<timestamp>.txt`.
 
+### Fast iteration (run only what failed)
+
+`integration-report.sh` is the canonical, full report — it records video
+and publishes artifacts, so it always runs all scenarios. For the inner
+loop, use `itest.sh` instead: it installs the app **once** (same single
+install as the aggregator) but lets you run just the scenarios you care
+about, and remembers which ones failed.
+
+```bash
+./scripts/itest.sh                        # every scenario, no video/publish
+./scripts/itest.sh "Two legs accumulate"  # scenarios containing this text
+./scripts/itest.sh -k '2026|grand total'  # scenarios matching this regex
+./scripts/itest.sh -f driving             # only the driving.feature target
+./scripts/itest.sh --failed               # ONLY the scenarios that failed
+                                          # on the previous run
+./scripts/itest.sh --no-gen "..."         # skip build_runner (no .feature
+                                          # change since the last run)
+```
+
+It assumes a device/emulator is already attached (it won't boot one —
+launch with `flutter emulators --launch test_pixel`, or use
+`integration-report.sh`). After every run it writes the failing scenario
+names to `reports/last-failures.txt`; `--failed` turns those into a
+`flutter test --name` regex so a single broken case no longer costs a
+full 78-scenario run. Filtering is just `flutter test`'s own
+`--plain-name` / `--name`, so the names match what the expanded reporter
+prints (`<Feature> <Scenario>`).
+
 ## Troubleshooting
 
 - **`build_runner` fails / wrong step name:** read its output; rename the

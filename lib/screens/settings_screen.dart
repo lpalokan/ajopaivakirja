@@ -10,6 +10,7 @@ import '../providers/settings_provider.dart';
 import '../providers/update_check_provider.dart';
 import '../app_version.dart';
 import '../services/database_service.dart';
+import '../services/decimal_input.dart';
 import '../services/log_service.dart';
 import '../models/location_zone.dart';
 import '../widgets/main_bottom_nav.dart';
@@ -521,7 +522,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       );
 
       if (ok == true && nameCtrl.text.trim().isNotEmpty) {
-        final radius = double.tryParse(radiusCtrl.text.trim()) ?? 200;
+        final radius = parseDecimalOr(radiusCtrl.text, 200);
         await DatabaseService.insertLocationZone(
           LocationZone(
             name: nameCtrl.text.trim(),
@@ -623,7 +624,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     if (ok == true) {
       final year = int.tryParse(yearCtrl.text.trim());
-      final rate = double.tryParse(rateCtrl.text.trim().replaceAll(',', '.'));
+      final rate = parseDecimal(rateCtrl.text);
       if (year != null && rate != null) {
         await DatabaseService.upsertKmRate(year, rate);
         await _loadKmRates();
@@ -663,7 +664,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
 
     if (ok == true) {
-      final rate = double.tryParse(rateCtrl.text.trim().replaceAll(',', '.'));
+      final rate = parseDecimal(rateCtrl.text);
       if (rate != null) {
         await DatabaseService.upsertKmRate(year, rate);
         await _loadKmRates();
@@ -767,7 +768,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       });
       // Sync current year rate to km_rates table
       final currentYear = DateTime.now().year;
-      final parsedRate = double.tryParse(kmRateStr) ?? 0.55;
+      final parsedRate = parseDecimalOr(_kmRateController.text, 0.55);
       await notifier.saveKmRate(currentYear, parsedRate);
 
       if (mounted) {

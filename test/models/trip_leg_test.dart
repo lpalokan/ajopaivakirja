@@ -74,4 +74,46 @@ void main() {
   test('totalAllowance is km plus daily allowance', () {
     expect(sample().totalAllowance, 30.78 + 24.0);
   });
+
+  group('lifecycle predicates', () {
+    TripLeg withEnd({int? endOdometer, String? endLocation}) => TripLeg(
+          date: '2026-05-16',
+          legOrder: 1,
+          startTime: DateTime(2026, 5, 16, 8, 0),
+          startOdometer: 1000,
+          startLocation: 'Koti',
+          driver: 'Lapa',
+          endOdometer: endOdometer,
+          endLocation: endLocation,
+        );
+
+    test('completed when both end odometer and end location are present', () {
+      final l = withEnd(endOdometer: 1100, endLocation: 'Työ');
+      expect(l.isCompleted, true);
+      expect(l.isDraft, false);
+    });
+
+    test('draft when end odometer is missing', () {
+      final l = withEnd(endLocation: 'Työ');
+      expect(l.isCompleted, false);
+      expect(l.isDraft, true);
+    });
+
+    test('draft when end location is empty', () {
+      final l = withEnd(endOdometer: 1100, endLocation: '');
+      expect(l.isCompleted, false);
+      expect(l.isDraft, true);
+    });
+
+    test('isReturnHomeTo matches home trimmed and case-insensitively', () {
+      final l = withEnd(endOdometer: 1100, endLocation: '  koti ');
+      expect(l.isReturnHomeTo('Koti'), true);
+      expect(l.isReturnHomeTo('  KOTI'), true);
+    });
+
+    test('isReturnHomeTo is false for a non-matching or null end location', () {
+      expect(withEnd(endLocation: 'Työ').isReturnHomeTo('Koti'), false);
+      expect(withEnd(endLocation: null).isReturnHomeTo('Koti'), false);
+    });
+  });
 }

@@ -1,7 +1,7 @@
 Feature: App update check
   As a sideloaded user
   I want the app to tell me when a newer build is available
-  And to install it from inside the app
+  so that I can install it from inside the app
 
   Background:
     Given a clean database
