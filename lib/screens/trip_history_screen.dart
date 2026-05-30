@@ -439,7 +439,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     // Recalculate daily allowance for both old and new dates
     final oldDateLegs = await DatabaseService.getLegsForDate(leg.date);
     if (oldDateLegs.isNotEmpty) {
-      await calc.finalizeDay(oldDateLegs);
+      await calc.finalizeAndPersistDay(oldDateLegs);
       for (final l in oldDateLegs) {
         if (l.id != null) await DatabaseService.markLegUnsynced(l.id!);
       }
@@ -448,7 +448,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     if (newDate != leg.date) {
       final newDateLegs = await DatabaseService.getLegsForDate(newDate);
       if (newDateLegs.isNotEmpty) {
-        await calc.finalizeDay(newDateLegs);
+        await calc.finalizeAndPersistDay(newDateLegs);
         for (final l in newDateLegs) {
           if (l.id != null) await DatabaseService.markLegUnsynced(l.id!);
         }

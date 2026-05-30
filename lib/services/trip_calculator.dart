@@ -104,9 +104,12 @@ class TripCalculator {
     return updated;
   }
 
-  /// Finalize a day's legs: calculate all values, apply daily allowance to
-  /// the last leg (returning home), and update working times.
-  Future<List<TripLeg>> finalizeDay(List<TripLeg> legs) async {
+  /// Finalize a day's legs (pure): calculate all per-leg values, apply the
+  /// daily allowance to the last leg (returning home), and update working
+  /// times. Returns the updated legs without persisting them — callers own
+  /// the writes (see [finalizeAndPersistDay]). This is the single source of
+  /// the finalization rules and is exercised directly by unit tests.
+  List<TripLeg> finalizeDayLegs(List<TripLeg> legs) {
     if (legs.isEmpty) return legs;
 
     // Calculate per-leg values
@@ -147,11 +150,17 @@ class TripCalculator {
       );
     }
 
-    // Save updated legs to database
+    return updated;
+  }
+
+  /// Finalize a day's legs and persist them. Thin IO wrapper over the pure
+  /// [finalizeDayLegs]; the computation lives there. The name makes the
+  /// database write explicit at the call site.
+  Future<List<TripLeg>> finalizeAndPersistDay(List<TripLeg> legs) async {
+    final updated = finalizeDayLegs(legs);
     for (final leg in updated) {
       await DatabaseService.updateTripLeg(leg);
     }
-
     return updated;
   }
 

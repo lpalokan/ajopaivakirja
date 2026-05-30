@@ -163,6 +163,79 @@ void main() {
     });
   });
 
+  group('finalizeDayLegs (pure, no persistence)', () {
+    test('empty day returns empty', () {
+      expect(calc.finalizeDayLegs([]), isEmpty);
+    });
+
+    test('single return-home leg gets per-leg km, daily allowance and hours', () {
+      final start = DateTime(2026, 5, 16, 8, 0);
+      final result = calc.finalizeDayLegs([
+        leg(
+          startTime: start,
+          endTime: start.add(const Duration(hours: 7)),
+          startOdometer: 1000,
+          endOdometer: 1100,
+          endLocation: 'Koti',
+        ),
+      ]);
+      final only = result.single;
+      expect(only.kmDriven, 100);
+      expect(only.kmAllowance, 57.0); // 100 * 0.57
+      expect(only.isReturnHome, true);
+      expect(only.dailyAllowance, 24.0); // 7h away -> 6h tier
+      expect(only.legDurationHours, 7.0);
+    });
+
+    test('daily allowance and working time land on the last leg', () {
+      final start = DateTime(2026, 5, 16, 8, 0);
+      final result = calc.finalizeDayLegs([
+        leg(
+          legOrder: 1,
+          startTime: start,
+          endTime: start.add(const Duration(hours: 1)),
+          startOdometer: 1000,
+          endOdometer: 1050,
+          endLocation: 'Työ',
+        ),
+        leg(
+          legOrder: 2,
+          startTime: start.add(const Duration(hours: 6)),
+          endTime: start.add(const Duration(hours: 7)),
+          startOdometer: 1050,
+          endOdometer: 1100,
+          endLocation: 'Koti',
+        ),
+      ]);
+      expect(result.first.dailyAllowance, 0);
+      expect(result.last.dailyAllowance, 24.0);
+      // firstEnd 09:00 -> lastStart 14:00 = 5h at the work site.
+      expect(result.last.workingTimeHours, 5.0);
+      expect(result.first.workingTimeHours, 0);
+    });
+
+    test('manual daily-allowance type overrides the auto tier', () {
+      final start = DateTime(2026, 5, 16, 8, 0);
+      final result = calc.finalizeDayLegs([
+        leg(
+          legOrder: 1,
+          startTime: start,
+          endTime: start.add(const Duration(hours: 7)),
+          startOdometer: 1000,
+          endOdometer: 1100,
+          endLocation: 'Koti',
+        ).copyWith(dailyAllowanceType: 2), // full day, despite only 7h away
+      ]);
+      expect(result.single.dailyAllowance, 48.0);
+    });
+
+    test('does not mutate the input legs', () {
+      final input = [leg(startOdometer: 1000, endOdometer: 1100)];
+      calc.finalizeDayLegs(input);
+      expect(input.single.kmDriven, 0); // original untouched
+    });
+  });
+
   group('summarizeDay', () {
     test('folds km and allowance totals', () {
       final legs = [
