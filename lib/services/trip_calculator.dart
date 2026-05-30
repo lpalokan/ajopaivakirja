@@ -26,7 +26,7 @@ class TripCalculator {
     final year = _yearFromDate(leg.date);
     final rate = getKmRateForYear(year);
     final kmAllowance = kmDriven * rate;
-    final isReturnHome = _isReturningHome(leg.endLocation);
+    final isReturnHome = leg.isReturnHomeTo(_settings.homeLocation);
 
     return leg.copyWith(
       kmDriven: kmDriven.toDouble(),
@@ -44,12 +44,6 @@ class TripCalculator {
     } catch (_) {
       return DateTime.now().year;
     }
-  }
-
-  bool _isReturningHome(String? endLocation) {
-    if (endLocation == null) return false;
-    return endLocation.trim().toLowerCase() ==
-        _settings.homeLocation.trim().toLowerCase();
   }
 
   /// Calculate daily allowance for a list of legs on the same date.

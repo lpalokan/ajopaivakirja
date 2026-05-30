@@ -177,6 +177,15 @@ class TripLeg {
   /// Whether this leg is a draft (started but incomplete).
   bool get isDraft => !isCompleted;
 
+  /// Whether this leg's end location is [home] (trimmed, case-insensitive).
+  /// The canonical "return home" rule — used by TripCalculator to decide
+  /// when a day should be finalized. A null end location is never home.
+  bool isReturnHomeTo(String home) {
+    final end = endLocation;
+    if (end == null) return false;
+    return end.trim().toLowerCase() == home.trim().toLowerCase();
+  }
+
   /// Whether this leg is an active in-progress trip.
   /// Must be compared against the current active-leg id externally.
   bool get isActive => false;

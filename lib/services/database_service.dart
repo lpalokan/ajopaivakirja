@@ -11,6 +11,16 @@ import 'log_service.dart';
 class DatabaseService {
   static Database? _db;
 
+  /// Lifecycle predicates as SQL WHERE fragments. These are the queryable
+  /// twins of [TripLeg.isCompleted] / [TripLeg.isDraft] — the model getters
+  /// are the canonical definition; keep these in sync with them. Defined once
+  /// here so the "what counts as completed/draft" rule isn't copy-pasted
+  /// across every query.
+  static const String _completedWhere =
+      "end_odometer IS NOT NULL AND (end_location IS NOT NULL AND end_location != '')";
+  static const String _draftWhere =
+      "(end_odometer IS NULL OR end_location IS NULL OR end_location = '')";
+
   static Future<Database> get database async {
     if (_db != null) return _db!;
     _db = await _init();
@@ -353,8 +363,7 @@ class DatabaseService {
     final db = await database;
     final maps = await db.query(
       'trip_legs',
-      where:
-          "synced = 0 AND end_odometer IS NOT NULL AND (end_location IS NOT NULL AND end_location != '')",
+      where: "synced = 0 AND $_completedWhere",
       orderBy: 'date ASC, leg_order ASC',
     );
     return maps.map((m) => TripLeg.fromMap(m)).toList();
@@ -365,8 +374,7 @@ class DatabaseService {
     final db = await database;
     final maps = await db.query(
       'trip_legs',
-      where:
-          "end_odometer IS NOT NULL AND (end_location IS NOT NULL AND end_location != '')",
+      where: _completedWhere,
       orderBy: 'date DESC, leg_order ASC',
     );
     return maps.map((m) => TripLeg.fromMap(m)).toList();
@@ -377,8 +385,7 @@ class DatabaseService {
     final db = await database;
     final maps = await db.query(
       'trip_legs',
-      where:
-          "date = ? AND end_odometer IS NOT NULL AND (end_location IS NOT NULL AND end_location != '')",
+      where: "date = ? AND $_completedWhere",
       whereArgs: [date],
       orderBy: 'leg_order ASC',
     );
@@ -451,8 +458,7 @@ class DatabaseService {
     final db = await database;
     final maps = await db.query(
       'trip_legs',
-      where:
-          "(end_odometer IS NULL OR end_location IS NULL OR end_location = '')",
+      where: _draftWhere,
       orderBy: 'date DESC, leg_order ASC',
     );
     return maps.map((m) => TripLeg.fromMap(m)).toList();
@@ -461,8 +467,7 @@ class DatabaseService {
   /// Count of draft legs (incomplete, excluding the active leg if any).
   static Future<int> getDraftCount({int? activeLegId}) async {
     final db = await database;
-    var whereClause =
-        "(end_odometer IS NULL OR end_location IS NULL OR end_location = '')";
+    var whereClause = _draftWhere;
     final whereArgs = <dynamic>[];
     if (activeLegId != null) {
       whereClause += ' AND id != ?';
