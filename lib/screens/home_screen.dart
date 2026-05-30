@@ -21,7 +21,6 @@ import '../widgets/day_timeline.dart';
 import '../widgets/top_context_card.dart';
 import '../widgets/update_banner.dart';
 import '../widgets/main_bottom_nav.dart';
-import 'route_management_screen.dart';
 import 'trip_history_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -135,10 +134,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final routes = ref.watch(routeProvider);
     final tripState = ref.watch(tripProvider);
     final settings = ref.watch(settingsProvider);
-    final allRecent = ref
+    final recentRoutes = ref
         .read(routeProvider.notifier)
-        .getRecentRoutes(limit: 1000);
-    final recentRoutes = allRecent.take(4).toList();
+        .getRecentRoutes(limit: 2);
 
     final lastOdometerFuture = tripState.activeLeg == null
         ? DatabaseService.getLastLeg()
@@ -251,13 +249,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                   _selectedPurpose = route.lastPurpose;
                 });
               }
-            },
-            onShowAll: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const RouteManagementScreen(),
-                ),
-              );
             },
           ),
           const SizedBox(height: 8),
