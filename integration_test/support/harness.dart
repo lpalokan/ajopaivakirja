@@ -822,6 +822,13 @@ Future<void> arrive(WidgetTester tester, int odometer) async {
   // Tap the in-card CTA (first in tree) which opens the arrival dialog.
   await tester.tap(find.widgetWithText(FilledButton, 'Olen perillä').first);
   await settle(tester);
+  await fillArrivalDialog(tester, odometer);
+}
+
+/// Fills the already-open arrival dialog's odometer field and taps
+/// "Lopeta ajo". The dialog can be opened by the in-card CTA, the bottom
+/// CTA, or the notification "Olen perillä" action — they all share it.
+Future<void> fillArrivalDialog(WidgetTester tester, int odometer) async {
   await waitFor(tester, _arrivalOdoField);
   await tester.enterText(_arrivalOdoField, '$odometer');
   await waitFor(tester, find.widgetWithText(FilledButton, 'Lopeta ajo'));

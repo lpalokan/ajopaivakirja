@@ -99,9 +99,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       final notificationService = ref.read(notificationServiceProvider);
       await notificationService.requestPermission();
 
+      // Let notification-triggered arrivals present the arrival dialog on
+      // this live screen (mirrors the in-app "Olen perillä" button). Wire it
+      // BEFORE initialize() so a cold-launch action replayed by
+      // flushPendingLaunchAction finds the presenter and shows the dialog
+      // instead of falling back to the estimated odometer. The mounted guard
+      // makes a stale presenter (after the screen is torn down) a no-op.
+      tripNotif2.setArrivalPresenter(() async {
+        if (!mounted) return;
+        await tripNotif2.stopTrip(context);
+      });
+
       // Delegate all callback wiring and detection lifecycle to
       // TripNotifier — the orchestration seam for trip state.
-      ref.read(tripProvider.notifier).initialize();
+      tripNotif2.initialize();
 
       // Silent update check on startup. Result lands in
       // updateCheckProvider; the UpdateBanner widget watches the same

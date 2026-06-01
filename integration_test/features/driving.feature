@@ -24,11 +24,29 @@ Feature: Driving flow
     When I start the {'Töihin'} route at {1000} km
     Then I see text containing {'0 h 00 min'}
 
-  Scenario: Arrival notification action ends the leg even if in-memory state was lost
+  Scenario: Arrival notification action opens the mileage dialog without ending the leg
+    When I start the {'Töihin'} route at {1000} km
+    And the arrival notification action is tapped
+    Then I see {'Matkamittari perillä (km)'}
+    And I see {'Ajo käynnissä'}
+
+  Scenario: The arrival dialog from the notification suggests the route's calculated mileage
+    When I start the {'Töihin'} route at {1000} km
+    And the arrival notification action is tapped
+    Then the arrival dialog odometer field shows {1054} km
+
+  Scenario: Confirming the arrival dialog from the notification records the trip
+    When I start the {'Töihin'} route at {1000} km
+    And the arrival notification action is tapped
+    And I fill in the arrival mileage {1054} km
+    Then I do not see {'Ajo käynnissä'}
+    And I see text containing {'54.0 km'}
+
+  Scenario: Arrival notification action opens the dialog even if in-memory state was lost
     When I start the {'Töihin'} route at {1000} km
     And the in-memory trip state is cleared
     And the arrival notification action is tapped
-    Then I do not see {'Ajo käynnissä'}
+    Then I see {'Matkamittari perillä (km)'}
 
   Scenario: Returning to the foreground re-shows the active-trip card when in-memory state was lost
     When I start the {'Töihin'} route at {1000} km
@@ -108,5 +126,6 @@ Feature: Driving flow
     And activity recognition reports {'in_vehicle'}
     When I start the {'Töihin'} route at {1000} km
     And the arrival notification action is tapped
+    And I fill in the arrival mileage {1054} km
     And the location service detects proximity to home
     Then no arrival reminder has been shown
