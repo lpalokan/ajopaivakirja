@@ -46,6 +46,13 @@ class TripNotifier extends StateNotifier<TripState> {
 
   bool _callbacksWired = false;
 
+  /// Presenter the UI registers (see [setArrivalPresenter]) so a
+  /// notification-triggered arrival can show the arrival dialog on the live
+  /// screen. Null until HomeScreen wires it — or while no screen is mounted —
+  /// in which case arrival falls back to recording the estimated odometer so
+  /// the leg is never left open.
+  Future<void> Function()? _arrivalPresenter;
+
   TripNotifier(this._ref) : super(const TripState());
 
   AppSettings get _settings => _ref.read(settingsProvider);
@@ -236,6 +243,14 @@ class TripNotifier extends StateNotifier<TripState> {
     }
   }
 
+  /// Registered by HomeScreen so the notification "Olen perillä" action can
+  /// present the arrival dialog (mileage + end time) on the live screen,
+  /// mirroring the in-app button. Pass null to drop a torn-down screen's
+  /// context.
+  void setArrivalPresenter(Future<void> Function()? presenter) {
+    _arrivalPresenter = presenter;
+  }
+
   /// Start a trip (route-based or ad-hoc). Stops auto-detection, creates
   /// the leg, starts the background service, and begins GPS live-distance
   /// tracking. Replaces ~60 lines of orchestration in HomeScreen.
@@ -372,13 +387,19 @@ class TripNotifier extends StateNotifier<TripState> {
   }
 
   /// Implements the arrival flow for the notification "Olen perillä" action.
+  /// Brings up the arrival dialog (mileage + end time, time pre-populated) on
+  /// the live screen so the user confirms the reading — the same dialog as the
+  /// in-app "Olen perillä" button, via the presenter HomeScreen registers in
+  /// [setArrivalPresenter]. The dialog records the time and mileage and stops
+  /// the trip on save; cancelling leaves the trip active.
+  ///
   /// Falls back to a fresh DB read when the in-memory state is empty — this
-  /// happens on cold-launch from the notification action, where the
-  /// flushPendingLaunchAction call fires the callback before HomeScreen's
-  /// initial `load()` has populated state.activeLeg. Without the fallback
-  /// the action silently no-ops and the leg stays open as a draft with no
-  /// recorded end time.
-  Future<void> _handleArrival(DateTime arrivedAt) async {
+  /// happens on cold-launch from the notification action, where
+  /// flushPendingLaunchAction fires the callback before HomeScreen's initial
+  /// `load()` has populated state.activeLeg. If no presenter is registered (no
+  /// live UI yet), records the estimated odometer so the leg isn't left open
+  /// as a draft with no end time.
+  Future<void> _promptArrival(DateTime arrivedAt) async {
     var active = state.activeLeg;
     if (active == null) {
       active = await DatabaseService.getActiveLeg();
@@ -386,6 +407,15 @@ class TripNotifier extends StateNotifier<TripState> {
       if (!mounted) return;
       state = state.copyWith(activeLeg: active);
     }
+
+    final presenter = _arrivalPresenter;
+    if (presenter != null) {
+      await presenter();
+      return;
+    }
+
+    // No live UI to host the dialog (e.g. cold launch before the first
+    // frame). Record the estimated odometer so the leg isn't left open.
     final expectedOdometer = active.startOdometer + active.kmDriven.toInt();
     await stopDriving(expectedOdometer, endTime: arrivedAt);
     if (!mounted) return;
@@ -411,7 +441,7 @@ class TripNotifier extends StateNotifier<TripState> {
       // Capture the tap moment up front so a slow DB hydration (cold-launch
       // path) doesn't push the recorded arrival into the future.
       final arrivedAt = DateTime.now();
-      unawaited(_handleArrival(arrivedAt));
+      unawaited(_promptArrival(arrivedAt));
     };
 
     backgroundService.onStillDriving = () {
