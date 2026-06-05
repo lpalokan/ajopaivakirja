@@ -93,6 +93,11 @@ feature). The suite is run via this aggregator. **When you add a new
 | `When I sync to sheets` | Taps the History sync button |
 | `When I toggle debug logging` | Flips the debug-logging switch |
 | `When GPS reports {int} km of movement` | Pushes synthetic GPS fixes through the fake LocationService (regression guard for the kilometer-tracking-predefined-routes bug — distance must not be inflated by GPS deltas) |
+| `Given activity recognition reports {string}` | Pushes a synthetic motion activity (`in_vehicle`/`still`/…) into the stream BackgroundService watches |
+| `When the reminder backstop elapses` | Pumps past the test-scale 5-minute poll so the in-process reminder tick fires |
+| `When the still driving notification action is tapped` | Invokes the "Ajan yhä" action path (dismiss current reminder + snooze 5 min) |
+| `Then an arrival reminder has been shown` / `no arrival reminder has been shown` / `exactly {int} arrival reminder has been shown` | Asserts how many times the "Oletko perillä?" reminder was posted |
+| `Then the reminder notification has been dismissed` | Asserts tapping "Ajan yhä" called cancelReminders (the prompt actually goes away) |
 | `Then I see {string}` | Asserts text is visible (scrolls if needed) |
 | `Then I do not see {string}` | Asserts text is absent |
 | `Then I see text containing {string}` | Substring assertion |

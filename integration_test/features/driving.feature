@@ -88,19 +88,19 @@ Feature: Driving flow
     Then I see {'54.0 km'}
     And I do not see {'59.0 km'}
 
-  Scenario: The 45-min reminder is suppressed while activity is in_vehicle
+  Scenario: The reminder is suppressed while activity is in_vehicle
     Given activity recognition reports {'in_vehicle'}
     When I start the {'Töihin'} route at {1000} km
     And the reminder backstop elapses
     Then no arrival reminder has been shown
 
-  Scenario: The 45-min reminder fires when activity has left the vehicle
+  Scenario: The reminder fires when activity has left the vehicle
     Given activity recognition reports {'still'}
     When I start the {'Töihin'} route at {1000} km
     And the reminder backstop elapses
     Then an arrival reminder has been shown
 
-  Scenario: The 45-min reminder fires when activity recognition is unavailable
+  Scenario: The reminder fires when activity recognition is unavailable
     When I start the {'Töihin'} route at {1000} km
     And the reminder backstop elapses
     Then an arrival reminder has been shown
@@ -113,6 +113,38 @@ Feature: Driving flow
     And activity recognition reports {'in_vehicle'}
     And the reminder backstop elapses
     Then exactly {1} arrival reminder has been shown
+
+  Scenario: Tapping still driving dismisses the reminder notification
+    Given activity recognition reports {'still'}
+    When I start the {'Töihin'} route at {1000} km
+    And the reminder backstop elapses
+    And the still driving notification action is tapped
+    Then the reminder notification has been dismissed
+
+  Scenario: The reminder is shown only once per stop while activity stays out of the vehicle
+    Given activity recognition reports {'still'}
+    When I start the {'Töihin'} route at {1000} km
+    And the reminder backstop elapses
+    And the reminder backstop elapses
+    Then exactly {1} arrival reminder has been shown
+
+  Scenario: Pressing still driving snoozes and the reminder fires again if still stopped
+    Given activity recognition reports {'still'}
+    When I start the {'Töihin'} route at {1000} km
+    And the reminder backstop elapses
+    And the still driving notification action is tapped
+    And the reminder backstop elapses
+    Then exactly {2} arrival reminder has been shown
+
+  Scenario: Returning to the vehicle and stopping again re-prompts on the next stop
+    Given activity recognition reports {'still'}
+    When I start the {'Töihin'} route at {1000} km
+    And the reminder backstop elapses
+    And activity recognition reports {'in_vehicle'}
+    And the reminder backstop elapses
+    And activity recognition reports {'still'}
+    And the reminder backstop elapses
+    Then exactly {2} arrival reminder has been shown
 
   Scenario: Proximity-based reminder fires while a trip is active
     Given location permission is granted

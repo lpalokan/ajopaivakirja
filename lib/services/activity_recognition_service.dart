@@ -41,8 +41,8 @@ DrivingActivity _fromPlugin(plugin.ActivityType t) {
 /// Best-effort by design: if the plugin throws, the permission is denied, or
 /// the device lacks Google Play services, the stream simply never emits and
 /// the caller treats the activity as [DrivingActivity.unknown]. The reminder
-/// logic in [BackgroundService] then falls back to the blind 45-minute
-/// backstop instead of suppressing.
+/// logic in [BackgroundService] then treats `unknown` like "not in a vehicle"
+/// — the 5-minute poll asks "Oletko perillä?" instead of suppressing.
 class ActivityRecognitionService {
   StreamSubscription<plugin.Activity>? _sub;
   final StreamController<DrivingActivity> _controller =

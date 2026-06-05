@@ -18,13 +18,13 @@ Sheetsiin, CSV-tiedostoon tai PDF-raportiksi.
    matkan myös uudeksi uudelleenkäytettäväksi reitiksi.
 5. **Lisää kuluja** – Voit liittää ajopäivään kuluja (pysäköinti,
    tietulli, ateria, muu).
-6. **Jos unohdat lopettaa** – Sovellus muistuttaa ilmoituksella
-   45 minuutin välein (GPS-pohjainen + aikaperusteinen). Muistutus
-   sivuutetaan automaattisesti, jos Androidin liikkumistunnistus (Google
-   Play -palvelut) raportoi, että olet edelleen ajoneuvossa — saat
-   ilmoituksen vasta, kun olet poistunut autosta. "Ajan yhä" -painikkeen
-   painaminen ei avaa sovellusta, vaan siirtää muistutusta 45 minuutilla
-   eteenpäin samalla logiikalla.
+6. **Jos unohdat lopettaa** – Sovellus tarkistaa 5 minuutin välein,
+   oletko yhä liikkeellä. Muistutus sivuutetaan automaattisesti niin
+   kauan kuin Androidin liikkumistunnistus (Google Play -palvelut)
+   raportoi, että olet edelleen ajoneuvossa — saat "Oletko perillä?"
+   -ilmoituksen vasta, kun olet poistunut autosta. "Ajan yhä" -painikkeen
+   painaminen ei avaa sovellusta, vaan poistaa ilmoituksen ja torkuttaa
+   sitä 5 minuuttia, minkä jälkeen liikkumistila tarkistetaan uudelleen.
 7. **Päivän päätteeksi** – Kun palaat kotiin, sovellus laskee
    päivärahan (6 h / 10 h rajat) ja voit viedä rivit Google Sheetsiin,
    CSV-tiedostoon tai PDF-raporttiin.
@@ -72,7 +72,7 @@ lib/
 │   ├── odometer_vision_service.dart# Mittarilukeman tunnistus kuvasta
 │   ├── location_service.dart       # GPS ja geofencing
 │   ├── trip_detection_service.dart # Automaattinen ajon tunnistus
-│   ├── background_service.dart     # Taustapalvelu + 45 min muistutuslogiikka
+│   ├── background_service.dart     # Taustapalvelu + 5 min muistutuslogiikka
 │   ├── activity_recognition_service.dart # Liikkumistunnistus (in_vehicle…)
 │   ├── notification_service.dart   # Ilmoitukset
 │   ├── update_service.dart         # Päivitysten haku GitHub-manifestista

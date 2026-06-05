@@ -152,10 +152,10 @@ class NotificationService {
         // the reminder. showsUserInterface=false routes the tap to the
         // foreground _onNotificationResponse handler (when the app is
         // alive) without bringing any UI to the front; the handler calls
-        // back into BackgroundService.onStillDrivingPressed, which
-        // reschedules another 45-min backstop. The activity-recognition
-        // check on the next tick then decides whether to fire or
-        // suppress again.
+        // back into BackgroundService.onStillDrivingPressed, which dismisses
+        // this notification and snoozes another 5-minute increment. The
+        // activity-recognition check on the next poll then decides whether
+        // to ask again or suppress while still in_vehicle.
         AndroidNotificationAction(
           _stillDrivingActionId,
           'Ajan yhä',
