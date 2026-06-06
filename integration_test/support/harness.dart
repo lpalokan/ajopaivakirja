@@ -40,6 +40,11 @@ import 'package:kilometrikorvaus/services/update_service.dart';
 class _FakeNotificationService extends NotificationService {
   int arrivalReminderShownCount = 0;
 
+  /// Counts calls to [cancelReminders] so scenarios can assert that tapping
+  /// "Ajan yhä" actually dismisses the shown reminder (the bug where the
+  /// prompt would not go away no matter how many times it was pressed).
+  int reminderDismissedCount = 0;
+
   @override
   Future<void> initialize() async {}
   @override
@@ -55,7 +60,9 @@ class _FakeNotificationService extends NotificationService {
   @override
   Future<void> cancelDrivingNotification() async {}
   @override
-  Future<void> cancelReminders() async {}
+  Future<void> cancelReminders() async {
+    reminderDismissedCount++;
+  }
   @override
   Future<void> cancelScheduledReminder() async {}
 }
@@ -68,8 +75,8 @@ class _FakeActivityRecognitionService extends ActivityRecognitionService {
   ///
   /// Without the replay, scenarios that push activity before the trip
   /// starts hit a dead window (no listener yet → broadcast `add` drops
-  /// the event) and BG never learns the current activity; the 45-min
-  /// Timer then fires with `_lastActivity = unknown` and the reminder is
+  /// the event) and BG never learns the current activity; the reminder
+  /// poll then fires with `_lastActivity = unknown` and the reminder is
   /// not suppressed.
   DrivingActivity _last = DrivingActivity.unknown;
   late final StreamController<DrivingActivity> _ctrl;
@@ -195,7 +202,7 @@ _FakeLocationService _fakeLocation = _FakeLocationService();
 /// Real [BackgroundService] driven by fake dependencies and a millisecond-
 /// scale reminder duration, so scenarios can actually exercise the
 /// "suppress reminder while in_vehicle / fire when not" logic without
-/// waiting 45 minutes.
+/// waiting for the real 5-minute poll.
 ///
 /// Wired with the same `_fakeNotification` / `_fakeLocation` /
 /// `_fakeActivity` instances that the ProviderScope hands to the rest of
@@ -1058,8 +1065,18 @@ void expectArrivalReminderShownAtLeastOnce() {
     _fakeNotification.arrivalReminderShownCount,
     greaterThanOrEqualTo(1),
     reason:
-        'Expected the 45-min arrival reminder to fire at least once, '
+        'Expected the arrival reminder to fire at least once, '
         'but showArrivalReminder was never called.',
+  );
+}
+
+void expectReminderDismissed() {
+  expect(
+    _fakeNotification.reminderDismissedCount,
+    greaterThanOrEqualTo(1),
+    reason:
+        'Expected tapping "Ajan yhä" to dismiss the shown reminder '
+        '(cancelReminders), but it was never called.',
   );
 }
 
