@@ -94,7 +94,8 @@ feature). The suite is run via this aggregator. **When you add a new
 | `When I toggle debug logging` | Flips the debug-logging switch |
 | `When GPS reports {int} km of movement` | Pushes synthetic GPS fixes through the fake LocationService (regression guard for the kilometer-tracking-predefined-routes bug — distance must not be inflated by GPS deltas) |
 | `Given activity recognition reports {string}` | Pushes a synthetic motion activity (`in_vehicle`/`still`/…) into the stream BackgroundService watches |
-| `When the reminder backstop elapses` | Pumps past the test-scale 5-minute poll so the in-process reminder tick fires |
+| `When the reminder backstop elapses` | Pumps past whichever reminder duration is scheduled (long first-tick deferral or short steady-state poll) so the in-process reminder tick fires |
+| `When a shorter interval than the first reminder elapses` | Pumps past the steady-state poll but NOT the longer first-tick deferral, to assert the very first reminder of a trip is held back |
 | `When the still driving notification action is tapped` | Invokes the "Ajan yhä" action path (dismiss current reminder + snooze 5 min) |
 | `Then an arrival reminder has been shown` / `no arrival reminder has been shown` / `exactly {int} arrival reminder has been shown` | Asserts how many times the "Oletko perillä?" reminder was posted |
 | `Then the reminder notification has been dismissed` | Asserts tapping "Ajan yhä" called cancelReminders (the prompt actually goes away) |
@@ -102,6 +103,8 @@ feature). The suite is run via this aggregator. **When you add a new
 | `Then I do not see {string}` | Asserts text is absent |
 | `Then I see text containing {string}` | Substring assertion |
 | `Then the {string} setting is {string}` | Asserts a persisted value in the SQLite settings table (deterministic; avoids re-reading a rebuilt screen) |
+| `Given the update download is held open` | Arms the fake update service so `downloadAndInstall` reports progress then parks, leaving the "Ladataan…" indicator on screen |
+| `When the held download is released` | Completes a held download so the install flow clears the in-app progress state |
 
 ## Adding a new step
 

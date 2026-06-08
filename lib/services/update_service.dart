@@ -61,19 +61,48 @@ class UpdateService {
   /// signing certificate on the downloaded APK must match the
   /// installed one or Android refuses with "App not installed"; the
   /// release-signing CI step guarantees this for release builds.
-  Future<void> downloadAndInstall(UpdateInfo info) async {
-    final response = await http.get(Uri.parse(info.apkUrl));
-    if (response.statusCode != 200) {
-      throw HttpException('APK download failed: HTTP ${response.statusCode}');
-    }
-    final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/update-${info.buildNumber}.apk');
-    await file.writeAsBytes(response.bodyBytes, flush: true);
-    final result = await OpenFilex.open(file.path);
-    if (result.type != ResultType.done) {
-      throw Exception(
-        'Could not launch installer: ${result.message}',
-      );
+  ///
+  /// [onProgress] is invoked as bytes arrive: `received` is the running byte
+  /// count and `total` the Content-Length, or `null` when the server doesn't
+  /// advertise one (then callers should show an indeterminate spinner). The
+  /// download is streamed to disk rather than buffered whole in memory so the
+  /// UI can report real progress for a multi-megabyte APK.
+  Future<void> downloadAndInstall(
+    UpdateInfo info, {
+    void Function(int received, int? total)? onProgress,
+  }) async {
+    final client = http.Client();
+    try {
+      final request = http.Request('GET', Uri.parse(info.apkUrl));
+      final response = await client.send(request);
+      if (response.statusCode != 200) {
+        throw HttpException('APK download failed: HTTP ${response.statusCode}');
+      }
+      final total = response.contentLength;
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/update-${info.buildNumber}.apk');
+      final sink = file.openWrite();
+      var received = 0;
+      // Emit an initial 0/total so the UI flips to "downloading" immediately,
+      // before the first chunk lands.
+      onProgress?.call(received, total);
+      try {
+        await for (final chunk in response.stream) {
+          received += chunk.length;
+          sink.add(chunk);
+          onProgress?.call(received, total);
+        }
+      } finally {
+        await sink.close();
+      }
+      final result = await OpenFilex.open(file.path);
+      if (result.type != ResultType.done) {
+        throw Exception(
+          'Could not launch installer: ${result.message}',
+        );
+      }
+    } finally {
+      client.close();
     }
   }
 }

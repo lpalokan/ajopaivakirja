@@ -14,6 +14,7 @@ import '../services/decimal_input.dart';
 import '../services/log_service.dart';
 import '../models/location_zone.dart';
 import '../widgets/main_bottom_nav.dart';
+import '../widgets/update_banner.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -870,6 +871,7 @@ class _UpdateCheckTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(updateCheckProvider);
+    final downloadProgress = ref.watch(updateDownloadProgressProvider);
     final theme = Theme.of(context);
 
     String resultLine;
@@ -880,7 +882,12 @@ class _UpdateCheckTile extends ConsumerWidget {
     // state is AsyncError, which would crash the Settings rebuild if
     // the manifest is unreachable.
     final info = state.valueOrNull;
-    if (state.isLoading) {
+    if (downloadProgress != null) {
+      // A download is in flight — show progress instead of the install button
+      // so the tile doesn't look frozen while the APK downloads.
+      resultLine = 'Ladataan päivitystä…';
+      trailing = UpdateDownloadIndicator(progress: downloadProgress);
+    } else if (state.isLoading) {
       resultLine = 'Tarkistetaan...';
       trailing = const SizedBox(
         width: 20,
@@ -913,7 +920,8 @@ class _UpdateCheckTile extends ConsumerWidget {
                 ? null
                 : () => ref.read(updateCheckProvider.notifier).check(),
           ),
-      onTap: state.isLoading
+      // Disable re-checking while loading or while a download is in flight.
+      onTap: (state.isLoading || downloadProgress != null)
           ? null
           : () => ref.read(updateCheckProvider.notifier).check(),
     );
