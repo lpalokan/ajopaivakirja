@@ -95,7 +95,7 @@ feature). The suite is run via this aggregator. **When you add a new
 | `When GPS reports {int} km of movement` | Pushes synthetic GPS fixes through the fake LocationService (regression guard for the kilometer-tracking-predefined-routes bug — distance must not be inflated by GPS deltas) |
 | `Given activity recognition reports {string}` | Pushes a synthetic motion activity (`in_vehicle`/`still`/…) into the stream BackgroundService watches |
 | `When the reminder backstop elapses` | Pumps past whichever reminder duration is scheduled (long first-tick deferral or short steady-state poll) so the in-process reminder tick fires |
-| `When a shorter interval than the first reminder elapses` | Pumps past the steady-state poll but NOT the longer first-tick deferral, to assert the very first reminder of a trip is held back |
+| `Given the first reminder is deferred well beyond the steady poll` | Pushes the first-reminder deferral far out (test seam) so the next backstop pump asserts the very first reminder of a trip is held back, without a flaky wall-clock margin |
 | `When the still driving notification action is tapped` | Invokes the "Ajan yhä" action path (dismiss current reminder + snooze 5 min) |
 | `Then an arrival reminder has been shown` / `no arrival reminder has been shown` / `exactly {int} arrival reminder has been shown` | Asserts how many times the "Oletko perillä?" reminder was posted |
 | `Then the reminder notification has been dismissed` | Asserts tapping "Ajan yhä" called cancelReminders (the prompt actually goes away) |
@@ -124,16 +124,58 @@ one-line body across and delete the mismatched file.
 ## Running
 
 ```bash
+# First time on a machine without Flutter (e.g. a fresh web session):
+bash scripts/setup-test-env.sh
+
 # Host unit/widget tests (no emulator)
 flutter test
 
 # Full Gherkin suite on the emulator + a report to hand back
 ./scripts/integration-report.sh
+
+# Full Gherkin suite headless, when no emulator is available (see below)
+scripts/host-bdd.sh
 ```
 
 `integration-report.sh` boots the `test_pixel` AVD if no device is
 attached, runs `build_runner`, runs the suite, and writes
 `reports/integration-report-<timestamp>.txt`.
+
+### Running without an emulator (headless host)
+
+Some environments can't run an Android emulator at all — e.g. a Claude Code
+web session or any host **without KVM / hardware virtualization** (an Android
+AVD requires it; check with `ls /dev/kvm` and `grep -E 'vmx|svm' /proc/cpuinfo`).
+For those, the suite can run **headless on the flutter "tester"** (the same
+host VM `flutter test` uses), no device required:
+
+```bash
+bash scripts/setup-test-env.sh     # one-time: install Flutter + pub get
+scripts/host-bdd.sh                 # whole suite, headless
+scripts/host-bdd.sh --plain-name "first reminder of a trip is deferred"
+```
+
+This works because the harness fakes every platform service except two,
+which the headless runner (`tool/bdd_host_test.dart`) supplies:
+
+- **sqflite** → `sqflite_common_ffi` over the host's `libsqlite3`
+  (Ubuntu ships it; otherwise `apt-get install -y libsqlite3-0`).
+- **geolocator** → its method/event channels are mocked, because
+  `TripDetectionService` calls `Geolocator` statically rather than through the
+  injected (faked) `LocationService`, so on the host its position stream would
+  otherwise throw `MissingPluginException`.
+
+Caveats — **the on-emulator suite (`integration-report.sh`) is the source of
+truth**; the headless run is a no-emulator approximation:
+
+- The "app boots on device" smoke test (`app_smoke_test.dart`) is **excluded**:
+  it pumps fixed frames in a way that trips the live binding's pending-frame
+  assertion on the host tester.
+- The live binding runs in real wall-clock time and is **much slower** than an
+  emulator, so timer-based scenarios need generous margins. Assert "a reminder
+  is held back" with a far-out test seam (see
+  `Given the first reminder is deferred well beyond the steady poll`), never a
+  tight "pump less than the timer" margin.
 
 ### Fast iteration (run only what failed)
 

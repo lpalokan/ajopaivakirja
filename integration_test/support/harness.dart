@@ -1056,12 +1056,15 @@ Future<void> waitForReminderBackstop(WidgetTester tester) async {
   await pumpFor(tester, 2400);
 }
 
-/// Pump forward past the steady-state poll but NOT past the longer first-tick
-/// deferral, so scenarios can assert the very first reminder of a trip is held
-/// back. 1100ms sits between `_testReminderDuration` (700ms) and
-/// `_testFirstReminderDuration` (1800ms).
-Future<void> waitShorterThanFirstReminder(WidgetTester tester) async {
-  await pumpFor(tester, 1100);
+/// Push the first-reminder deferral far beyond any pump a scenario performs,
+/// so "the first reminder is held back" can be asserted by pumping the normal
+/// backstop and seeing nothing fire — without depending on a tight wall-clock
+/// margin between a short pump and the timer (flaky under the real-time test
+/// binding, especially on a slow host). Call before starting the trip.
+void deferFirstReminderFarOut() {
+  _testBackgroundService?.debugSetFirstReminderDuration(
+    const Duration(seconds: 60),
+  );
 }
 
 /// Simulate the live [LocationService]'s 30-second proximity Timer firing

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
 import 'activity_recognition_service.dart';
@@ -39,7 +40,7 @@ class BackgroundService {
   final LocationService _locationService;
   final ActivityRecognitionService _activityService;
   final Duration _reminderDuration;
-  final Duration _firstReminderDuration;
+  Duration _firstReminderDuration;
   final Duration _platformBackstopDuration;
 
   Timer? _reminderTimer;
@@ -86,6 +87,17 @@ class BackgroundService {
 
   void updateSettings(AppSettings settings) {
     _settings = settings;
+  }
+
+  /// Test seam: lengthen the first-reminder deferral for a single scenario
+  /// without rebuilding the service. Lets the integration harness assert "the
+  /// first reminder is held back" by pushing the deferral far beyond the
+  /// pump window, instead of relying on a tight wall-clock margin between a
+  /// short pump and the timer (which is flaky under the real-time test
+  /// binding). Call before the trip starts.
+  @visibleForTesting
+  void debugSetFirstReminderDuration(Duration duration) {
+    _firstReminderDuration = duration;
   }
 
   Future<void> onDrivingStarted(TripLeg leg) async {

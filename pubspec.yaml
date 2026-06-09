@@ -44,6 +44,7 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   bdd_widget_test: ^1.7.4
   build_runner: ^2.4.13
+  sqflite_common_ffi: ^2.4.1
 
 flutter:
   uses-material-design: true

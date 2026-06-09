@@ -96,8 +96,9 @@ Feature: Driving flow
 
   Scenario: The first reminder of a trip is deferred past the steady-state poll
     Given activity recognition reports {'still'}
+    And the first reminder is deferred well beyond the steady poll
     When I start the {'Töihin'} route at {1000} km
-    And a shorter interval than the first reminder elapses
+    And the reminder backstop elapses
     Then no arrival reminder has been shown
 
   Scenario: The reminder fires when activity has left the vehicle
