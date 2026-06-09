@@ -137,6 +137,13 @@ flutter test
 scripts/host-bdd.sh
 ```
 
+The emulator suite also runs in CI via `.github/workflows/integration.yml`
+(`workflow_dispatch`). It runs on `ubuntu-latest`, which exposes `/dev/kvm`
+for a hardware-accelerated x86_64 emulator — verified green (89/89) on a real
+emulator. (An earlier `macos-latest` config never booted the emulator on the
+runner: adb reported `device 'emulator-5554' not found` until the boot
+timeout.)
+
 `integration-report.sh` boots the `test_pixel` AVD if no device is
 attached, runs `build_runner`, runs the suite, and writes
 `reports/integration-report-<timestamp>.txt`.
