@@ -15,6 +15,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
@@ -1214,21 +1215,28 @@ Future<void> appReturnsToForeground(WidgetTester tester) async {
 }
 
 /// Simulates the user tapping the "Ajan yhä" action button on the
-/// arrival-reminder notification. The real notification handler routes
-/// `_stillDrivingActionId` → `ns.onStillDriving` → `bg.onStillDriving` →
-/// `bg.onStillDrivingPressed`; calling the last directly produces the
-/// same observable effect (a fresh backstop is scheduled) without going
-/// through the platform notification plugin (which the fake
-/// NotificationService no-ops).
+/// arrival-reminder notification by feeding a real [NotificationResponse]
+/// through the production foreground dispatch
+/// (`NotificationService.debugHandleResponse` → `_onNotificationResponse`).
+///
+/// This deliberately drives the WHOLE routing chain — `actionId` →
+/// `ns.onStillDriving` → `bg.onStillDriving` → `bg.onStillDrivingPressed` —
+/// rather than poking `onStillDrivingPressed` directly. The old direct call
+/// masked the original bug: the action never reached the handler, so the
+/// reminder was never dismissed. Now a regression in that wiring (a wrong
+/// action id, an unwired callback) fails this step.
+///
+/// The platform-killed/background path (where the tap lands in the separate
+/// `notificationTapBackground` isolate) can't run in a widget test; it is
+/// covered by the host-VM unit test for `handleStillDrivingBackgroundAction`.
 Future<void> tapStillDrivingAction(WidgetTester tester) async {
-  final bg = _testBackgroundService;
-  expect(
-    bg,
-    isNotNull,
-    reason:
-        'No test BackgroundService is registered — was launchApp() called?',
+  _fakeNotification.debugHandleResponse(
+    const NotificationResponse(
+      notificationResponseType:
+          NotificationResponseType.selectedNotificationAction,
+      actionId: NotificationService.stillDrivingActionId,
+    ),
   );
-  await bg!.onStillDrivingPressed();
   // Let the rescheduled Timer settle into the event loop before the next
   // scenario step runs.
   await tester.pump(const Duration(milliseconds: 50));

@@ -112,6 +112,13 @@ Feature: Driving flow
     And the reminder backstop elapses
     Then an arrival reminder has been shown
 
+  Scenario: The reminder is suppressed while activity recognition is uncertain
+    Given activity recognition reports {'in_vehicle'}
+    When I start the {'Töihin'} route at {1000} km
+    And activity recognition reports {'unknown'}
+    And the reminder backstop elapses
+    Then no arrival reminder has been shown
+
   Scenario: Tapping still driving defers the reminder and the next tick suppresses while in_vehicle
     Given activity recognition reports {'still'}
     When I start the {'Töihin'} route at {1000} km
