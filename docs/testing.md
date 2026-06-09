@@ -166,11 +166,18 @@ which the headless runner (`tool/bdd_host_test.dart`) supplies:
   otherwise throw `MissingPluginException`.
 
 Caveats — **the on-emulator suite (`integration-report.sh`) is the source of
-truth**; the headless run is a no-emulator approximation:
+truth**; the headless run is a no-emulator approximation. As of writing it
+passes **90 / 92** scenarios; the gaps below are host-environment artifacts,
+not code bugs (all pass on the emulator):
 
 - The "app boots on device" smoke test (`app_smoke_test.dart`) is **excluded**:
   it pumps fixed frames in a way that trips the live binding's pending-frame
   assertion on the host tester.
+- `Settings: Debug logging toggle reveals log actions` — the tap on the toggle
+  misses on the small (800×600) host surface; it lands fine on the larger
+  emulator screen.
+- `Draft trips: Drafts excluded from CSV export` — host CSV-export file
+  plumbing differs from the device.
 - The live binding runs in real wall-clock time and is **much slower** than an
   emulator, so timer-based scenarios need generous margins. Assert "a reminder
   is held back" with a far-out test seam (see
