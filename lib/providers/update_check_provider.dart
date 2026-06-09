@@ -42,14 +42,47 @@ class UpdateCheckNotifier extends StateNotifier<UpdateCheckState> {
     }
   }
 
-  /// Hands the already-fetched [UpdateInfo] off to the install flow.
-  /// No-op if no update is currently known.
+  /// Hands the already-fetched [UpdateInfo] off to the install flow, surfacing
+  /// download progress through [updateDownloadProgressProvider] so the banner
+  /// and settings tile can show a spinner/progress bar instead of looking
+  /// frozen while a multi-megabyte APK downloads.
+  ///
+  /// No-op if no update is currently known, or if a download is already in
+  /// flight (guards against double taps queuing a second download).
   Future<void> install() async {
     final info = state.value;
     if (info == null) return;
+    final progress = _ref.read(updateDownloadProgressProvider.notifier);
+    if (progress.state != null) return;
     final service = _ref.read(updateServiceProvider);
-    await service.downloadAndInstall(info);
+    progress.state = UpdateDownloadProgress.indeterminate;
+    try {
+      await service.downloadAndInstall(
+        info,
+        onProgress: (received, total) {
+          progress.state = (total != null && total > 0)
+              ? received / total
+              : UpdateDownloadProgress.indeterminate;
+        },
+      );
+    } finally {
+      // Download finished (or threw): the system installer now owns the
+      // foreground, so clear the in-app progress either way.
+      progress.state = null;
+    }
   }
+}
+
+/// Download progress for an in-flight install, or `null` when no download is
+/// running. A value in `0.0..1.0` is determinate; [UpdateDownloadProgress
+/// .indeterminate] (`-1`) means the server gave no Content-Length, so the UI
+/// should show an indeterminate spinner.
+final updateDownloadProgressProvider = StateProvider<double?>((ref) => null);
+
+/// Sentinel value namespace for [updateDownloadProgressProvider].
+abstract final class UpdateDownloadProgress {
+  /// Downloading, but total size unknown — show an indeterminate indicator.
+  static const double indeterminate = -1;
 }
 
 final updateCheckProvider =

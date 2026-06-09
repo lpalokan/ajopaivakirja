@@ -19,6 +19,16 @@ Feature: App update check
     And I tap {'Tarkista päivitykset'}
     Then I see text containing {'Päivitys saatavilla'}
 
+  Scenario: Installing an update shows a download progress indicator that clears when done
+    Given the update service reports {'update_available'}
+    And the update download is held open
+    When I open settings
+    And I tap {'Tarkista päivitykset'}
+    And I tap {'Asenna'}
+    Then I see text containing {'Ladataan'}
+    When the held download is released
+    Then I see text containing {'Asenna'}
+
   Scenario: Home banner appears once the app finds an available update
     Given the update service reports {'update_available'}
     When the app checks for updates

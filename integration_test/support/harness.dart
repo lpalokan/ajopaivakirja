@@ -118,6 +118,12 @@ class _FakeUpdateService extends UpdateService {
   /// system package installer (which would fail in the test env).
   bool installCalled = false;
 
+  /// When armed, `downloadAndInstall` reports some progress and then parks on
+  /// this completer instead of returning — so a scenario can observe the
+  /// in-flight "Ladataan…" UI before completing it. Released via
+  /// [releaseHeldDownload].
+  Completer<void>? downloadGate;
+
   @override
   Future<UpdateInfo?> checkForUpdate({
     required int currentBuildNumber,
@@ -127,8 +133,16 @@ class _FakeUpdateService extends UpdateService {
   }
 
   @override
-  Future<void> downloadAndInstall(UpdateInfo info) async {
+  Future<void> downloadAndInstall(
+    UpdateInfo info, {
+    void Function(int received, int? total)? onProgress,
+  }) async {
     installCalled = true;
+    // Report determinate mid-download progress so the UI shows a stable (non-
+    // spinning) indicator the scenario can settle against.
+    onProgress?.call(50, 100);
+    final gate = downloadGate;
+    if (gate != null) await gate.future;
   }
 }
 
@@ -208,12 +222,19 @@ _FakeLocationService _fakeLocation = _FakeLocationService();
 /// `_fakeActivity` instances that the ProviderScope hands to the rest of
 /// the app, so the scenario step `activity recognition reports X` can
 /// push events to the very stream this service is subscribed to.
-/// 1500ms — long enough that `startTrip` (which does several pumpAndSettle
-/// rounds) finishes before the timer fires, so scenarios have a chance to
-/// `pushActivity` before the backstop tick. Combined with the 2000ms
-/// `waitForReminderBackstop` pump that gives the listener ~500ms slack to
-/// run.
-const Duration _testReminderDuration = Duration(milliseconds: 1500);
+/// Steady-state poll (every reschedule AFTER the first tick of a trip).
+/// 700ms — short, since the longer first-tick deferral below already covers
+/// the `startTrip` settle window; reschedules only fire well into a
+/// `waitForReminderBackstop` pump, so the listener still gets ample slack.
+const Duration _testReminderDuration = Duration(milliseconds: 700);
+
+/// First-tick deferral (the opening reminder of a trip). 1800ms — long enough
+/// that `startTrip` (which does several pumpAndSettle rounds) finishes before
+/// the timer fires, and strictly greater than [_testReminderDuration] so the
+/// "first reminder is deferred" scenario can pump past the steady-state poll
+/// without reaching this first tick. The production default is 30 minutes
+/// (see [BackgroundService.defaultFirstReminderDuration]).
+const Duration _testFirstReminderDuration = Duration(milliseconds: 1800);
 
 /// Live reference to the real [BackgroundService] handed to the
 /// ProviderScope this scenario is running against. Held so step helpers
@@ -228,6 +249,7 @@ BackgroundService _buildTestBackgroundService() {
     locationService: _fakeLocation,
     activityService: _fakeActivity,
     reminderDuration: _testReminderDuration,
+    firstReminderDuration: _testFirstReminderDuration,
   );
   _testBackgroundService = bg;
   return bg;
@@ -1025,11 +1047,24 @@ Future<void> pushActivity(WidgetTester tester, String activity) async {
   await tester.pump(const Duration(milliseconds: 50));
 }
 
-/// Pump real time forward past the test-scale reminder duration
-/// (see `_testReminderDuration`), giving the in-process Timer a chance to
-/// fire and the resulting notification call to land.
+/// Pump real time forward past whichever reminder duration is currently
+/// scheduled — the long first-tick deferral (`_testFirstReminderDuration`)
+/// or the short steady-state poll (`_testReminderDuration`) — giving the
+/// in-process Timer a chance to fire and the resulting notification call to
+/// land. 2400ms clears the 1800ms first tick with ~600ms of listener slack.
 Future<void> waitForReminderBackstop(WidgetTester tester) async {
-  await pumpFor(tester, 2000);
+  await pumpFor(tester, 2400);
+}
+
+/// Push the first-reminder deferral far beyond any pump a scenario performs,
+/// so "the first reminder is held back" can be asserted by pumping the normal
+/// backstop and seeing nothing fire — without depending on a tight wall-clock
+/// margin between a short pump and the timer (flaky under the real-time test
+/// binding, especially on a slow host). Call before starting the trip.
+void deferFirstReminderFarOut() {
+  _testBackgroundService?.debugSetFirstReminderDuration(
+    const Duration(seconds: 60),
+  );
 }
 
 /// Simulate the live [LocationService]'s 30-second proximity Timer firing
@@ -1104,6 +1139,22 @@ void setUpdateServiceMode(String mode) {
     default:
       throw ArgumentError('Unknown update mode: $mode');
   }
+}
+
+/// Arm the fake update service so the next `downloadAndInstall` reports
+/// progress and then parks, leaving the in-app "Ladataan…" indicator on
+/// screen until [releaseHeldUpdateDownload] completes it.
+void holdUpdateDownloadOpen() {
+  _fakeUpdate.downloadGate = Completer<void>();
+}
+
+/// Complete a held download (see [holdUpdateDownloadOpen]) so the install
+/// flow's `finally` clears the progress state, then settle the UI back to
+/// the install button.
+Future<void> releaseHeldUpdateDownload(WidgetTester tester) async {
+  _fakeUpdate.downloadGate?.complete();
+  _fakeUpdate.downloadGate = null;
+  await settle(tester);
 }
 
 /// Manually re-run [updateCheckProvider]'s check, using whatever the

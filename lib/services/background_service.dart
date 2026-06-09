@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
 import 'activity_recognition_service.dart';
@@ -16,6 +17,17 @@ class BackgroundService {
   /// backstop did.
   static const Duration defaultReminderDuration = Duration(minutes: 5);
 
+  /// How long to wait before the FIRST reminder check of a trip. Longer than
+  /// the steady-state poll on purpose: the Android Activity Recognition API
+  /// has real latency — at the start of a drive it reports `still`/`unknown`
+  /// for a while and only settles into `in_vehicle` after a minute or three
+  /// of sustained motion. Polling at 5 minutes meant the very first tick
+  /// could fire mid-drive (before the framework had confirmed `in_vehicle`)
+  /// and wrongly ask "Oletko perillä?". Deferring the first check to 30
+  /// minutes gives the framework ample time to settle; after that first tick
+  /// the poll drops back to [defaultReminderDuration].
+  static const Duration defaultFirstReminderDuration = Duration(minutes: 30);
+
   /// Far-out platform-scheduled fallback that only matters if the app
   /// process is killed before any in-process poll can run (an in-process
   /// [Timer] dies with the process). While the process is alive each poll
@@ -28,9 +40,15 @@ class BackgroundService {
   final LocationService _locationService;
   final ActivityRecognitionService _activityService;
   final Duration _reminderDuration;
+  Duration _firstReminderDuration;
   final Duration _platformBackstopDuration;
 
   Timer? _reminderTimer;
+
+  /// True until the first reminder of the current trip has been scheduled, so
+  /// that the opening tick waits [_firstReminderDuration] (long) while every
+  /// later reschedule uses [_reminderDuration] (the short steady-state poll).
+  bool _firstReminderPending = false;
   StreamSubscription<DrivingActivity>? _activitySub;
   DrivingActivity _lastActivity = DrivingActivity.unknown;
 
@@ -52,11 +70,13 @@ class BackgroundService {
     required LocationService locationService,
     required ActivityRecognitionService activityService,
     Duration reminderDuration = defaultReminderDuration,
+    Duration firstReminderDuration = defaultFirstReminderDuration,
     Duration platformBackstopDuration = defaultPlatformBackstopDuration,
   })  : _notificationService = notificationService,
         _locationService = locationService,
         _activityService = activityService,
         _reminderDuration = reminderDuration,
+        _firstReminderDuration = firstReminderDuration,
         _platformBackstopDuration = platformBackstopDuration;
 
   Future<void> initialize() async {
@@ -69,9 +89,21 @@ class BackgroundService {
     _settings = settings;
   }
 
+  /// Test seam: lengthen the first-reminder deferral for a single scenario
+  /// without rebuilding the service. Lets the integration harness assert "the
+  /// first reminder is held back" by pushing the deferral far beyond the
+  /// pump window, instead of relying on a tight wall-clock margin between a
+  /// short pump and the timer (which is flaky under the real-time test
+  /// binding). Call before the trip starts.
+  @visibleForTesting
+  void debugSetFirstReminderDuration(Duration duration) {
+    _firstReminderDuration = duration;
+  }
+
   Future<void> onDrivingStarted(TripLeg leg) async {
     _activeLeg = leg;
     _reminderShown = false;
+    _firstReminderPending = true;
 
     await _notificationService.showDrivingNotification(leg);
 
@@ -108,14 +140,20 @@ class BackgroundService {
         leg.endLocation ?? leg.routeDescription ?? 'määränpää';
 
     // Platform-level fallback (re)scheduled far enough out that, while the
-    // process is alive, the 5-minute in-process poll below always fires
-    // first and pushes this forward again — so it never fires its own copy
-    // and there is no duplicate notification. It only fires if the process
-    // is killed and no poll runs for the whole backstop window.
+    // process is alive, the in-process poll below (the long first-tick
+    // deferral, then the short steady-state poll) always fires first and
+    // pushes this forward again — so it never fires its own copy and there
+    // is no duplicate notification. It only fires if the process is killed
+    // and no poll runs for the whole backstop window.
     final platformTrigger = DateTime.now().add(_platformBackstopDuration);
     _notificationService.scheduleTimeBasedReminder(destination, platformTrigger);
 
-    _reminderTimer = Timer(_reminderDuration, () => _onReminderTick(leg));
+    // First tick of a trip waits the long deferral; every subsequent
+    // reschedule falls back to the short steady-state poll.
+    final nextTick =
+        _firstReminderPending ? _firstReminderDuration : _reminderDuration;
+    _firstReminderPending = false;
+    _reminderTimer = Timer(nextTick, () => _onReminderTick(leg));
   }
 
   /// Callback the [LocationService]'s proximity Timer invokes when the
@@ -158,6 +196,7 @@ class BackgroundService {
   Future<void> onDrivingStopped() async {
     _activeLeg = null;
     _reminderShown = false;
+    _firstReminderPending = false;
     _reminderTimer?.cancel();
     _reminderTimer = null;
     await _activitySub?.cancel();

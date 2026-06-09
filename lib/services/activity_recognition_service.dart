@@ -34,6 +34,26 @@ DrivingActivity _fromPlugin(plugin.ActivityType t) {
   }
 }
 
+/// Maps a raw plugin reading to our coarse enum, or returns `null` when the
+/// reading should be ignored.
+///
+/// The Activity Recognition framework attaches a [plugin.ActivityConfidence]
+/// (HIGH 80–100, MEDIUM 50–80, LOW 0–50) to every detection. A LOW reading is
+/// essentially a guess; acting on it lets a spurious `still`/`unknown` flicker
+/// — common mid-drive at a traffic light or over a bump — clobber a solid
+/// `in_vehicle` state and trip the "Oletko perillä?" reminder while the user
+/// is still driving. We drop LOW readings so the last confident activity
+/// stands until the framework is reasonably sure it has changed.
+///
+/// Pure and top-level so it can be unit-tested without the platform plugin.
+DrivingActivity? mapActivity(
+  plugin.ActivityType type,
+  plugin.ActivityConfidence confidence,
+) {
+  if (confidence == plugin.ActivityConfidence.LOW) return null;
+  return _fromPlugin(type);
+}
+
 /// Thin wrapper over `flutter_activity_recognition` so the rest of the app
 /// depends on a small enum + stream rather than the plugin's types, and tests
 /// can substitute a fake that pushes synthetic activity events.
@@ -72,7 +92,9 @@ class ActivityRecognitionService {
       _sub = plugin.FlutterActivityRecognition.instance.activityStream.listen(
         (a) {
           if (_controller.isClosed) return;
-          _controller.add(_fromPlugin(a.type));
+          final mapped = mapActivity(a.type, a.confidence);
+          if (mapped == null) return; // LOW-confidence noise — keep last reading
+          _controller.add(mapped);
         },
         onError: (_) {},
       );

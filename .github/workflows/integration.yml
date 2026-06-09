@@ -1,17 +1,24 @@
 name: Integration Suite
 
 on:
-  workflow_dispatch: # manual trigger only
+  workflow_dispatch: # manual trigger
+  pull_request:
+    branches: [main] # full emulator suite gates every PR into main
 
-# Only one integration run at a time (emulator is heavy)
+# One emulator run per PR/branch. The job is ~25-30 min, so cancel an
+# in-progress run when a new commit is pushed instead of stacking them.
 concurrency:
-  group: integration-suite
-  cancel-in-progress: false
+  group: integration-suite-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   bdd-suite:
-    runs-on: macos-latest # Apple Silicon (arm64) — native emulator acceleration
-    timeout-minutes: 45
+    # Linux + KVM: ubuntu-latest exposes /dev/kvm, giving a hardware-
+    # accelerated x86_64 emulator that boots reliably in CI. (The earlier
+    # macos-latest/arm64 config never booted here — adb reported
+    # "device 'emulator-5554' not found" until the boot timeout.)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v4
@@ -30,41 +37,43 @@ jobs:
 
       - run: flutter pub get
 
+      - name: Generate Gherkin test runners
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
       - name: Run BDD suite on Android emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
-          arch: arm64-v8a
+          arch: x86_64
           target: google_apis
-          avd-name: test_pixel
-          force-avd-creation: false
-          emulator-options: -no-window -no-snapshot -no-boot-anim -netdelay none -netspeed full
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -noaudio -camera-back none -netdelay none -netspeed full
           disable-animations: true
-          enable-avd-caching: true
-          emulator-boot-timeout: 600
+          emulator-boot-timeout: 900
           # Pre-grant notification permission as soon as the app is installed
-          # (the test framework installs it automatically on first flutter test).
-          # The subshell polls until the package appears, then grants.
+          # (flutter test installs it automatically on first run).
           pre-run-steps: |
-            ( for i in $(seq 1 60); do
+            ( for i in $(seq 1 90); do
                 adb shell pm grant fi.lpalokan.kilometrikorvaus android.permission.POST_NOTIFICATIONS 2>/dev/null && break
                 sleep 2
               done ) &
           script: |
-            echo "::group::Generate Gherkin tests (build_runner)"
-            dart run build_runner build --delete-conflicting-outputs
-            echo "::endgroup::"
-
             echo "::group::Run BDD suite"
             flutter test integration_test/all_features_test.dart --reporter expanded
             echo "::endgroup::"
 
-      - name: Collect artifacts on failure
+      - name: Collect logcat on failure
         if: failure()
         run: |
           mkdir -p test-results
           adb logcat -d > test-results/logcat.txt 2>/dev/null || true
-          adb exec-out screencap -p > test-results/last-screen.png 2>/dev/null || true
 
       - name: Upload test report
         if: always()
@@ -73,3 +82,4 @@ jobs:
           name: integration-artifacts
           path: test-results/
           retention-days: 7
+          if-no-files-found: ignore
