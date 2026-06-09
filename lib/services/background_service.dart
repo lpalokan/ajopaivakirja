@@ -52,6 +52,14 @@ class BackgroundService {
   StreamSubscription<DrivingActivity>? _activitySub;
   DrivingActivity _lastActivity = DrivingActivity.unknown;
 
+  /// True once the activity-recognition stream has delivered at least one
+  /// reading this trip. Lets the poll tell apart "framework is unavailable"
+  /// (no reading ever arrived → fall back to firing the reminder) from
+  /// "framework is active but currently unsure" (a confident `unknown` →
+  /// suppress, because firing on uncertainty is what surfaced "Oletko
+  /// perillä?" mid-drive).
+  bool _activityReceived = false;
+
   /// True once the "Oletko perillä?" reminder has been shown for the
   /// current out-of-vehicle episode, so the 5-minute poll asks once per stop
   /// instead of re-posting the same prompt on every increment. Reset when
@@ -104,6 +112,7 @@ class BackgroundService {
     _activeLeg = leg;
     _reminderShown = false;
     _firstReminderPending = true;
+    _activityReceived = false;
 
     await _notificationService.showDrivingNotification(leg);
 
@@ -123,6 +132,7 @@ class BackgroundService {
     _activitySub?.cancel();
     _activitySub = _activityService.activityStream.listen((a) {
       _lastActivity = a;
+      _activityReceived = true;
     });
     try {
       await _activityService.start();
@@ -178,8 +188,18 @@ class BackgroundService {
       return;
     }
 
-    // Confirmed not-in-vehicle (on_foot/still/etc.) or activity recognition
-    // unavailable (_lastActivity still .unknown). Ask once per stop episode
+    if (_activityReceived && _lastActivity == DrivingActivity.unknown) {
+      // The framework is reporting but isn't sure (a confident `unknown`,
+      // e.g. it lost the vehicle signal in a tunnel or hasn't re-settled
+      // after motion). Don't treat uncertainty as arrival — suppress and keep
+      // polling, leaving the "shown" latch as-is. The platform backstop (id
+      // 3) remains the safety net if the trip really has ended.
+      _scheduleTimeBasedReminder(leg);
+      return;
+    }
+
+    // Confirmed not-in-vehicle (walking/still/etc.) or activity recognition
+    // unavailable (no reading ever arrived). Ask once per stop episode
     // — the latch keeps the 5-minute poll from re-posting the same prompt on
     // every increment while the driver stays stopped. The poll keeps running
     // so a later return-to-vehicle (which resets the latch) and a subsequent
@@ -202,6 +222,7 @@ class BackgroundService {
     await _activitySub?.cancel();
     _activitySub = null;
     _lastActivity = DrivingActivity.unknown;
+    _activityReceived = false;
     try {
       await _activityService.stop();
     } catch (_) {}

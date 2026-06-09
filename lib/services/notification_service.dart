@@ -1,26 +1,72 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 import '../models/trip_leg.dart';
 
+/// Cancels a single platform notification by id. Pulled out as a typedef so
+/// the isolate-safe [handleStillDrivingBackgroundAction] can be driven by a
+/// real [FlutterLocalNotificationsPlugin] in production and by a recording
+/// fake in a host-VM unit test (the plugin class itself can't be subclassed —
+/// factory + private constructor).
+typedef NotificationCanceller = Future<void> Function(int id);
+
+/// The dismissal the "Ajan yhä" (still-driving) action must perform, written
+/// as a pure top-level function with no instance/isolate state so it can run
+/// in the background isolate (where the live [BackgroundService] is
+/// unreachable) AND be unit-tested directly.
+///
+/// It dismisses the visible "Oletko perillä?" prompt
+/// ([NotificationService.arrivalReminderId]). The pre-scheduled platform
+/// backstop ([NotificationService.scheduledReminderId]) is deliberately left
+/// intact: if the process has been killed there is no in-process timer left to
+/// re-arm the snooze, so that already-registered OS alarm is the only thing
+/// that will re-prompt a driver who is genuinely still on the road.
+@visibleForTesting
+Future<void> handleStillDrivingBackgroundAction(
+  NotificationResponse response,
+  NotificationCanceller cancel,
+) async {
+  if (response.actionId != NotificationService.stillDrivingActionId) return;
+  await cancel(NotificationService.arrivalReminderId);
+}
+
 /// Handles notification action taps delivered to the background isolate.
 ///
-/// flutter_local_notifications only dispatches action-button taps to Dart at
-/// all when this callback is registered. Actions that need app state/UI use
-/// `showsUserInterface: true`, so they launch the app and are re-delivered to
-/// the foreground handler; this entry point just needs to exist so the
-/// plugin's action receiver is wired up (and to swallow no-UI actions).
+/// flutter_local_notifications routes a `showsUserInterface: false` action to
+/// THIS entry point (a separate isolate) whenever the app's foreground engine
+/// isn't running — e.g. the screen is off mid-drive and Android has detached
+/// the activity. The separate isolate cannot reach the live
+/// [BackgroundService], so the dismissal has to be done here directly against
+/// a fresh plugin instance. Earlier this was an empty stub, which is why
+/// tapping "Ajan yhä" while driving left the reminder on screen.
 @pragma('vm:entry-point')
-void notificationTapBackground(NotificationResponse response) {}
+void notificationTapBackground(NotificationResponse response) {
+  final plugin = FlutterLocalNotificationsPlugin();
+  handleStillDrivingBackgroundAction(response, plugin.cancel);
+}
 
 class NotificationService {
   static const _channelId = 'kilometrikorvaus_driving';
   static const _channelName = 'Ajo käynnissä';
   static const _arrivedActionId = 'arrived';
-  static const _stillDrivingActionId = 'still_driving';
+
+  /// Action id for the "Ajan yhä" (still-driving) button. Public so the
+  /// integration harness can drive the real response-routing path instead of
+  /// poking [BackgroundService] directly.
+  static const stillDrivingActionId = 'still_driving';
   static const _startTripActionId = 'start_trip';
   static const _dismissActionId = 'dismiss';
   static const _endTripActionId = 'end_trip';
+
+  /// Platform notification ids. Public so the same ids are shared by the
+  /// background dismissal handler and tests rather than duplicated as magic
+  /// numbers.
+  static const drivingNotificationId = 1;
+  static const arrivalReminderId = 2;
+  static const scheduledReminderId = 3;
+  static const _tripDetectionId = 4;
+  static const _tripEndDetectionId = 5;
 
   final FlutterLocalNotificationsPlugin _plugin;
   void Function()? onArrived;
@@ -82,7 +128,7 @@ class NotificationService {
   void _onNotificationResponse(NotificationResponse response) {
     if (response.actionId == _arrivedActionId) {
       onArrived?.call();
-    } else if (response.actionId == _stillDrivingActionId) {
+    } else if (response.actionId == stillDrivingActionId) {
       onStillDriving?.call();
     } else if (response.actionId == _startTripActionId) {
       onStartTrip?.call();
@@ -90,6 +136,14 @@ class NotificationService {
       onEndTrip?.call();
     }
   }
+
+  /// Test seam: feed a [NotificationResponse] through the real foreground
+  /// dispatch ([_onNotificationResponse]) so the integration harness exercises
+  /// the actual action-id routing — `actionId` → `onStillDriving`/`onArrived`
+  /// — instead of reaching past it into [BackgroundService].
+  @visibleForTesting
+  void debugHandleResponse(NotificationResponse response) =>
+      _onNotificationResponse(response);
 
   Future<void> showDrivingNotification(TripLeg leg) async {
     final destination = leg.endLocation ?? leg.routeDescription ?? 'määränpää';
@@ -128,7 +182,7 @@ class NotificationService {
     );
 
     await _plugin.show(
-      1,
+      drivingNotificationId,
       'Ajo käynnissä: $destination',
       routeInfo,
       NotificationDetails(android: androidDetails, iOS: iosDetails),
@@ -149,15 +203,17 @@ class NotificationService {
           showsUserInterface: true,
         ),
         // "Ajan yhä" must NOT cold-launch the app — tapping it just defers
-        // the reminder. showsUserInterface=false routes the tap to the
-        // foreground _onNotificationResponse handler (when the app is
-        // alive) without bringing any UI to the front; the handler calls
-        // back into BackgroundService.onStillDrivingPressed, which dismisses
-        // this notification and snoozes another 5-minute increment. The
-        // activity-recognition check on the next poll then decides whether
-        // to ask again or suppress while still in_vehicle.
+        // the reminder. With showsUserInterface=false the tap is delivered to
+        // _onNotificationResponse when the foreground engine is alive, and to
+        // the background isolate (notificationTapBackground) otherwise — e.g.
+        // screen off mid-drive. Both paths dismiss this notification:
+        // cancelNotification removes it natively, the foreground path also
+        // routes to BackgroundService.onStillDrivingPressed to snooze another
+        // 5-minute increment, and the background isolate dismisses it via
+        // handleStillDrivingBackgroundAction. The activity-recognition check
+        // on the next poll then decides whether to ask again or suppress.
         AndroidNotificationAction(
-          _stillDrivingActionId,
+          stillDrivingActionId,
           'Ajan yhä',
           showsUserInterface: false,
           cancelNotification: true,
@@ -166,7 +222,7 @@ class NotificationService {
     );
 
     await _plugin.show(
-      2,
+      arrivalReminderId,
       'Oletko perillä?',
       'Saavuitko kohteeseen: $destination?',
       const NotificationDetails(
@@ -195,9 +251,10 @@ class NotificationService {
           showsUserInterface: true,
         ),
         // See the matching comment in showArrivalReminder — "Ajan yhä"
-        // defers, never launches the app.
+        // defers, never launches the app, and is dismissed on both the
+        // foreground and background-isolate paths.
         AndroidNotificationAction(
-          _stillDrivingActionId,
+          stillDrivingActionId,
           'Ajan yhä',
           showsUserInterface: false,
           cancelNotification: true,
@@ -206,7 +263,7 @@ class NotificationService {
     );
 
     await _plugin.zonedSchedule(
-      3,
+      scheduledReminderId,
       'Vieläkö ajat?',
       'Matka kohteeseen $destination on yhä kesken.',
       scheduledDate,
@@ -218,12 +275,12 @@ class NotificationService {
   }
 
   Future<void> cancelDrivingNotification() async {
-    await _plugin.cancel(1);
+    await _plugin.cancel(drivingNotificationId);
   }
 
   Future<void> cancelReminders() async {
-    await _plugin.cancel(2);
-    await _plugin.cancel(3);
+    await _plugin.cancel(arrivalReminderId);
+    await _plugin.cancel(scheduledReminderId);
   }
 
   /// Cancels only the pre-scheduled platform reminder (id 3), leaving any
@@ -232,7 +289,7 @@ class NotificationService {
   /// want to defer the reminder by rescheduling — without letting the
   /// platform fire its own copy at the original time.
   Future<void> cancelScheduledReminder() async {
-    await _plugin.cancel(3);
+    await _plugin.cancel(scheduledReminderId);
   }
 
   /// Show notification when potential driving is detected.
@@ -258,7 +315,7 @@ class NotificationService {
     );
 
     await _plugin.show(
-      4,
+      _tripDetectionId,
       'Ajatko autoa?',
       'GPS havaitsi liikettä. Aloitetaanko ajokirjanpito?',
       const NotificationDetails(
@@ -291,7 +348,7 @@ class NotificationService {
     );
 
     await _plugin.show(
-      5,
+      _tripEndDetectionId,
       'Saavuitko perille?',
       'GPS havaitsee, että olet pysähtynyt. Lopetetaanko ajo?',
       const NotificationDetails(
@@ -303,8 +360,8 @@ class NotificationService {
 
   /// Cancel detection notifications.
   Future<void> cancelDetectionNotifications() async {
-    await _plugin.cancel(4);
-    await _plugin.cancel(5);
+    await _plugin.cancel(_tripDetectionId);
+    await _plugin.cancel(_tripEndDetectionId);
   }
 
   String _formatTime(DateTime dt) {
