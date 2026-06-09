@@ -37,11 +37,17 @@ jobs:
           arch: arm64-v8a
           target: google_apis
           avd-name: test_pixel
-          force-avd-creation: false
-          emulator-options: -no-window -no-snapshot -no-boot-anim -netdelay none -netspeed full
+          # Create the AVD fresh: on an uncached runner there is no test_pixel
+          # AVD, and force-avd-creation:false skipped creating it, so the
+          # emulator had nothing to launch ("device not found" → boot timeout).
+          force-avd-creation: true
+          # -gpu swiftshader_indirect is required for a headless (-no-window)
+          # emulator; without it the emulator process dies immediately on the
+          # runner and never registers a device.
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -noaudio -camera-back none -netdelay none -netspeed full
           disable-animations: true
           enable-avd-caching: true
-          emulator-boot-timeout: 600
+          emulator-boot-timeout: 900
           # Pre-grant notification permission as soon as the app is installed
           # (the test framework installs it automatically on first flutter test).
           # The subshell polls until the package appears, then grants.
