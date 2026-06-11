@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter_activity_recognition/flutter_activity_recognition.dart'
     as plugin;
 
+import 'log_service.dart';
+
 /// Coarse on-device motion state we care about for trip reminders.
 ///
 /// Mirrors the values that `flutter_activity_recognition` v4 actually emits.
@@ -75,11 +77,22 @@ class ActivityRecognitionService {
       final current =
           await plugin.FlutterActivityRecognition.instance.checkPermission();
       if (current == plugin.ActivityPermission.GRANTED) return true;
-      if (current == plugin.ActivityPermission.PERMANENTLY_DENIED) return false;
+      if (current == plugin.ActivityPermission.PERMANENTLY_DENIED) {
+        LogService().warn(
+          'Activity: permission permanently denied — in_vehicle suppression '
+          'is OFF and reminders fall back to the blind timer',
+        );
+        return false;
+      }
       final asked =
           await plugin.FlutterActivityRecognition.instance.requestPermission();
-      return asked == plugin.ActivityPermission.GRANTED;
-    } catch (_) {
+      if (asked != plugin.ActivityPermission.GRANTED) {
+        LogService().warn('Activity: permission request answered $asked');
+        return false;
+      }
+      return true;
+    } catch (e) {
+      LogService().warn('Activity: permission check failed: $e');
       return false;
     }
   }
@@ -96,10 +109,18 @@ class ActivityRecognitionService {
           if (mapped == null) return; // LOW-confidence noise — keep last reading
           _controller.add(mapped);
         },
-        onError: (_) {},
+        onError: (Object e) {
+          // The plugin surfaces failures (e.g. requestActivityUpdates being
+          // rejected by Play services) as stream errors. They must be
+          // visible in the log: a silent failure here is exactly the
+          // "reminder fired after 30 minutes even though I was driving"
+          // bug from the outside.
+          LogService().warn('Activity: stream error: $e');
+        },
       );
-    } catch (_) {
-      // Plugin unavailable — leave the stream silent.
+      LogService().info('Activity: recognition stream started');
+    } catch (e) {
+      LogService().warn('Activity: stream unavailable: $e');
     }
   }
 

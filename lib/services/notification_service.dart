@@ -3,6 +3,19 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 import '../models/trip_leg.dart';
+import 'reminder_store.dart';
+
+/// How long one "Ajan yhä" tap silences the arrival reminders — both the
+/// 5-minute activity-checked poll and the 30-second proximity check read
+/// this snooze (via [ReminderStore]) before prompting again.
+const Duration stillDrivingSnoozeDuration = Duration(minutes: 15);
+
+/// How far out the "Ajan yhä" tap re-arms the platform backstop. Mirrors
+/// [BackgroundService.defaultPlatformBackstopDuration]: dismissing the
+/// visible "Vieläkö ajat?" (id 3) also unschedules any pending copy, so the
+/// tap must register a fresh one — it is the only re-prompt left when the
+/// app process has been killed mid-trip.
+const Duration stillDrivingBackstopRearmDuration = Duration(minutes: 45);
 
 /// Cancels a single platform notification by id. Pulled out as a typedef so
 /// the isolate-safe [handleStillDrivingBackgroundAction] can be driven by a
@@ -11,39 +24,119 @@ import '../models/trip_leg.dart';
 /// factory + private constructor).
 typedef NotificationCanceller = Future<void> Function(int id);
 
-/// The dismissal the "Ajan yhä" (still-driving) action must perform, written
-/// as a pure top-level function with no instance/isolate state so it can run
-/// in the background isolate (where the live [BackgroundService] is
-/// unreachable) AND be unit-tested directly.
+/// Registers the far-out "Vieläkö ajat?" backstop. A typedef seam for the
+/// same reason as [NotificationCanceller].
+typedef BackstopScheduler = Future<void> Function(
+  String destination,
+  DateTime triggerTime,
+);
+
+/// Everything the "Ajan yhä" (still-driving) tap must do, written as a pure
+/// top-level function so it can run in the background isolate (where the
+/// live [BackgroundService] is unreachable) AND be unit-tested directly.
 ///
-/// It dismisses the visible "Oletko perillä?" prompt
-/// ([NotificationService.arrivalReminderId]). The pre-scheduled platform
-/// backstop ([NotificationService.scheduledReminderId]) is deliberately left
-/// intact: if the process has been killed there is no in-process timer left to
-/// re-arm the snooze, so that already-registered OS alarm is the only thing
-/// that will re-prompt a driver who is genuinely still on the road.
+/// On Android this is the ONLY code that ever handles the tap: a
+/// `showsUserInterface: false` action is always delivered to the background
+/// isolate, even while the app is in the foreground. So it must do the whole
+/// job by itself:
+///
+///  1. Dismiss whichever reminder is on screen — the in-process "Oletko
+///     perillä?" (id 2) or the fired platform backstop "Vieläkö ajat?"
+///     (id 3). Cancelling only id 2 was the bug that left a fired backstop
+///     on screen no matter how many times "Ajan yhä" was pressed.
+///  2. Persist a snooze deadline through [ReminderStore], because the main
+///     isolate's poll and proximity timers know nothing about the tap. They
+///     re-read the snooze before every prompt, which is what makes the
+///     reminder actually stay away.
+///  3. Re-arm the platform backstop: cancelling id 3 also dropped any
+///     pending schedule, and if the process is dead that schedule was the
+///     only thing left to re-prompt a driver still on the road.
 @visibleForTesting
 Future<void> handleStillDrivingBackgroundAction(
-  NotificationResponse response,
-  NotificationCanceller cancel,
-) async {
+  NotificationResponse response, {
+  required NotificationCanceller cancel,
+  required ReminderStore store,
+  required BackstopScheduler scheduleBackstop,
+  Duration snoozeDuration = stillDrivingSnoozeDuration,
+}) async {
   if (response.actionId != NotificationService.stillDrivingActionId) return;
   await cancel(NotificationService.arrivalReminderId);
+  await cancel(NotificationService.scheduledReminderId);
+  final now = DateTime.now();
+  await store.setSnoozedUntil(now.add(snoozeDuration));
+  final destination = await store.destination() ?? 'määränpää';
+  await scheduleBackstop(
+    destination,
+    now.add(stillDrivingBackstopRearmDuration),
+  );
 }
 
 /// Handles notification action taps delivered to the background isolate.
 ///
-/// flutter_local_notifications routes a `showsUserInterface: false` action to
-/// THIS entry point (a separate isolate) whenever the app's foreground engine
-/// isn't running — e.g. the screen is off mid-drive and Android has detached
-/// the activity. The separate isolate cannot reach the live
-/// [BackgroundService], so the dismissal has to be done here directly against
-/// a fresh plugin instance. Earlier this was an empty stub, which is why
-/// tapping "Ajan yhä" while driving left the reminder on screen.
+/// flutter_local_notifications routes every `showsUserInterface: false`
+/// action to THIS entry point (a separate isolate) on Android — regardless
+/// of whether the app's foreground engine is running. The separate isolate
+/// cannot reach the live [BackgroundService], so dismissal, snooze and
+/// backstop re-arm all happen here against a fresh plugin instance and the
+/// persisted [ReminderStore].
 @pragma('vm:entry-point')
 void notificationTapBackground(NotificationResponse response) {
   final plugin = FlutterLocalNotificationsPlugin();
-  handleStillDrivingBackgroundAction(response, plugin.cancel);
+  handleStillDrivingBackgroundAction(
+    response,
+    cancel: plugin.cancel,
+    store: ReminderStore(),
+    scheduleBackstop: (destination, triggerTime) {
+      tz.initializeTimeZones();
+      return scheduleStillDrivingBackstop(plugin, destination, triggerTime);
+    },
+  );
+}
+
+/// Registers the far-out "Vieläkö ajat?" platform backstop (id 3). Top-level
+/// so both [NotificationService.scheduleTimeBasedReminder] (main isolate)
+/// and [notificationTapBackground] (background isolate, after an "Ajan yhä"
+/// tap) build the identical notification.
+Future<void> scheduleStillDrivingBackstop(
+  FlutterLocalNotificationsPlugin plugin,
+  String destination,
+  DateTime triggerTime,
+) async {
+  final scheduledDate = tz.TZDateTime.from(triggerTime, tz.local);
+
+  const androidDetails = AndroidNotificationDetails(
+    'kilometrikorvaus_reminder',
+    'Muistutukset',
+    channelDescription: 'Aikaperusteinen muistutus',
+    importance: Importance.high,
+    priority: Priority.high,
+    actions: [
+      AndroidNotificationAction(
+        NotificationService._arrivedActionId,
+        'Olen perillä',
+        showsUserInterface: true,
+      ),
+      // See the comment in showArrivalReminder — "Ajan yhä" is handled
+      // entirely by the background isolate.
+      AndroidNotificationAction(
+        NotificationService.stillDrivingActionId,
+        'Ajan yhä',
+        showsUserInterface: false,
+        cancelNotification: true,
+      ),
+    ],
+  );
+
+  await plugin.zonedSchedule(
+    NotificationService.scheduledReminderId,
+    'Vieläkö ajat?',
+    'Matka kohteeseen $destination on yhä kesken.',
+    scheduledDate,
+    const NotificationDetails(android: androidDetails),
+    androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+    uiLocalNotificationDateInterpretation:
+        UILocalNotificationDateInterpretation.absoluteTime,
+  );
 }
 
 class NotificationService {
@@ -137,14 +230,6 @@ class NotificationService {
     }
   }
 
-  /// Test seam: feed a [NotificationResponse] through the real foreground
-  /// dispatch ([_onNotificationResponse]) so the integration harness exercises
-  /// the actual action-id routing — `actionId` → `onStillDriving`/`onArrived`
-  /// — instead of reaching past it into [BackgroundService].
-  @visibleForTesting
-  void debugHandleResponse(NotificationResponse response) =>
-      _onNotificationResponse(response);
-
   Future<void> showDrivingNotification(TripLeg leg) async {
     final destination = leg.endLocation ?? leg.routeDescription ?? 'määränpää';
     final routeInfo = leg.routeDescription ?? '${leg.startLocation} → $destination';
@@ -203,15 +288,13 @@ class NotificationService {
           showsUserInterface: true,
         ),
         // "Ajan yhä" must NOT cold-launch the app — tapping it just defers
-        // the reminder. With showsUserInterface=false the tap is delivered to
-        // _onNotificationResponse when the foreground engine is alive, and to
-        // the background isolate (notificationTapBackground) otherwise — e.g.
-        // screen off mid-drive. Both paths dismiss this notification:
-        // cancelNotification removes it natively, the foreground path also
-        // routes to BackgroundService.onStillDrivingPressed to snooze another
-        // 5-minute increment, and the background isolate dismisses it via
-        // handleStillDrivingBackgroundAction. The activity-recognition check
-        // on the next poll then decides whether to ask again or suppress.
+        // the reminder. With showsUserInterface=false the tap is delivered
+        // to the background isolate (notificationTapBackground) on Android
+        // in ALL app states — it never reaches _onNotificationResponse, even
+        // with the app in the foreground. cancelNotification removes the
+        // tapped copy natively; handleStillDrivingBackgroundAction then
+        // dismisses both reminder ids, persists the snooze the main-isolate
+        // poll & proximity checks honour, and re-arms the platform backstop.
         AndroidNotificationAction(
           stillDrivingActionId,
           'Ajan yhä',
@@ -236,42 +319,7 @@ class NotificationService {
     String destination,
     DateTime triggerTime,
   ) async {
-    final scheduledDate = tz.TZDateTime.from(triggerTime, tz.local);
-
-    const androidDetails = AndroidNotificationDetails(
-      'kilometrikorvaus_reminder',
-      'Muistutukset',
-      channelDescription: 'Aikaperusteinen muistutus',
-      importance: Importance.high,
-      priority: Priority.high,
-      actions: [
-        AndroidNotificationAction(
-          _arrivedActionId,
-          'Olen perillä',
-          showsUserInterface: true,
-        ),
-        // See the matching comment in showArrivalReminder — "Ajan yhä"
-        // defers, never launches the app, and is dismissed on both the
-        // foreground and background-isolate paths.
-        AndroidNotificationAction(
-          stillDrivingActionId,
-          'Ajan yhä',
-          showsUserInterface: false,
-          cancelNotification: true,
-        ),
-      ],
-    );
-
-    await _plugin.zonedSchedule(
-      scheduledReminderId,
-      'Vieläkö ajat?',
-      'Matka kohteeseen $destination on yhä kesken.',
-      scheduledDate,
-      const NotificationDetails(android: androidDetails),
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-    );
+    await scheduleStillDrivingBackstop(_plugin, destination, triggerTime);
   }
 
   Future<void> cancelDrivingNotification() async {
