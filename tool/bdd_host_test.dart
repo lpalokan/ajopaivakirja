@@ -29,6 +29,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../integration_test/features/accessibility_test.dart' as accessibility;
@@ -81,6 +82,11 @@ void _installPluginMocks() {
   // share_plus: swallow share sheets invoked by export/sync actions.
   const share = MethodChannel('dev.fluttercommunity.plus/share');
   messenger.setMockMethodCallHandler(share, (call) async => null);
+
+  // shared_preferences backs ReminderStore (the cross-isolate "Ajan yhä"
+  // snooze). The in-memory mock also starts every scenario from a clean
+  // store, mirroring launchApp's per-scenario clear on the device.
+  SharedPreferences.setMockInitialValues({});
 }
 
 void main() {

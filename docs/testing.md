@@ -96,9 +96,11 @@ feature). The suite is run via this aggregator. **When you add a new
 | `Given activity recognition reports {string}` | Pushes a synthetic motion activity (`in_vehicle`/`still`/…) into the stream BackgroundService watches |
 | `When the reminder backstop elapses` | Pumps past whichever reminder duration is scheduled (long first-tick deferral or short steady-state poll) so the in-process reminder tick fires |
 | `Given the first reminder is deferred well beyond the steady poll` | Pushes the first-reminder deferral far out (test seam) so the next backstop pump asserts the very first reminder of a trip is held back, without a flaky wall-clock margin |
-| `When the still driving notification action is tapped` | Invokes the "Ajan yhä" action path (dismiss current reminder + snooze 5 min) |
+| `When the still driving notification action is tapped` | Invokes the "Ajan yhä" BACKGROUND-isolate handler — the only path Android delivers the action to — with a short snooze, so re-ask behaviour is observable within one pump |
+| `When the still driving notification action is tapped with a long snooze` | Same handler with a far-out snooze, to assert reminders stay silent for the whole snooze window |
+| `Given the in-vehicle recency window is long` | Stretches BackgroundService's in-vehicle recency window (test seam) so a confident `still` right after `in_vehicle` (red light) is asserted NOT to fire the reminder |
 | `Then an arrival reminder has been shown` / `no arrival reminder has been shown` / `exactly {int} arrival reminder has been shown` | Asserts how many times the "Oletko perillä?" reminder was posted |
-| `Then the reminder notification has been dismissed` | Asserts tapping "Ajan yhä" called cancelReminders (the prompt actually goes away) |
+| `Then the reminder notification has been dismissed` | Asserts the "Ajan yhä" tap cancelled BOTH reminder ids (the visible prompt and the platform backstop) |
 | `Then I see {string}` | Asserts text is visible (scrolls if needed) |
 | `Then I do not see {string}` | Asserts text is absent |
 | `Then I see text containing {string}` | Substring assertion |

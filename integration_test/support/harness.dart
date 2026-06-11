@@ -33,6 +33,7 @@ import 'package:kilometrikorvaus/services/file_opener_service.dart';
 import 'package:kilometrikorvaus/services/location_service.dart';
 import 'package:kilometrikorvaus/services/notification_service.dart';
 import 'package:kilometrikorvaus/services/odometer_vision_service.dart';
+import 'package:kilometrikorvaus/services/reminder_store.dart';
 import 'package:kilometrikorvaus/services/sheets_service.dart';
 import 'package:kilometrikorvaus/services/update_service.dart';
 
@@ -41,10 +42,11 @@ import 'package:kilometrikorvaus/services/update_service.dart';
 class _FakeNotificationService extends NotificationService {
   int arrivalReminderShownCount = 0;
 
-  /// Counts calls to [cancelReminders] so scenarios can assert that tapping
-  /// "Ajan yhä" actually dismisses the shown reminder (the bug where the
-  /// prompt would not go away no matter how many times it was pressed).
-  int reminderDismissedCount = 0;
+  /// Notification ids cancelled through the BACKGROUND-isolate tap path
+  /// ([handleStillDrivingBackgroundAction]) — the only path "Ajan yhä" is
+  /// delivered to on Android. Recorded by the canceller seam the harness
+  /// passes in [tapStillDrivingAction].
+  final List<int> cancelledIds = [];
 
   @override
   Future<void> initialize() async {}
@@ -61,9 +63,7 @@ class _FakeNotificationService extends NotificationService {
   @override
   Future<void> cancelDrivingNotification() async {}
   @override
-  Future<void> cancelReminders() async {
-    reminderDismissedCount++;
-  }
+  Future<void> cancelReminders() async {}
   @override
   Future<void> cancelScheduledReminder() async {}
 }
@@ -237,20 +237,34 @@ const Duration _testReminderDuration = Duration(milliseconds: 700);
 /// (see [BackgroundService.defaultFirstReminderDuration]).
 const Duration _testFirstReminderDuration = Duration(milliseconds: 1800);
 
+/// In-vehicle recency window for tests. Shorter than one steady-state poll
+/// (700ms) so scenarios that push `in_vehicle` and then a stop still see the
+/// prompt on the NEXT tick; the traffic-light scenario stretches it via
+/// [setLongInVehicleRecencyWindow]. Production default is 10 minutes
+/// ([BackgroundService.defaultInVehicleRecencyWindow]).
+const Duration _testInVehicleRecencyWindow = Duration(milliseconds: 300);
+
 /// Live reference to the real [BackgroundService] handed to the
 /// ProviderScope this scenario is running against. Held so step helpers
-/// (`tapStillDrivingAction`) can invoke methods on it directly, the same
-/// way the `_stillDrivingActionId` action button would via the
-/// NotificationService → BackgroundService callback chain.
+/// (`tapArrivalAction`, `setLongInVehicleRecencyWindow`) can invoke methods
+/// on it directly.
 BackgroundService? _testBackgroundService;
+
+/// The real, on-device [ReminderStore] shared by the test BackgroundService
+/// and the background-isolate tap path in [tapStillDrivingAction] — the
+/// same SharedPreferences-backed channel production uses to carry the
+/// "Ajan yhä" snooze across isolates. Cleared per scenario in [launchApp].
+final ReminderStore _testReminderStore = ReminderStore();
 
 BackgroundService _buildTestBackgroundService() {
   final bg = BackgroundService(
     notificationService: _fakeNotification,
     locationService: _fakeLocation,
     activityService: _fakeActivity,
+    reminderStore: _testReminderStore,
     reminderDuration: _testReminderDuration,
     firstReminderDuration: _testFirstReminderDuration,
+    inVehicleRecencyWindow: _testInVehicleRecencyWindow,
   );
   _testBackgroundService = bg;
   return bg;
@@ -412,6 +426,10 @@ Future<void> launchApp(WidgetTester tester) async {
   // itself while it observes in_vehicle) doesn't leak into this run.
   _testBackgroundService?.dispose();
   _testBackgroundService = null;
+  // SharedPreferences persists across scenarios on the device — wipe the
+  // reminder state so a snooze written by one scenario can't silence the
+  // reminders of the next.
+  await _testReminderStore.clear();
   _fakeLocation = _FakeLocationService();
   _fakeNotification = _FakeNotificationService();
   _fakeActivity = _FakeActivityRecognitionService();
@@ -1107,12 +1125,21 @@ void expectArrivalReminderShownAtLeastOnce() {
 }
 
 void expectReminderDismissed() {
+  // Both the visible "Oletko perillä?" (id 2) AND the platform backstop
+  // "Vieläkö ajat?" (id 3) must be cancelled: whichever of the two is on
+  // screen, the tap has to take it down. Cancelling only id 2 was the bug
+  // that left a fired backstop up no matter how often "Ajan yhä" was hit.
   expect(
-    _fakeNotification.reminderDismissedCount,
-    greaterThanOrEqualTo(1),
+    _fakeNotification.cancelledIds,
+    containsAll([
+      NotificationService.arrivalReminderId,
+      NotificationService.scheduledReminderId,
+    ]),
     reason:
-        'Expected tapping "Ajan yhä" to dismiss the shown reminder '
-        '(cancelReminders), but it was never called.',
+        'Expected tapping "Ajan yhä" to cancel both reminder notifications '
+        '(ids ${NotificationService.arrivalReminderId} and '
+        '${NotificationService.scheduledReminderId}), but the background '
+        'handler cancelled only ${_fakeNotification.cancelledIds}.',
   );
 }
 
@@ -1215,29 +1242,45 @@ Future<void> appReturnsToForeground(WidgetTester tester) async {
 }
 
 /// Simulates the user tapping the "Ajan yhä" action button on the
-/// arrival-reminder notification by feeding a real [NotificationResponse]
-/// through the production foreground dispatch
-/// (`NotificationService.debugHandleResponse` → `_onNotificationResponse`).
+/// arrival-reminder notification by invoking the real BACKGROUND-isolate
+/// handler ([handleStillDrivingBackgroundAction]) against the same
+/// [ReminderStore] the running BackgroundService polls.
 ///
-/// This deliberately drives the WHOLE routing chain — `actionId` →
-/// `ns.onStillDriving` → `bg.onStillDriving` → `bg.onStillDrivingPressed` —
-/// rather than poking `onStillDrivingPressed` directly. The old direct call
-/// masked the original bug: the action never reached the handler, so the
-/// reminder was never dismissed. Now a regression in that wiring (a wrong
-/// action id, an unwired callback) fails this step.
+/// On Android a `showsUserInterface: false` action is ALWAYS delivered to
+/// the background isolate — even with the app in the foreground — so this
+/// is the production path, full stop. The previous harness fed the tap
+/// through the foreground dispatch (`debugHandleResponse`), a route a real
+/// device never takes for this action; the suite stayed green while the
+/// reminder kept re-appearing on the phone.
 ///
-/// The platform-killed/background path (where the tap lands in the separate
-/// `notificationTapBackground` isolate) can't run in a widget test; it is
-/// covered by the host-VM unit test for `handleStillDrivingBackgroundAction`.
-Future<void> tapStillDrivingAction(WidgetTester tester) async {
-  _fakeNotification.debugHandleResponse(
+/// `snooze` defaults to a sub-poll duration so the existing
+/// "snoozes-then-re-asks" scenarios can observe the re-ask within one pump;
+/// the long-snooze step passes a far-out value to assert sustained silence.
+Future<void> tapStillDrivingAction(
+  WidgetTester tester, {
+  Duration snooze = const Duration(milliseconds: 300),
+}) async {
+  await handleStillDrivingBackgroundAction(
     const NotificationResponse(
       notificationResponseType:
           NotificationResponseType.selectedNotificationAction,
       actionId: NotificationService.stillDrivingActionId,
     ),
+    cancel: (id) async => _fakeNotification.cancelledIds.add(id),
+    store: _testReminderStore,
+    scheduleBackstop: (destination, triggerTime) async {},
+    snoozeDuration: snooze,
   );
-  // Let the rescheduled Timer settle into the event loop before the next
+  // Let the poll's next tick observe the persisted snooze before the next
   // scenario step runs.
   await tester.pump(const Duration(milliseconds: 50));
+}
+
+/// Stretches the running BackgroundService's in-vehicle recency window far
+/// beyond the scenario's pump budget (see the feature step
+/// "the in-vehicle recency window is long").
+void setLongInVehicleRecencyWindow() {
+  _testBackgroundService?.debugSetInVehicleRecencyWindow(
+    const Duration(seconds: 60),
+  );
 }
