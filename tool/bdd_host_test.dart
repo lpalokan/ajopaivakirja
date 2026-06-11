@@ -86,6 +86,9 @@ void _installPluginMocks() {
   // shared_preferences backs ReminderStore (the cross-isolate "Ajan yhä"
   // snooze). The in-memory mock also starts every scenario from a clean
   // store, mirroring launchApp's per-scenario clear on the device.
+  // This file IS a test — it only lives under tool/ so flutter_tools
+  // doesn't route it to a device (see the header) — hence the lint waiver.
+  // ignore: invalid_use_of_visible_for_testing_member
   SharedPreferences.setMockInitialValues({});
 }
 
