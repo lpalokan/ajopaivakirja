@@ -5,7 +5,6 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:intl/intl.dart';
 import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
-import '../app_version.dart';
 import 'trip_calculator.dart';
 
 class PdfReportService {
@@ -81,9 +80,6 @@ class PdfReportService {
         grandTotal: grandTotalKmAllowance + grandTotalDailyAllowance,
       ),
     );
-
-    // Signature page
-    pages.add(_buildSignaturePage());
 
     doc.addPage(
       pw.MultiPage(
@@ -336,73 +332,6 @@ class PdfReportService {
               style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
             ),
           ],
-        ),
-        pw.SizedBox(height: 8),
-        pw.Text(
-          'Huom: kilometrikorvaukset ovat verovapaita Verohallinnon vahvistaman '
-          'enimmäismäärän mukaisesti. Päivärahat eivät ole veronalaista tuloa.',
-          style: pw.TextStyle(fontSize: 8, fontStyle: pw.FontStyle.italic),
-        ),
-      ],
-    );
-  }
-
-  pw.Widget _buildSignaturePage() {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.SizedBox(height: 40),
-        pw.Text(
-          'Vakuutus',
-          style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
-        ),
-        pw.SizedBox(height: 12),
-        pw.Text(
-          'Vakuutan, että yllä mainitut matkat on tehty ilmoitettuna aikana '
-          'ja ilmoitetulla ajoneuvolla, ja että kilometrikorvaukset on laskettu '
-          'Verohallinnon kulloinkin vahvistaman enimmäismäärän mukaisesti.',
-          style: const pw.TextStyle(fontSize: 11),
-        ),
-        pw.SizedBox(height: 40),
-        pw.Row(
-          children: [
-            pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Text(
-                  'Paikka ja aika: ___________________________',
-                  style: const pw.TextStyle(fontSize: 11),
-                ),
-              ],
-            ),
-            pw.SizedBox(width: 40),
-            pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Text(
-                  'Allekirjoitus: ___________________________',
-                  style: const pw.TextStyle(fontSize: 11),
-                ),
-              ],
-            ),
-          ],
-        ),
-        pw.SizedBox(height: 20),
-        pw.Row(
-          children: [
-            pw.Text(
-              'Nimen selvennys: ${settings.driverName}',
-              style: const pw.TextStyle(fontSize: 11),
-            ),
-          ],
-        ),
-        pw.SizedBox(height: 40),
-        pw.Divider(),
-        pw.SizedBox(height: 8),
-        pw.Text(
-          'Raportti luotu: ${DateFormat('d.M.yyyy HH:mm', 'fi').format(DateTime.now())} '
-          '• Ajopäiväkirja v$appVersionName',
-          style: pw.TextStyle(fontSize: 8, color: PdfColors.grey),
         ),
       ],
     );
