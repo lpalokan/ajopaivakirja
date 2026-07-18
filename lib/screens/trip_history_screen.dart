@@ -690,19 +690,11 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
   }
 
   Future<void> _exportPdf() async {
-    // Show date range picker
-    DateTime startDate = DateTime.now().subtract(const Duration(days: 365));
-    DateTime endDate = DateTime.now();
-
-    // Find earliest and latest dates
-    if (_dates.isNotEmpty) {
-      try {
-        final firstDate = DateTime.parse(_dates.last);
-        final lastDate = DateTime.parse(_dates.first);
-        startDate = firstDate;
-        endDate = lastDate;
-      } catch (_) {}
-    }
+    // Default the range to the current month: from the first day of this
+    // month to the last day of this month.
+    final now = DateTime.now();
+    final startDate = DateTime(now.year, now.month, 1);
+    final endDate = DateTime(now.year, now.month + 1, 0);
 
     if (!mounted) return;
 
@@ -995,6 +987,10 @@ class _PdfDateRangeDialogState extends State<_PdfDateRangeDialog> {
   @override
   Widget build(BuildContext context) {
     final dateFmt = DateFormat('d.M.yyyy', 'fi');
+    // Allow selecting up to the last day of the current month so the default
+    // month-end range stays within the picker bounds.
+    final now = DateTime.now();
+    final lastSelectable = DateTime(now.year, now.month + 1, 0);
     return AlertDialog(
       title: const Text('Vie PDF-raportti'),
       content: Column(
@@ -1008,7 +1004,7 @@ class _PdfDateRangeDialogState extends State<_PdfDateRangeDialog> {
                 context: context,
                 initialDate: _start,
                 firstDate: DateTime(2020),
-                lastDate: DateTime.now(),
+                lastDate: lastSelectable,
               );
               if (d != null) setState(() => _start = d);
             },
@@ -1027,7 +1023,7 @@ class _PdfDateRangeDialogState extends State<_PdfDateRangeDialog> {
                 context: context,
                 initialDate: _end,
                 firstDate: DateTime(2020),
-                lastDate: DateTime.now(),
+                lastDate: lastSelectable,
               );
               if (d != null) setState(() => _end = d);
             },
