@@ -83,7 +83,8 @@ class PdfReportService {
 
     doc.addPage(
       pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
+        // Landscape gives the trip table room for the odometer columns.
+        pageFormat: PdfPageFormat.a4.landscape,
         margin: const pw.EdgeInsets.all(36),
         build: (context) => pages,
       ),
@@ -165,12 +166,14 @@ class PdfReportService {
           columnWidths: {
             0: const pw.FlexColumnWidth(0.8),
             1: const pw.FlexColumnWidth(0.8),
-            2: const pw.FlexColumnWidth(0.8),
+            2: const pw.FlexColumnWidth(1.2),
             3: const pw.FlexColumnWidth(1.2),
-            4: const pw.FlexColumnWidth(0.8),
-            5: const pw.FlexColumnWidth(1.2),
-            6: const pw.FlexColumnWidth(1),
-            7: const pw.FlexColumnWidth(1),
+            4: const pw.FlexColumnWidth(0.9),
+            5: const pw.FlexColumnWidth(0.9),
+            6: const pw.FlexColumnWidth(0.7),
+            7: const pw.FlexColumnWidth(1.2),
+            8: const pw.FlexColumnWidth(1),
+            9: const pw.FlexColumnWidth(1),
           },
           children: [
             pw.TableRow(
@@ -179,6 +182,8 @@ class PdfReportService {
                 _tableHeader('Päättyi'),
                 _tableHeader('Lähtö'),
                 _tableHeader('Määränpää'),
+                _tableHeader('Mittari alussa'),
+                _tableHeader('Mittari lopussa'),
                 _tableHeader('Km'),
                 _tableHeader('Tarkoitus'),
                 _tableHeader('Km-korv. €'),
@@ -194,6 +199,8 @@ class PdfReportService {
                   ),
                   _tableCell(leg.startLocation),
                   _tableCell(leg.endLocation ?? ''),
+                  _tableCell(leg.startOdometer.toString()),
+                  _tableCell(leg.endOdometer?.toString() ?? ''),
                   _tableCell(leg.kmDriven.toStringAsFixed(1)),
                   _tableCell(leg.purpose ?? ''),
                   _tableCell(leg.kmAllowance.toStringAsFixed(2)),
