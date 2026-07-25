@@ -413,6 +413,15 @@ class DatabaseService {
     LogService().info('DB: leg $id marked unsynced');
   }
 
+  /// Mark every leg as unsynced. Used when the export spreadsheet had to be
+  /// re-created (the new file is empty, so the whole history must be written
+  /// into it again).
+  static Future<void> markAllLegsUnsynced() async {
+    final db = await database;
+    final rows = await db.update('trip_legs', {'synced': 0});
+    LogService().info('DB: $rows legs marked unsynced (spreadsheet re-created)');
+  }
+
   static Future<int> getNextLegOrder(String date) async {
     final db = await database;
     final result = await db.rawQuery(

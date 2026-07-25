@@ -12,6 +12,8 @@ import '../app_version.dart';
 import '../services/database_service.dart';
 import '../services/decimal_input.dart';
 import '../services/log_service.dart';
+import '../services/sheets_service.dart';
+import '../models/app_settings.dart';
 import '../models/location_zone.dart';
 import '../widgets/main_bottom_nav.dart';
 import '../widgets/update_banner.dart';
@@ -29,13 +31,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _kmRateController = TextEditingController();
   final _allowance6hController = TextEditingController();
   final _allowance10hController = TextEditingController();
-  final _sheetIdController = TextEditingController();
   final _sheetTabController = TextEditingController();
   final _driverController = TextEditingController();
 
   bool _saving = false;
   bool _signingIn = false;
   bool _signedIn = false;
+  bool _creatingSheet = false;
+
+  /// Name of the export spreadsheet, once it is known. Null until the file has
+  /// been created in this session — the id alone is not worth showing.
+  String? _sheetTitle;
   Map<int, double> _kmRates = {};
   bool _kmRatesExpanded = false;
   List<LocationZone> _locationZones = [];
@@ -49,7 +55,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _kmRateController.text = settings.kmRate.toString();
     _allowance6hController.text = settings.allowance6h.toString();
     _allowance10hController.text = settings.allowance10h.toString();
-    _sheetIdController.text = settings.sheetId;
     _sheetTabController.text = settings.sheetTab;
     _driverController.text = settings.driverName;
     _checkSignIn();
@@ -79,7 +84,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _kmRateController.dispose();
     _allowance6hController.dispose();
     _allowance10hController.dispose();
-    _sheetIdController.dispose();
     _sheetTabController.dispose();
     _driverController.dispose();
     super.dispose();
@@ -272,27 +276,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     const SizedBox(height: 12),
                     _buildSheetsAuthButton(),
                     const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextFormField(
-                            controller: _sheetIdController,
-                            decoration: const InputDecoration(
-                              labelText: 'Sheets-tiedoston ID',
-                              hintText: 'URL:stä löytyvä tunniste',
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        SizedBox(
-                          height: 56,
-                          child: OutlinedButton(
-                            onPressed: _signedIn ? _showFilePicker : null,
-                            child: const Icon(Symbols.folder_open),
-                          ),
-                        ),
-                      ],
-                    ),
+                    _buildSpreadsheetRow(),
                     const SizedBox(height: 16),
                     TextFormField(
                       controller: _sheetTabController,
@@ -388,12 +372,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Widget _buildSheetsAuthButton() {
     if (_signedIn) {
+      // The label takes the slack rather than a Spacer: with three rigid
+      // children this Row overflows a narrow card (248 dp on a small phone),
+      // and letting the label ellipsize is the only child that can give.
       return Row(
         children: [
           const Icon(Symbols.check_circle, color: Colors.green, size: 20),
           const SizedBox(width: 8),
-          const Text('Kirjautunut Googleen'),
-          const Spacer(),
+          const Expanded(
+            child: Text(
+              'Kirjautunut Googleen',
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
           TextButton(onPressed: _signOut, child: const Text('Kirjaudu ulos')),
         ],
       );
@@ -435,19 +426,92 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _showFilePicker() async {
-    final sheets = ref.read(sheetsServiceProvider);
+  /// The export spreadsheet, or the button that creates it.
+  ///
+  /// There is no "paste an id" field and no Drive file picker any more: the
+  /// `drive.file` scope only grants access to files this app created itself,
+  /// so creating the spreadsheet *is* how access is obtained. That single
+  /// non-sensitive scope is what lets the app ship without Google's
+  /// verification review.
+  Widget _buildSpreadsheetRow() {
+    final sheetId = ref.watch(settingsProvider).sheetId;
 
-    await showDialog(
-      context: context,
-      builder: (ctx) => _FilePickerDialog(
-        sheets: sheets,
-        onSelect: (id) {
-          _sheetIdController.text = id;
-          Navigator.pop(ctx);
-        },
-      ),
+    if (sheetId.isEmpty) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: FilledButton.tonalIcon(
+          onPressed: (_signedIn && !_creatingSheet) ? _createSpreadsheet : null,
+          icon: _creatingSheet
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Symbols.add_chart),
+          label: Text(
+            _creatingSheet ? 'Luodaan...' : 'Luo taulukko Google Driveen',
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        const Icon(Symbols.table_chart, size: 20),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Vientitaulukko',
+                style: Theme.of(context).textTheme.labelSmall,
+              ),
+              Text(
+                _sheetTitle ?? SheetsService.defaultSpreadsheetTitle,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+        IconButton(
+          tooltip: 'Kopioi linkki',
+          icon: const Icon(Symbols.link),
+          onPressed: () async {
+            await Clipboard.setData(
+              ClipboardData(text: SheetsService.urlFor(sheetId)),
+            );
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Linkki kopioitu')),
+            );
+          },
+        ),
+      ],
     );
+  }
+
+  Future<void> _createSpreadsheet() async {
+    setState(() => _creatingSheet = true);
+    try {
+      final sheets = ref.read(sheetsServiceProvider);
+      final tab = _sheetTabController.text.trim().isEmpty
+          ? const AppSettings().sheetTab
+          : _sheetTabController.text.trim();
+      final target = await sheets.createSpreadsheet(tabName: tab);
+      await ref
+          .read(settingsProvider.notifier)
+          .update({'sheet_id': target.id, 'sheet_tab': tab});
+      _sheetTitle = target.title;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Taulukon luonti epäonnistui: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _creatingSheet = false);
+    }
   }
 
   Future<void> _addZone() async {
@@ -763,7 +827,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         'km_rate': kmRateStr,
         'allowance_6h': a6hStr,
         'allowance_10h': a10hStr,
-        'sheet_id': _sheetIdController.text.trim(),
         'sheet_tab': _sheetTabController.text.trim(),
         'driver_name': _driverController.text.trim(),
       });
@@ -781,85 +844,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
-  }
-}
-
-class _FilePickerDialog extends StatefulWidget {
-  final dynamic sheets;
-  final void Function(String id) onSelect;
-
-  const _FilePickerDialog({required this.sheets, required this.onSelect});
-
-  @override
-  State<_FilePickerDialog> createState() => _FilePickerDialogState();
-}
-
-class _FilePickerDialogState extends State<_FilePickerDialog> {
-  List<dynamic>? _files;
-  String? _error;
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      final result = await widget.sheets.listSpreadsheets();
-      if (mounted) {
-        setState(() {
-          _files = result;
-          _loading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = '$e';
-          _loading = false;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Valitse tiedosto'),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: _loading
-            ? const Padding(
-                padding: EdgeInsets.all(24),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            : _error != null
-            ? Text(_error!, style: const TextStyle(color: Colors.red))
-            : _files == null || _files!.isEmpty
-            ? const Text('Ei tiedostoja')
-            : ListView.builder(
-                shrinkWrap: true,
-                itemCount: _files!.length,
-                itemBuilder: (_, i) {
-                  final f = _files![i];
-                  final name = f.name ?? 'Nimetön';
-                  return ListTile(
-                    leading: const Icon(Symbols.table_chart),
-                    title: Text(name),
-                    onTap: () => widget.onSelect(f.id ?? ''),
-                  );
-                },
-              ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Peruuta'),
-        ),
-      ],
-    );
   }
 }
 

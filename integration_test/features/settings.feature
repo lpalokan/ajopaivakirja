@@ -38,6 +38,19 @@ Feature: Settings
     And I open settings
     Then I see {'Matti M'}
 
+  Scenario: Creating the spreadsheet requires signing in
+    When I open settings
+    Then I see {'Kirjaudu Googleen'}
+    And I see {'Luo taulukko Google Driveen'}
+
+  Scenario: Creating a spreadsheet stores its id
+    Given I am signed in to Google
+    When I open settings
+    And I tap {'Luo taulukko Google Driveen'}
+    Then the {'sheet_id'} setting is {'test-sheet-id'}
+    And I see {'Vientitaulukko'}
+    And I do not see {'Luo taulukko Google Driveen'}
+
   Scenario: Sheet tab persists
     When I open settings
     And I enter {'Matkat2026'} in the {'Välilehden nimi'} field

@@ -68,12 +68,31 @@ Feature: Trip history
     And I tap {'Avaa sovelluksessa'}
     Then the file was opened in an external app
 
-  Scenario: Sync without a sheet id shows a notice
+  Scenario: Sync without Google sign-in shows a notice
     When I start the {'Töihin'} route at {1000} km
     And I arrive at {1054} km
     And I open history
     And I sync to sheets
-    Then I see {'Sheets-tunnusta ei ole määritetty'}
+    Then I see {'Kirjaudu Googleen asetuksista'}
+
+  Scenario: First sync creates the spreadsheet
+    Given I am signed in to Google
+    When I start the {'Töihin'} route at {1000} km
+    And I arrive at {1054} km
+    And I open history
+    And I sync to sheets
+    Then the {'sheet_id'} setting is {'test-sheet-id'}
+    And I see text containing {'Synkronoitu'}
+
+  Scenario: Losing access to the spreadsheet re-creates it and re-syncs
+    Given I am signed in to Google
+    And the configured spreadsheet is no longer accessible
+    When I start the {'Töihin'} route at {1000} km
+    And I arrive at {1054} km
+    And I open history
+    And I sync to sheets
+    Then the {'sheet_id'} setting is {'test-sheet-id-2'}
+    And I see text containing {'Synkronoitu'}
 
   Scenario: Status chips show draft count when drafts exist
     When a draft trip from {'Koti'} at {1000} km exists

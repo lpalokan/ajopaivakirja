@@ -413,19 +413,37 @@ flutter install
 Sovellus tarvitsee Google Cloud -projektin toimiakseen Google Sheetsin kanssa.
 
 1. **Luo projekti** [Google Cloud Consolessa](https://console.cloud.google.com)
-2. **Ota Sheets API käyttöön** – APIs & Services → Library → hae "Google Sheets API" → Enable
+2. **Ota Sheets API käyttöön** – APIs & Services → Library → hae "Google Sheets API" → Enable.
+   Drive APIa **ei** tarvita: sovellus ei kutsu sitä lainkaan.
 3. **Määritä OAuth consent screen** – APIs & Services → OAuth consent screen
    - User Type: **External**
    - App name: Kilometrikorvaus
    - User support email: oma sähköpostisi
    - Developer contact: oma sähköpostisi
-   - Scopes: `.../auth/spreadsheets` (lisätään automaattisesti)
-   - Test users: lisää oma sähköpostisi
+   - Scopes: **vain** `.../auth/drive.file`
+   - Publishing status: **In production**. Test users -listaa ei tarvita.
 4. **Luo OAuth Client ID** – APIs & Services → Credentials → Create Credentials → OAuth Client ID
    - Application type: **Android**
    - Name: Kilometrikorvaus
    - Package name: `fi.lpalokan.kilometrikorvaus`
    - SHA-1 certificate fingerprint: hae komennolla (ks. alla)
+
+### Miksi vain `drive.file`
+
+Google luokittelee `.../auth/drive.file`-oikeuden **ei-arkaluontoiseksi**
+(non-sensitive). Sovellus, joka ei pyydä muuta, voidaan julkaista suoraan
+tuotantoon: OAuth-vahvistusprosessia (verification) ei tarvita eikä
+vuosittaista CASA-tietoturva-auditointia. Aiemmat oikeudet olivat
+`.../auth/spreadsheets` (*sensitive* → vahvistus) ja `.../auth/drive.readonly`
+(*restricted* → vahvistus **ja** CASA), mistä syystä sovellus jäi Testing-tilaan
+ja sadan käsin lisätyn testikäyttäjän rajaan.
+
+`drive.file` antaa pääsyn vain tiedostoihin, jotka sovellus on itse luonut.
+Siksi sovellus **luo** taulukon Driveen (Asetukset → *Luo taulukko Google
+Driveen*) sen sijaan, että käyttäjä osoittaisi olemassa olevan tiedoston.
+Vanhaan, käsin valittuun taulukkoon sovelluksella ei enää ole pääsyä: ensimmäisellä
+synkronoinnilla päivityksen jälkeen se luo uuden taulukon ja kirjoittaa koko
+historian siihen. Vanha tiedosto jää Driveen koskemattomana.
 
 ### SHA-1-sormenjäljen haku
 

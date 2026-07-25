@@ -208,7 +208,54 @@ class _FakeLocationService extends LocationService {
     final t = _currentTarget;
     if (cb != null && t != null) await cb(t);
   }
+
+  // ── Continuous speed feed ───────────────────────────────────────────────
+  //
+  // A real position stream keeps producing fixes for as long as the vehicle
+  // moves, and BackgroundService's movement signal is a *recency* check over
+  // those fixes. A single pushed position would therefore go stale within one
+  // poll and prove nothing, so scenarios drive a repeating feed instead —
+  // which is also what lets `GPS reports driving speed` be stated BEFORE the
+  // trip starts, since the broadcast controller has no replay and the
+  // subscription is only opened by `onDrivingStarted`.
+  Timer? _speedFeed;
+  double _feedSpeedMps = 0.0;
+
+  void startSpeedFeed(double mps) {
+    _feedSpeedMps = mps;
+    _speedFeed ??= Timer.periodic(
+      const Duration(milliseconds: 100),
+      (_) => pushFakePosition(
+        makeFakePosition(speed: _feedSpeedMps),
+      ),
+    );
+  }
+
+  void stopSpeedFeed() {
+    _speedFeed?.cancel();
+    _speedFeed = null;
+  }
 }
+
+/// A synthetic GPS fix. Shared by the one-shot movement simulation and the
+/// continuous speed feed so there is a single definition of "a position".
+Position makeFakePosition({
+  double latitude = 60.0,
+  double longitude = 25.0,
+  double speed = 0.0,
+  DateTime? timestamp,
+}) => Position(
+  latitude: latitude,
+  longitude: longitude,
+  timestamp: timestamp ?? DateTime.now(),
+  accuracy: 5.0,
+  altitude: 0.0,
+  altitudeAccuracy: 0.0,
+  heading: 0.0,
+  headingAccuracy: 0.0,
+  speed: speed,
+  speedAccuracy: 0.0,
+);
 
 // Single fake instance per launch so scenarios can reach it via
 // `simulateGpsMovement` without going through the ProviderContainer.
@@ -244,6 +291,13 @@ const Duration _testFirstReminderDuration = Duration(milliseconds: 1800);
 /// ([BackgroundService.defaultInVehicleRecencyWindow]).
 const Duration _testInVehicleRecencyWindow = Duration(milliseconds: 300);
 
+/// GPS movement recency window for tests. Same reasoning as the in-vehicle
+/// window above: shorter than one steady-state poll, so a scenario that stops
+/// the vehicle sees the prompt on the next tick rather than having to pump out
+/// a production-length window. Production default is 5 minutes
+/// ([BackgroundService.defaultMovementRecencyWindow]).
+const Duration _testMovementRecencyWindow = Duration(milliseconds: 300);
+
 /// Live reference to the real [BackgroundService] handed to the
 /// ProviderScope this scenario is running against. Held so step helpers
 /// (`tapArrivalAction`, `setLongInVehicleRecencyWindow`) can invoke methods
@@ -265,18 +319,60 @@ BackgroundService _buildTestBackgroundService() {
     reminderDuration: _testReminderDuration,
     firstReminderDuration: _testFirstReminderDuration,
     inVehicleRecencyWindow: _testInVehicleRecencyWindow,
+    movementRecencyWindow: _testMovementRecencyWindow,
   );
   _testBackgroundService = bg;
   return bg;
 }
 
+/// Stands in for the Google round-trip. Unlike the pure stub it replaces, it
+/// actually calls `onSynced`, so the `synced` flag and the
+/// "n synkronoimatta" chip behave the way they do in production.
 class _FakeSheetsService extends SheetsService {
+  /// Flipped by the `I am signed in to Google` step.
+  bool signedIn = false;
+
+  /// Flipped by `the configured spreadsheet is no longer accessible` —
+  /// the post-migration state where the stored id points at a file the
+  /// `drive.file` scope does not cover. The next resolve creates a
+  /// replacement and the app must re-sync everything into it.
+  bool accessDenied = false;
+
   @override
-  Future<bool> get isSignedIn async => false;
+  Future<bool> get isSignedIn async => signedIn;
   @override
-  Future<void> signIn() async {}
+  Future<void> signIn() async => signedIn = true;
   @override
-  Future<void> signOut() async {}
+  Future<void> signOut() async => signedIn = false;
+
+  SheetsTarget _target(String id, {required bool created}) => SheetsTarget(
+    id: id,
+    url: SheetsService.urlFor(id),
+    title: SheetsService.defaultSpreadsheetTitle,
+    created: created,
+  );
+
+  @override
+  Future<SheetsTarget> createSpreadsheet({
+    String title = SheetsService.defaultSpreadsheetTitle,
+    required String tabName,
+  }) async => _target('test-sheet-id', created: true);
+
+  @override
+  Future<SheetsTarget> ensureSpreadsheet({
+    required String? sheetId,
+    required String tabName,
+  }) async {
+    if (accessDenied) {
+      accessDenied = false; // the replacement IS accessible
+      return _target('test-sheet-id-2', created: true);
+    }
+    if (sheetId == null || sheetId.isEmpty) {
+      return _target('test-sheet-id', created: true);
+    }
+    return _target(sheetId, created: false);
+  }
+
   @override
   Future<int> appendLegs(
     List<TripLeg> legs, {
@@ -284,8 +380,17 @@ class _FakeSheetsService extends SheetsService {
     required String sheetTab,
     List<int>? deletedLegIds,
     Future<void> Function(int legId)? onSynced,
-  }) async => 0;
+  }) async {
+    for (final leg in legs) {
+      if (leg.id != null) await onSynced?.call(leg.id!);
+    }
+    return legs.length;
+  }
 }
+
+// Single fake instance per launch, so the sign-in / access steps can reach
+// the very service the ProviderScope handed to the app.
+_FakeSheetsService _fakeSheets = _FakeSheetsService();
 
 class _FakeOdometerVisionService extends OdometerVisionService {
   @override
@@ -358,8 +463,18 @@ Future<void> waitFor(
 
 /// Scroll [f] into view inside the first Scrollable (lazy lists don't build
 /// off-screen widgets). Swallows not-found so the caller's expect reports it.
-Future<void> scrollIntoView(WidgetTester tester, Finder f) async {
-  if (f.evaluate().isNotEmpty) return; // already present, don't scroll
+///
+/// Being in the tree is not the same as being tappable: a ListView builds a
+/// cache extent beyond the viewport, so a widget can be found and still sit
+/// below the bottom edge — which matters on the 800×600 host surface, where
+/// the tail of the Settings form does exactly that. Pass [force] to scroll
+/// anyway; the callers that only need presence keep the cheap early-out.
+Future<void> scrollIntoView(
+  WidgetTester tester,
+  Finder f, {
+  bool force = false,
+}) async {
+  if (!force && f.evaluate().isNotEmpty) return; // present, don't scroll
   final sc = find.byType(Scrollable);
   final count = sc.evaluate().length;
   if (count == 0) return;
@@ -391,13 +506,27 @@ Future<void> scrollIntoView(WidgetTester tester, Finder f) async {
         maxScrolls: 15,
       );
     } catch (_) {}
-    if (f.evaluate().isNotEmpty) return;
+    if (f.evaluate().isNotEmpty && (!force || _isOnScreen(tester, f))) return;
     // Wrong scrollable — undo the probe so we don't displace it for
     // subsequent finders.
     try {
       tester.state<ScrollableState>(candidate).position.jumpTo(original);
       await tester.pump();
     } catch (_) {}
+  }
+}
+
+/// Whether [f]'s first match is inside the test surface, i.e. a tap on its
+/// centre would actually hit it.
+bool _isOnScreen(WidgetTester tester, Finder f) {
+  if (f.evaluate().isEmpty) return false;
+  try {
+    final centre = tester.getCenter(f.first);
+    final surface = Offset.zero &
+        (tester.view.physicalSize / tester.view.devicePixelRatio);
+    return surface.contains(centre);
+  } catch (_) {
+    return false;
   }
 }
 
@@ -430,10 +559,14 @@ Future<void> launchApp(WidgetTester tester) async {
   // reminder state so a snooze written by one scenario can't silence the
   // reminders of the next.
   await _testReminderStore.clear();
+  // Stop the previous scenario's GPS feed before dropping the fake, so its
+  // periodic Timer doesn't outlive the test that started it.
+  _fakeLocation.stopSpeedFeed();
   _fakeLocation = _FakeLocationService();
   _fakeNotification = _FakeNotificationService();
   _fakeActivity = _FakeActivityRecognitionService();
   _fakeUpdate = _FakeUpdateService();
+  _fakeSheets = _FakeSheetsService();
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -443,7 +576,7 @@ Future<void> launchApp(WidgetTester tester) async {
         backgroundServiceProvider.overrideWithValue(
           _buildTestBackgroundService(),
         ),
-        sheetsServiceProvider.overrideWithValue(_FakeSheetsService()),
+        sheetsServiceProvider.overrideWithValue(_fakeSheets),
         odometerVisionServiceProvider.overrideWithValue(
           _FakeOdometerVisionService(),
         ),
@@ -547,6 +680,11 @@ Future<void> tapText(WidgetTester tester, String text) async {
     matching: find.text(text),
   );
   final target = tappable.evaluate().isNotEmpty ? tappable.first : f.first;
+  // Built but below the fold: tapping would derive an offset outside the
+  // surface and silently miss. Scroll it up first.
+  if (!_isOnScreen(tester, target)) {
+    await scrollIntoView(tester, target, force: true);
+  }
   await tester.tap(target);
   await settle(tester);
 }
@@ -843,23 +981,25 @@ Future<void> arriveAdHoc(WidgetTester tester, String to, int odometer) async {
 /// haversine delta.
 Future<void> simulateGpsMovement(WidgetTester tester, double km) async {
   final now = DateTime.now();
-  Position make(double lat, double lon) => Position(
-        latitude: lat,
-        longitude: lon,
-        timestamp: now,
-        accuracy: 5.0,
-        altitude: 0.0,
-        altitudeAccuracy: 0.0,
-        heading: 0.0,
-        headingAccuracy: 0.0,
-        speed: 0.0,
-        speedAccuracy: 0.0,
-      );
+  Position make(double lat, double lon) =>
+      makeFakePosition(latitude: lat, longitude: lon, timestamp: now);
 
   _fakeLocation.pushFakePosition(make(60.0, 25.0));
   await tester.pump(const Duration(milliseconds: 50));
   _fakeLocation.pushFakePosition(make(60.0 + km / 111.32, 25.0));
   await tester.pump(const Duration(milliseconds: 50));
+}
+
+/// Start a continuous feed of fixes at motorway speed (25 m/s ≈ 90 km/h),
+/// well above [DetectionConfig.highSpeed].
+void setGpsDrivingSpeed() {
+  _fakeLocation.startSpeedFeed(25.0);
+}
+
+/// Keep the feed running but drop to a standstill, so the movement signal
+/// goes stale and the arrival prompt becomes reachable again.
+void setGpsStopped() {
+  _fakeLocation.startSpeedFeed(0.0);
 }
 
 Future<void> arrive(WidgetTester tester, int odometer) async {
@@ -931,6 +1071,18 @@ Future<void> tapDialogButton(WidgetTester tester, String label) async {
     await tester.tap(find.text(label).first);
   }
   await settle(tester);
+}
+
+/// Put the app in the signed-in-to-Google state without a real OAuth flow.
+void signInToGoogle() {
+  _fakeSheets.signedIn = true;
+}
+
+/// Make the next spreadsheet resolve behave as if the stored `sheet_id` is
+/// no longer reachable — the state every pre-`drive.file` install upgrades
+/// into.
+void denySpreadsheetAccess() {
+  _fakeSheets.accessDenied = true;
 }
 
 Future<void> syncToSheets(WidgetTester tester) async {

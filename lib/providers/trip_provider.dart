@@ -11,6 +11,7 @@ import '../models/route.dart' as model;
 import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
 import '../services/database_service.dart';
+import '../services/sheets_sync.dart';
 import '../services/trip_calculator.dart';
 import '../services/log_service.dart';
 import '../widgets/odometer_dialog.dart';
@@ -516,26 +517,40 @@ class TripNotifier extends StateNotifier<TripState> {
   }
 
   Future<void> _syncToSheets(List<TripLeg> legs) async {
-    final settings = _ref.read(settingsProvider);
-    if (settings.sheetId.isEmpty) return;
+    final sheets = _ref.read(sheetsServiceProvider);
+    if (!await sheets.isSignedIn) {
+      // Nothing to do until the driver signs in from Settings. Stays silent:
+      // this is the automatic day-close path, and the History screen's
+      // "n synkronoimatta" chip already surfaces the backlog.
+      LogService().info('Sheets: not signed in, skipping automatic sync');
+      return;
+    }
 
     try {
-      final sheets = _ref.read(sheetsServiceProvider);
-      final deletedIds = await DatabaseService.getDeletedLegIds();
-      LogService().info(
-        'Sheets: syncing ${legs.length} legs to ${settings.sheetTab} (+ ${deletedIds.length} deletes)',
-      );
-      await sheets.appendLegs(
-        legs,
+      final settings = _ref.read(settingsProvider);
+      final plan = await prepareSheetsSync(
+        sheets: sheets,
         sheetId: settings.sheetId,
         sheetTab: settings.sheetTab,
-        deletedLegIds: deletedIds,
+        legs: legs,
+        persistSheetId: (id) =>
+            _ref.read(settingsProvider.notifier).update({'sheet_id': id}),
+      );
+      LogService().info(
+        'Sheets: syncing ${plan.legs.length} legs to ${settings.sheetTab} '
+        '(+ ${plan.deletedLegIds.length} deletes)',
+      );
+      await sheets.appendLegs(
+        plan.legs,
+        sheetId: plan.target.id,
+        sheetTab: settings.sheetTab,
+        deletedLegIds: plan.deletedLegIds,
         onSynced: (legId) => DatabaseService.markLegSynced(legId),
       );
-      if (deletedIds.isNotEmpty) {
-        await DatabaseService.clearDeletedLegIds(deletedIds);
+      if (plan.deletedLegIds.isNotEmpty) {
+        await DatabaseService.clearDeletedLegIds(plan.deletedLegIds);
       }
-      LogService().info('Sheets: sync complete (${legs.length} legs)');
+      LogService().info('Sheets: sync complete (${plan.legs.length} legs)');
     } catch (e, st) {
       LogService().error('Sheets: sync failed', e, st);
     }

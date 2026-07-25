@@ -13,6 +13,7 @@ import '../services/database_service.dart';
 import '../services/trip_calculator.dart';
 import '../services/pdf_report_service.dart';
 import '../services/csv_export_service.dart';
+import '../services/sheets_sync.dart';
 import '../services/trip_history_view.dart';
 import '../models/expense.dart';
 import '../widgets/status_chip_row.dart';
@@ -82,10 +83,13 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
 
   Future<void> _syncAll() async {
     final settings = ref.read(settingsProvider);
-    if (settings.sheetId.isEmpty) {
+    final sheets = ref.read(sheetsServiceProvider);
+    // The spreadsheet is created by the app on demand, so an empty sheet id is
+    // no longer an error — being signed out is the only blocking state.
+    if (!await sheets.isSignedIn) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Sheets-tunnusta ei ole määritetty')),
+          const SnackBar(content: Text('Kirjaudu Googleen asetuksista')),
         );
       }
       return;
@@ -120,10 +124,15 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
 
     setState(() => _syncing = true);
     try {
-      final sheets = ref.read(sheetsServiceProvider);
-      final unsynced = await DatabaseService.getUnsyncedLegs();
-      final deletedIds = await DatabaseService.getDeletedLegIds();
-      if (unsynced.isEmpty && deletedIds.isEmpty) {
+      final plan = await prepareSheetsSync(
+        sheets: sheets,
+        sheetId: settings.sheetId,
+        sheetTab: settings.sheetTab,
+        legs: await DatabaseService.getUnsyncedLegs(),
+        persistSheetId: (id) =>
+            ref.read(settingsProvider.notifier).update({'sheet_id': id}),
+      );
+      if (plan.legs.isEmpty && plan.deletedLegIds.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Kaikki rivit on jo synkronoitu')),
@@ -132,21 +141,21 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
         return;
       }
       await sheets.appendLegs(
-        unsynced,
-        sheetId: settings.sheetId,
+        plan.legs,
+        sheetId: plan.target.id,
         sheetTab: settings.sheetTab,
-        deletedLegIds: deletedIds,
+        deletedLegIds: plan.deletedLegIds,
         onSynced: (legId) => DatabaseService.markLegSynced(legId),
       );
-      if (deletedIds.isNotEmpty) {
-        await DatabaseService.clearDeletedLegIds(deletedIds);
+      if (plan.deletedLegIds.isNotEmpty) {
+        await DatabaseService.clearDeletedLegIds(plan.deletedLegIds);
       }
       await _load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Synkronoitu: ${unsynced.length} riviä${deletedIds.isNotEmpty ? ', poistettu ${deletedIds.length}' : ''}',
+              'Synkronoitu: ${plan.legs.length} riviä${plan.deletedLegIds.isNotEmpty ? ', poistettu ${plan.deletedLegIds.length}' : ''}',
             ),
           ),
         );

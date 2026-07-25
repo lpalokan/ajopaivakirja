@@ -119,6 +119,30 @@ Feature: Driving flow
     And the reminder backstop elapses
     Then no arrival reminder has been shown
 
+  Scenario: The reminder is suppressed while GPS shows driving speed
+    Given location permission is granted
+    And activity recognition reports {'still'}
+    And GPS reports driving speed
+    When I start the {'Töihin'} route at {1000} km
+    And the reminder backstop elapses
+    Then no arrival reminder has been shown
+
+  Scenario: GPS driving speed suppresses the reminder when activity recognition is unavailable
+    Given location permission is granted
+    And GPS reports driving speed
+    When I start the {'Töihin'} route at {1000} km
+    And the reminder backstop elapses
+    Then no arrival reminder has been shown
+
+  Scenario: The reminder fires once the vehicle has stopped moving
+    Given location permission is granted
+    And activity recognition reports {'still'}
+    And GPS reports driving speed
+    When I start the {'Töihin'} route at {1000} km
+    And GPS reports the vehicle has stopped
+    And the reminder backstop elapses
+    Then an arrival reminder has been shown
+
   Scenario: Tapping still driving defers the reminder and the next tick suppresses while in_vehicle
     Given activity recognition reports {'still'}
     When I start the {'Töihin'} route at {1000} km
@@ -187,6 +211,23 @@ Feature: Driving flow
     Given location permission is granted
     And activity recognition reports {'in_vehicle'}
     When I start the {'Töihin'} route at {1000} km
+    And the location service detects proximity to home
+    Then no arrival reminder has been shown
+
+  Scenario: Proximity-based reminder is suppressed while GPS shows driving speed
+    Given location permission is granted
+    And activity recognition reports {'still'}
+    And GPS reports driving speed
+    When I start the {'Töihin'} route at {1000} km
+    And the location service detects proximity to home
+    Then no arrival reminder has been shown
+
+  Scenario: Proximity-based reminder is suppressed shortly after the vehicle signal
+    Given location permission is granted
+    And activity recognition reports {'in_vehicle'}
+    And the in-vehicle recency window is long
+    When I start the {'Töihin'} route at {1000} km
+    And activity recognition reports {'still'}
     And the location service detects proximity to home
     Then no arrival reminder has been shown
 

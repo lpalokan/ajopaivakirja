@@ -91,8 +91,12 @@ feature). The suite is run via this aggregator. **When you add a new
 | `When I swipe {string} left` / `right` | Dismissible swipe (delete / edit) |
 | `When I tap the {string} dialog button` | Taps a dialog button by label |
 | `When I sync to sheets` | Taps the History sync button |
+| `Given I am signed in to Google` | Puts the fake SheetsService in the signed-in state, without a real OAuth flow |
+| `Given the configured spreadsheet is no longer accessible` | Makes the next spreadsheet resolve return a freshly created file — the post-`drive.file` migration state, where the app must re-sync the whole history |
 | `When I toggle debug logging` | Flips the debug-logging switch |
 | `When GPS reports {int} km of movement` | Pushes synthetic GPS fixes through the fake LocationService (regression guard for the kilometer-tracking-predefined-routes bug — distance must not be inflated by GPS deltas) |
+| `Given GPS reports driving speed` | Starts a continuous feed of fixes at 25 m/s, the way a real position stream behaves mid-drive. This is the signal that must keep the arrival reminder silent whatever Activity Recognition claims |
+| `When GPS reports the vehicle has stopped` | Keeps the feed running at zero speed, so the movement signal goes stale and the reminder becomes reachable again |
 | `Given activity recognition reports {string}` | Pushes a synthetic motion activity (`in_vehicle`/`still`/…) into the stream BackgroundService watches |
 | `When the reminder backstop elapses` | Pumps past whichever reminder duration is scheduled (long first-tick deferral or short steady-state poll) so the in-process reminder tick fires |
 | `Given the first reminder is deferred well beyond the steady poll` | Pushes the first-reminder deferral far out (test seam) so the next backstop pump asserts the very first reminder of a trip is held back, without a flaky wall-clock margin |
@@ -176,15 +180,12 @@ which the headless runner (`tool/bdd_host_test.dart`) supplies:
 
 Caveats — **the on-emulator suite (`integration-report.sh`) is the source of
 truth**; the headless run is a no-emulator approximation. As of writing it
-passes **90 / 92** scenarios; the gaps below are host-environment artifacts,
+passes **106 / 107** scenarios; the gaps below are host-environment artifacts,
 not code bugs (all pass on the emulator):
 
 - The "app boots on device" smoke test (`app_smoke_test.dart`) is **excluded**:
   it pumps fixed frames in a way that trips the live binding's pending-frame
   assertion on the host tester.
-- `Settings: Debug logging toggle reveals log actions` — the tap on the toggle
-  misses on the small (800×600) host surface; it lands fine on the larger
-  emulator screen.
 - `Draft trips: Drafts excluded from CSV export` — host CSV-export file
   plumbing differs from the device.
 - The live binding runs in real wall-clock time and is **much slower** than an
@@ -192,6 +193,19 @@ not code bugs (all pass on the emulator):
   is held back" with a far-out test seam (see
   `Given the first reminder is deferred well beyond the steady poll`), never a
   tight "pump less than the timer" margin.
+- **Give the run the machine to itself.** A whole-suite run takes ~25 minutes;
+  running `flutter test` or `flutter analyze` alongside it starves the live
+  binding and turns settle-sensitive assertions into false failures.
+  `Route management: Delete a route with confirmation` is the one that goes
+  first — its `Then I do not see {'Kotiin'}` is a bare `findsNothing` racing
+  Home's route-chip row, which is still in the tree beneath the pushed Routes
+  screen.
+
+The 800×600 host surface is smaller than any emulator, so the tail of a long
+form sits below the fold even though it is built. `tapText` scrolls a target
+into view when a tap on it would land outside the surface — without that,
+`Settings: Debug logging toggle reveals log actions` and the Google Sheets
+card's buttons silently missed on the host while passing on the emulator.
 
 ### Fast iteration (run only what failed)
 
