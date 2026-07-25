@@ -372,12 +372,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Widget _buildSheetsAuthButton() {
     if (_signedIn) {
+      // The label takes the slack rather than a Spacer: with three rigid
+      // children this Row overflows a narrow card (248 dp on a small phone),
+      // and letting the label ellipsize is the only child that can give.
       return Row(
         children: [
           const Icon(Symbols.check_circle, color: Colors.green, size: 20),
           const SizedBox(width: 8),
-          const Text('Kirjautunut Googleen'),
-          const Spacer(),
+          const Expanded(
+            child: Text(
+              'Kirjautunut Googleen',
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
           TextButton(onPressed: _signOut, child: const Text('Kirjaudu ulos')),
         ],
       );
@@ -460,7 +467,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 'Vientitaulukko',
                 style: Theme.of(context).textTheme.labelSmall,
               ),
-              Text(_sheetTitle ?? SheetsService.defaultSpreadsheetTitle),
+              Text(
+                _sheetTitle ?? SheetsService.defaultSpreadsheetTitle,
+                overflow: TextOverflow.ellipsis,
+              ),
             ],
           ),
         ),
