@@ -19,8 +19,9 @@ The App is published under the MIT License. Its source code is available at
 - The App stores your data **locally on your device**.
 - The App has **no backend server** of its own and does **not** collect
   analytics or advertising identifiers.
-- The only external service the App connects to is **Google** (Google Sheets and
-  Google Drive), and only when you choose to sign in and export your data.
+- The only external service the App connects to is **Google**, and only when you
+  choose to sign in and export your data — and then only to a single spreadsheet
+  the App creates in your own Drive.
 - Your data is **never sold or shared** with third parties.
 
 ## 1. Data stored on your device
@@ -54,31 +55,30 @@ If you use the "photograph the odometer" feature, the App uses your camera and
 **on-device** text recognition (Google ML Kit) to read the odometer number.
 Images are processed on your device and are not uploaded or stored by the App.
 
-## 4. Google account data (Google Sheets & Drive)
+## 4. Google account data (Google Drive & Sheets)
 
 Exporting to Google Sheets is **optional**. If you choose to sign in with Google,
-the App requests the following OAuth scopes and uses the data solely as
-described:
+the App requests exactly one OAuth scope and uses it solely as described:
 
-- **Google Sheets — `https://www.googleapis.com/auth/spreadsheets`**
-  Used to write your mileage and daily-allowance rows into a Google spreadsheet
-  **that you select**, to create or rename the worksheet tab used for the export,
-  and to update a row if you edit the corresponding trip in the App. The App only
-  accesses the spreadsheet you choose as the export target.
+- **`https://www.googleapis.com/auth/drive.file`**
+  A **per-file** permission. It lets the App create one spreadsheet in your
+  Google Drive and keep that spreadsheet up to date — writing your mileage and
+  daily-allowance rows into it, creating the worksheet tab used for the export,
+  updating a row when you edit the corresponding trip in the App, and removing a
+  row when you delete a trip.
 
-- **Google Drive (read-only) — `https://www.googleapis.com/auth/drive.readonly`**
-  Used **only** to list the spreadsheets in your Google Drive so that you can pick
-  one as the export target in the in-app file picker. The App reads file names
-  and IDs to populate the picker. It does **not** download, modify, or delete
-  Drive files, and does not access any other file content.
+  This scope grants access **only to the file the App itself created**. The App
+  cannot see, list, read, modify, or delete any other file in your Google Drive,
+  and it has no way to obtain such access.
 
 As part of Google Sign-In, the App also receives basic profile information (your
 name, email address, and profile picture), used only to show which account you
 are signed in with.
 
 Google account data is used only to provide the export feature you request. A
-sign-in token (to keep you signed in) and the target spreadsheet ID are stored on
-your device. This data is not transmitted to us or shared with any third party.
+sign-in token (to keep you signed in) and the ID of the spreadsheet the App
+created are stored on your device. This data is not transmitted to us or shared
+with any third party.
 
 ### Limited Use disclosure
 
@@ -92,8 +92,8 @@ purpose unrelated to the feature you requested.
 ## 5. Data sharing
 
 We do not sell, rent, or share your personal data with third parties. Data you
-export is written only to your own Google account (a spreadsheet you select) or
-to CSV/PDF files you create on your own device.
+export is written only to your own Google account (the spreadsheet the App
+created in your Drive) or to CSV/PDF files you create on your own device.
 
 ## 6. Data retention and deletion
 

@@ -49,13 +49,24 @@ codebase — they name the concepts behind good seams.
 
 ## External integration
 
-- **Sheets sync** — Appending completed legs to a Google Sheets spreadsheet.
-  Uses upsert-by-ID so repeated syncs don't duplicate rows.
+- **Sheets sync** — Appending completed legs to a Google Sheets spreadsheet
+  that the app itself created in the user's Drive (the `drive.file` scope
+  grants access per file, so an app-created file is the only one it may
+  touch). Uses upsert-by-ID so repeated syncs don't duplicate rows. If that
+  spreadsheet becomes unreachable, the app creates a replacement and re-syncs
+  the full history into it.
 - **Detection** — Background GPS monitoring that auto-detects when the user
   starts driving (>5 m/s for 30s) and when they arrive (<1 m/s for 60s after
   driving was detected).
 - **Arrival monitoring** — GPS proximity checking against location zones.
   When the destination is Home, a periodic check fires a "have you arrived?"
   notification when within range.
+- **Movement signal** (`MovementSignal`) — "was there a GPS fix at driving
+  speed recently?", folded from the position stream that runs during a trip.
+  Gates the "Oletko perillä?" reminder on both the poll and the proximity
+  path. Needed because Android's activity recognition only emits when its
+  reading *changes*, so a long steady drive reports `in_vehicle` once and
+  then goes quiet — leaving a stale timestamp and a stray `still` reading
+  enough to ask "have you arrived?" at speed.
 - **OCR** — Camera-based odometer reading extraction using ML Kit text
   recognition.

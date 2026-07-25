@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:geolocator/geolocator.dart';
 import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
 import 'activity_recognition_service.dart';
+import 'driving_detector.dart';
 import 'location_service.dart';
 import 'log_service.dart';
 import 'notification_service.dart';
@@ -45,7 +47,25 @@ class BackgroundService {
   /// single instantaneous reading fired "Oletko perillä?" mid-drive. Only
   /// after the vehicle signal has been absent for this long is a non-vehicle
   /// reading treated as a real stop.
+  ///
+  /// Note this window can only ever be a partial defence, which is why the
+  /// GPS signal below exists: [_lastInVehicleAt] is refreshed when an
+  /// activity event is *emitted*, and the Android framework only emits on a
+  /// *change* of reading. A steady drive produces one `in_vehicle` event at
+  /// the start and then silence, so by minute 30 the timestamp is half an
+  /// hour stale and this window has already lapsed.
   static const Duration defaultInVehicleRecencyWindow = Duration(minutes: 10);
+
+  /// How long a GPS fix at driving speed keeps the prompt suppressed.
+  ///
+  /// This is the signal that actually holds up on a long drive. Unlike
+  /// Activity Recognition, the position stream keeps producing while the
+  /// vehicle moves, so a fresh fast fix is direct evidence that the trip is
+  /// still in progress — whatever the motion classifier currently claims, and
+  /// even when it is unavailable altogether. Five minutes is long enough to
+  /// ride out a tunnel or a level crossing without re-asking, short enough
+  /// that a genuine arrival still prompts within a poll or two.
+  static const Duration defaultMovementRecencyWindow = Duration(minutes: 5);
 
   final NotificationService _notificationService;
   final LocationService _locationService;
@@ -55,6 +75,7 @@ class BackgroundService {
   Duration _firstReminderDuration;
   final Duration _platformBackstopDuration;
   Duration _inVehicleRecencyWindow;
+  Duration _movementRecencyWindow;
 
   Timer? _reminderTimer;
 
@@ -68,6 +89,12 @@ class BackgroundService {
   /// When the framework last reported `in_vehicle`, for the recency check
   /// above. Null until the first in-vehicle reading of the trip.
   DateTime? _lastInVehicleAt;
+
+  /// GPS-speed evidence of driving, fed from the position stream
+  /// [LocationService] already publishes throughout a trip. Rebuilt per trip
+  /// so [_movementRecencyWindow] changes made by a test seam take effect.
+  MovementSignal _movement = MovementSignal();
+  StreamSubscription<Position>? _positionSub;
 
   /// The snooze deadline this isolate has already reacted to. "Ajan yhä" is
   /// handled entirely in the background isolate (see
@@ -107,6 +134,7 @@ class BackgroundService {
     Duration firstReminderDuration = defaultFirstReminderDuration,
     Duration platformBackstopDuration = defaultPlatformBackstopDuration,
     Duration inVehicleRecencyWindow = defaultInVehicleRecencyWindow,
+    Duration movementRecencyWindow = defaultMovementRecencyWindow,
   })  : _notificationService = notificationService,
         _locationService = locationService,
         _activityService = activityService,
@@ -114,7 +142,8 @@ class BackgroundService {
         _reminderDuration = reminderDuration,
         _firstReminderDuration = firstReminderDuration,
         _platformBackstopDuration = platformBackstopDuration,
-        _inVehicleRecencyWindow = inVehicleRecencyWindow;
+        _inVehicleRecencyWindow = inVehicleRecencyWindow,
+        _movementRecencyWindow = movementRecencyWindow;
 
   Future<void> initialize() async {
     await _notificationService.initialize();
@@ -144,6 +173,13 @@ class BackgroundService {
     _inVehicleRecencyWindow = duration;
   }
 
+  /// Test seam: shrink/stretch how long a GPS fix at driving speed keeps the
+  /// prompt suppressed. Same rationale as the two seams above.
+  @visibleForTesting
+  void debugSetMovementRecencyWindow(Duration duration) {
+    _movementRecencyWindow = duration;
+  }
+
   Future<void> onDrivingStarted(TripLeg leg) async {
     _activeLeg = leg;
     _reminderShown = false;
@@ -165,6 +201,22 @@ class BackgroundService {
     }
 
     await _notificationService.showDrivingNotification(leg);
+
+    // Watch the position stream for evidence that the vehicle is still
+    // moving. Subscribed unconditionally, and BEFORE monitoring starts, so a
+    // stream that only begins producing later (permission granted mid-trip,
+    // first fix delayed) is still picked up. When no fix ever arrives the
+    // signal simply stays empty and the activity checks below decide alone.
+    _movement = MovementSignal(recency: _movementRecencyWindow);
+    _positionSub?.cancel();
+    _positionSub = _locationService.positionStream.listen((p) {
+      _movement.onSample(
+        speedMps: p.speed,
+        at: DateTime.now(),
+        latitude: p.latitude,
+        longitude: p.longitude,
+      );
+    });
 
     final hasLocation = await _locationService.hasPermissionGranted();
     if (hasLocation) {
@@ -239,43 +291,62 @@ class BackgroundService {
   /// next 30-second tick put an identical one straight back).
   Future<void> _onProximityNearHome(String destination) async {
     if (_activeLeg == null) return;
-    if (_lastActivity == DrivingActivity.inVehicle) {
-      // Driving through/into the zone — not an arrival yet. Once the driver
-      // parks, the activity flips to still/walking within a minute or two
-      // and the next 30-second tick prompts.
-      return;
-    }
+    // Driving through/into the zone — not an arrival yet. Once the driver
+    // parks, the movement signal goes stale and the activity flips to
+    // still/walking, and the next 30-second tick prompts. This path used to
+    // check only the instantaneous activity, so one spurious `still` while
+    // passing through your own neighbourhood was enough to prompt.
+    if (_stillDrivingReason() != null) return;
     if (!await _shouldPrompt()) return;
     _reminderShown = true;
     LogService().info('Reminder: proximity prompt for $destination');
     await _notificationService.showArrivalReminder(destination);
   }
 
-  Future<void> _onReminderTick(TripLeg leg) async {
-    if (_activeLeg == null) return;
+  /// Why the driver should be considered still on the road, or null if no
+  /// signal says so.
+  ///
+  /// One place, consulted by both the poll and the proximity check, so the
+  /// two can't drift apart — they did, and the weaker proximity gate was its
+  /// own source of mid-drive prompts. Returns a human-readable reason so the
+  /// log says *which* signal held the prompt back; on a real drive that log
+  /// is the only way to tell "the app ignored the framework" from "the
+  /// framework never said anything".
+  String? _stillDrivingReason() {
+    final now = DateTime.now();
 
-    if (_lastActivity == DrivingActivity.inVehicle) {
-      // Still in a vehicle — suppress the prompt entirely and keep polling.
-      // Reset the "shown" latch so that whenever the driver next leaves the
-      // vehicle the reminder is asked again for that fresh stop.
-      _reminderShown = false;
-      LogService().info('Reminder: tick suppressed (in_vehicle)');
-      _scheduleTimeBasedReminder(leg);
-      return;
+    // Strongest signal first: the vehicle is measurably moving. Holds up on
+    // long drives, where Activity Recognition has usually gone quiet.
+    if (_movement.isDrivingAt(now)) {
+      final since = now.difference(_movement.lastFastSampleAt!).inSeconds;
+      return 'GPS driving speed ${since}s ago';
     }
+
+    if (_lastActivity == DrivingActivity.inVehicle) return 'in_vehicle';
 
     final lastInVehicle = _lastInVehicleAt;
     if (lastInVehicle != null &&
-        DateTime.now().difference(lastInVehicle) < _inVehicleRecencyWindow) {
+        now.difference(lastInVehicle) < _inVehicleRecencyWindow) {
       // The latest reading says not-in-vehicle, but the vehicle signal was
       // seen only moments ago — a confident `still` at a red light or a
-      // jostled phone reported as `walking`, not a real stop. Treat it like
-      // in_vehicle until the signal has been absent for the whole window.
+      // jostled phone reported as `walking`, not a real stop.
+      return '${_lastActivity.name}, but in_vehicle '
+          '${now.difference(lastInVehicle).inSeconds}s ago';
+    }
+
+    return null;
+  }
+
+  Future<void> _onReminderTick(TripLeg leg) async {
+    if (_activeLeg == null) return;
+
+    final stillDriving = _stillDrivingReason();
+    if (stillDriving != null) {
+      // Suppress the prompt entirely and keep polling. Reset the "shown"
+      // latch so that whenever the driver next leaves the vehicle the
+      // reminder is asked again for that fresh stop.
       _reminderShown = false;
-      LogService().info(
-        'Reminder: tick suppressed (${_lastActivity.name}, but in_vehicle '
-        '${DateTime.now().difference(lastInVehicle).inSeconds}s ago)',
-      );
+      LogService().info('Reminder: tick suppressed ($stillDriving)');
       _scheduleTimeBasedReminder(leg);
       return;
     }
@@ -292,14 +363,22 @@ class BackgroundService {
     }
 
     if (!_activityReceived) {
-      // No reading has ever arrived this trip: the framework is unavailable,
-      // the permission is denied, or delivery is being throttled. Fall back
-      // to the time-based prompt — and say so in the log, because from the
-      // outside this is indistinguishable from "fires blindly mid-drive".
-      LogService().warn(
-        'Reminder: no activity readings this trip — framework unavailable '
-        'or permission denied; falling back to time-based prompt',
-      );
+      // No activity reading has ever arrived this trip: the framework is
+      // unavailable, the permission is denied, or delivery is being
+      // throttled. What happens next depends on whether GPS has anything to
+      // say — this used to be an unconditional blind prompt, i.e. exactly the
+      // "asked me 30 minutes into a drive" bug when both signals were mute.
+      if (_movement.lastSampleAt == null) {
+        LogService().warn(
+          'Reminder: no activity readings and no GPS fixes this trip — both '
+          'signals unavailable; falling back to time-based prompt',
+        );
+      } else {
+        LogService().warn(
+          'Reminder: no activity readings this trip, but GPS fixes show no '
+          'driving speed — treating as a real stop',
+        );
+      }
     }
 
     // Confirmed not-in-vehicle (walking/still/etc.) or activity recognition
@@ -353,6 +432,9 @@ class BackgroundService {
     _reminderTimer = null;
     await _activitySub?.cancel();
     _activitySub = null;
+    await _positionSub?.cancel();
+    _positionSub = null;
+    _movement.reset();
     _lastActivity = DrivingActivity.unknown;
     _activityReceived = false;
     _lastInVehicleAt = null;
@@ -391,6 +473,7 @@ class BackgroundService {
   void dispose() {
     _reminderTimer?.cancel();
     _activitySub?.cancel();
+    _positionSub?.cancel();
     _activityService.dispose();
     _locationService.dispose();
   }

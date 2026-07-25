@@ -1,12 +1,54 @@
 import 'package:http/http.dart' as http;
 import 'package:googleapis/sheets/v4.dart' as sheets;
-import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis_auth/auth_io.dart';
 import '../models/trip_leg.dart';
 import 'log_service.dart';
 
+/// The spreadsheet this app syncs into, as resolved by
+/// [SheetsService.ensureSpreadsheet].
+class SheetsTarget {
+  /// Spreadsheet id — the value persisted as the `sheet_id` setting.
+  final String id;
+
+  /// Web URL of the file in Drive, for showing/copying in Settings.
+  final String url;
+
+  /// Current file name, read back from the live spreadsheet.
+  final String title;
+
+  /// True when this call created the file. The caller must then persist the
+  /// new id and re-sync the full history, since the new file is empty.
+  final bool created;
+
+  const SheetsTarget({
+    required this.id,
+    required this.url,
+    required this.title,
+    required this.created,
+  });
+}
+
 class SheetsService {
+  /// The ONLY scope this app requests.
+  ///
+  /// `drive.file` is classified by Google as a **non-sensitive** scope, so an
+  /// app requesting nothing else needs no OAuth verification review and no
+  /// CASA security assessment — it can be published straight to Production.
+  /// The previous pair (`auth/spreadsheets`, *sensitive*, plus
+  /// `auth/drive.readonly`, *restricted*) is what kept this app pinned to
+  /// Testing mode and its 100 hand-listed test users.
+  ///
+  /// `drive.file` is an accepted scope for every Sheets API method used here
+  /// (`spreadsheets.create/get/batchUpdate` and `spreadsheets.values.*`), but
+  /// it grants access **per file** — only to files this app itself created.
+  /// That is why [ensureSpreadsheet] creates the spreadsheet instead of
+  /// letting the user point at an existing one; a hand-pasted id would 403.
+  static const driveFileScope = 'https://www.googleapis.com/auth/drive.file';
+
+  /// Name given to the spreadsheet this app creates in the user's Drive.
+  static const defaultSpreadsheetTitle = 'Ajopäiväkirja';
+
   final GoogleSignIn _googleSignIn;
   sheets.SheetsApi? _sheetsApi;
   http.Client? _authClient;
@@ -32,12 +74,7 @@ class SheetsService {
   ];
 
   SheetsService()
-      : _googleSignIn = GoogleSignIn(
-          scopes: [
-            sheets.SheetsApi.spreadsheetsScope,
-            drive.DriveApi.driveReadonlyScope,
-          ],
-        );
+      : _googleSignIn = GoogleSignIn(scopes: const [driveFileScope]);
 
   bool isConfigured(String sheetId) => sheetId.isNotEmpty;
 
@@ -83,10 +120,7 @@ class SheetsService {
         DateTime.now().toUtc().add(const Duration(hours: 1)),
       ),
       null,
-      [
-        sheets.SheetsApi.spreadsheetsScope,
-        drive.DriveApi.driveReadonlyScope,
-      ],
+      const [driveFileScope],
     );
 
     final client = GoogleAuthClient(credentials, http.Client());
@@ -116,20 +150,113 @@ class SheetsService {
     _sheetsApi = null;
   }
 
-  Future<List<drive.File>> listSpreadsheets() async {
+  /// Create the export spreadsheet in the user's Drive and return it.
+  ///
+  /// Under [driveFileScope] this is the only way the app can obtain access to
+  /// a spreadsheet at all, so it is also the migration path for users whose
+  /// stored `sheet_id` points at a file they picked by hand before the scope
+  /// change. The file lands in My Drive; the user is free to move or rename
+  /// it afterwards, since access follows the id.
+  Future<SheetsTarget> createSpreadsheet({
+    String title = defaultSpreadsheetTitle,
+    required String tabName,
+  }) async {
     await _ensureApiClient();
-    if (_authClient == null) {
+    if (_sheetsApi == null) {
       throw Exception('Ei kirjauduttu Googleen. Kirjaudu asetuksista.');
     }
 
-    final driveApi = drive.DriveApi(_authClient!);
-    final fileList = await driveApi.files.list(
-      q: "mimeType='application/vnd.google-apps.spreadsheet'",
-      pageSize: 50,
-      orderBy: 'modifiedTime desc',
-      $fields: 'files(id,name,modifiedTime)',
+    try {
+      LogService().info('Sheets: creating spreadsheet "$title"...');
+      final created = await _sheetsApi!.spreadsheets.create(
+        sheets.Spreadsheet(
+          properties: sheets.SpreadsheetProperties(title: title),
+          sheets: [
+            sheets.Sheet(
+              properties: sheets.SheetProperties(title: tabName),
+            ),
+          ],
+        ),
+      );
+
+      final id = created.spreadsheetId;
+      if (id == null || id.isEmpty) {
+        throw Exception('Google ei palauttanut taulukon tunnistetta');
+      }
+      await _writeHeaderRow(id, tabName);
+      LogService().info('Sheets: spreadsheet created ($id)');
+
+      return SheetsTarget(
+        id: id,
+        url: created.spreadsheetUrl ?? urlFor(id),
+        title: created.properties?.title ?? title,
+        created: true,
+      );
+    } catch (e) {
+      LogService().error('Sheets: createSpreadsheet failed', e);
+      throw Exception('Taulukon luonti Driveen epäonnistui: $e');
+    }
+  }
+
+  /// Resolve the spreadsheet to sync into, creating one when necessary.
+  ///
+  /// Returns [SheetsTarget.created] = true both when there was no spreadsheet
+  /// yet and when the stored [sheetId] is gone or inaccessible — the latter is
+  /// the expected state for anyone upgrading from the pre-`drive.file` build,
+  /// whose hand-picked spreadsheet this app may no longer touch. Either way
+  /// the returned file is empty, so the caller must re-sync the full history.
+  Future<SheetsTarget> ensureSpreadsheet({
+    required String? sheetId,
+    required String tabName,
+  }) async {
+    await _ensureApiClient();
+    if (_sheetsApi == null) {
+      throw Exception('Ei kirjauduttu Googleen. Kirjaudu asetuksista.');
+    }
+
+    if (sheetId == null || sheetId.isEmpty) {
+      return createSpreadsheet(tabName: tabName);
+    }
+
+    try {
+      final spreadsheet = await _sheetsApi!.spreadsheets.get(
+        sheetId,
+        includeGridData: false,
+        $fields: 'properties/title,spreadsheetUrl',
+      );
+      return SheetsTarget(
+        id: sheetId,
+        url: spreadsheet.spreadsheetUrl ?? urlFor(sheetId),
+        title: spreadsheet.properties?.title ?? defaultSpreadsheetTitle,
+        created: false,
+      );
+    } on sheets.DetailedApiRequestError catch (e) {
+      // 404 = deleted, 403 = exists but this app was never granted per-file
+      // access to it (the pre-migration, hand-picked case).
+      if (e.status == 403 || e.status == 404) {
+        LogService().warn(
+          'Sheets: spreadsheet $sheetId unavailable (${e.status}) — '
+          'creating a replacement and re-syncing everything',
+        );
+        return createSpreadsheet(tabName: tabName);
+      }
+      rethrow;
+    }
+  }
+
+  /// Web URL of a spreadsheet, for showing or copying in the UI.
+  static String urlFor(String sheetId) =>
+      'https://docs.google.com/spreadsheets/d/$sheetId/edit';
+
+  Future<void> _writeHeaderRow(String sheetId, String tabName) async {
+    final headerRange = "'$tabName'!A1:Q1";
+    await _sheetsApi!.spreadsheets.values.update(
+      sheets.ValueRange()..range = headerRange..values = [_headerRow],
+      sheetId,
+      headerRange,
+      valueInputOption: 'USER_ENTERED',
     );
-    return fileList.files ?? [];
+    LogService().info('Sheets: header row written to "$tabName"');
   }
 
   Future<void> _ensureSheet(String sheetId, String tabName) async {
@@ -158,15 +285,7 @@ class SheetsService {
       );
       LogService().info('Sheets: tab "$tabName" created');
 
-      // Write header row
-      final headerRange = "'$tabName'!A1:Q1";
-      await _sheetsApi!.spreadsheets.values.update(
-        sheets.ValueRange()..range = headerRange..values = [_headerRow],
-        sheetId,
-        headerRange,
-        valueInputOption: 'USER_ENTERED',
-      );
-      LogService().info('Sheets: header row written to "$tabName"');
+      await _writeHeaderRow(sheetId, tabName);
     } catch (e) {
       LogService().error('Sheets: _ensureSheet failed', e);
       throw Exception('Välilehden "$tabName" luonti epäonnistui: $e');

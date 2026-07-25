@@ -91,8 +91,12 @@ feature). The suite is run via this aggregator. **When you add a new
 | `When I swipe {string} left` / `right` | Dismissible swipe (delete / edit) |
 | `When I tap the {string} dialog button` | Taps a dialog button by label |
 | `When I sync to sheets` | Taps the History sync button |
+| `Given I am signed in to Google` | Puts the fake SheetsService in the signed-in state, without a real OAuth flow |
+| `Given the configured spreadsheet is no longer accessible` | Makes the next spreadsheet resolve return a freshly created file — the post-`drive.file` migration state, where the app must re-sync the whole history |
 | `When I toggle debug logging` | Flips the debug-logging switch |
 | `When GPS reports {int} km of movement` | Pushes synthetic GPS fixes through the fake LocationService (regression guard for the kilometer-tracking-predefined-routes bug — distance must not be inflated by GPS deltas) |
+| `Given GPS reports driving speed` | Starts a continuous feed of fixes at 25 m/s, the way a real position stream behaves mid-drive. This is the signal that must keep the arrival reminder silent whatever Activity Recognition claims |
+| `When GPS reports the vehicle has stopped` | Keeps the feed running at zero speed, so the movement signal goes stale and the reminder becomes reachable again |
 | `Given activity recognition reports {string}` | Pushes a synthetic motion activity (`in_vehicle`/`still`/…) into the stream BackgroundService watches |
 | `When the reminder backstop elapses` | Pumps past whichever reminder duration is scheduled (long first-tick deferral or short steady-state poll) so the in-process reminder tick fires |
 | `Given the first reminder is deferred well beyond the steady poll` | Pushes the first-reminder deferral far out (test seam) so the next backstop pump asserts the very first reminder of a trip is held back, without a flaky wall-clock margin |
