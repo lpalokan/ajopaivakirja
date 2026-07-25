@@ -180,15 +180,12 @@ which the headless runner (`tool/bdd_host_test.dart`) supplies:
 
 Caveats — **the on-emulator suite (`integration-report.sh`) is the source of
 truth**; the headless run is a no-emulator approximation. As of writing it
-passes **90 / 92** scenarios; the gaps below are host-environment artifacts,
+passes **106 / 107** scenarios; the gaps below are host-environment artifacts,
 not code bugs (all pass on the emulator):
 
 - The "app boots on device" smoke test (`app_smoke_test.dart`) is **excluded**:
   it pumps fixed frames in a way that trips the live binding's pending-frame
   assertion on the host tester.
-- `Settings: Debug logging toggle reveals log actions` — the tap on the toggle
-  misses on the small (800×600) host surface; it lands fine on the larger
-  emulator screen.
 - `Draft trips: Drafts excluded from CSV export` — host CSV-export file
   plumbing differs from the device.
 - The live binding runs in real wall-clock time and is **much slower** than an
@@ -196,6 +193,19 @@ not code bugs (all pass on the emulator):
   is held back" with a far-out test seam (see
   `Given the first reminder is deferred well beyond the steady poll`), never a
   tight "pump less than the timer" margin.
+- **Give the run the machine to itself.** A whole-suite run takes ~25 minutes;
+  running `flutter test` or `flutter analyze` alongside it starves the live
+  binding and turns settle-sensitive assertions into false failures.
+  `Route management: Delete a route with confirmation` is the one that goes
+  first — its `Then I do not see {'Kotiin'}` is a bare `findsNothing` racing
+  Home's route-chip row, which is still in the tree beneath the pushed Routes
+  screen.
+
+The 800×600 host surface is smaller than any emulator, so the tail of a long
+form sits below the fold even though it is built. `tapText` scrolls a target
+into view when a tap on it would land outside the surface — without that,
+`Settings: Debug logging toggle reveals log actions` and the Google Sheets
+card's buttons silently missed on the host while passing on the emulator.
 
 ### Fast iteration (run only what failed)
 
