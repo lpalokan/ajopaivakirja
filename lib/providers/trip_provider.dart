@@ -589,6 +589,14 @@ class TripNotifier extends StateNotifier<TripState> {
     await load();
     if (!mounted) return;
 
+    // Bookend to the onAppBackgrounded line: the gap between the two is the
+    // window where a drive log must be read with suspicion — GPS and
+    // activity delivery are throttled or cut while the app is backgrounded.
+    final active = state.activeLeg;
+    if (active != null) {
+      LogService().info('Trip: app foregrounded with active leg ${active.id}');
+    }
+
     if (!isDriving) {
       _ref.read(tripDetectionServiceProvider).start();
     }

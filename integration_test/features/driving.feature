@@ -256,3 +256,40 @@ Feature: Driving flow
     And I fill in the arrival mileage {1054} km
     And the location service detects proximity to home
     Then no arrival reminder has been shown
+
+  # ── Driving diagnostics log ─────────────────────────────────────────────
+  # The mid-drive "Oletko perillä?" bug can only be diagnosed from a real
+  # drive, after the fact, from a log the user shares via Settings. These
+  # scenarios pin down what that log must capture: which suppression
+  # evidence each reminder tick saw, whether GPS fixes were still arriving,
+  # what location permission the trip started with, and that an "Ajan yhä"
+  # tap actually reached the handler.
+
+  Scenario: Trip start records a location permission snapshot in the debug log
+    Given debug logging is enabled
+    When I start the {'Töihin'} route at {1000} km
+    Then the debug log contains {'location permission'}
+
+  Scenario: A reminder tick records its suppression evidence in the debug log
+    Given debug logging is enabled
+    And activity recognition reports {'still'}
+    When I start the {'Töihin'} route at {1000} km
+    And the reminder backstop elapses
+    Then the debug log contains {'Reminder: tick'}
+    And the debug log contains {'activity=still'}
+
+  Scenario: GPS fixes are recorded in the debug log while driving
+    Given debug logging is enabled
+    And location permission is granted
+    And GPS reports driving speed
+    When I start the {'Töihin'} route at {1000} km
+    And the reminder backstop elapses
+    Then the debug log contains {'GPS: fix'}
+
+  Scenario: The still-driving tap is recorded in the debug log
+    Given debug logging is enabled
+    And activity recognition reports {'still'}
+    When I start the {'Töihin'} route at {1000} km
+    And the reminder backstop elapses
+    And the still driving notification action is tapped
+    Then the debug log contains {'still-driving tap'}

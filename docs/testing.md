@@ -94,6 +94,8 @@ feature). The suite is run via this aggregator. **When you add a new
 | `Given I am signed in to Google` | Puts the fake SheetsService in the signed-in state, without a real OAuth flow |
 | `Given the configured spreadsheet is no longer accessible` | Makes the next spreadsheet resolve return a freshly created file — the post-`drive.file` migration state, where the app must re-sync the whole history |
 | `When I toggle debug logging` | Flips the debug-logging switch |
+| `Given debug logging is enabled` | Turns `LogService` on directly (no Settings navigation) and truncates the log, so log-content assertions only see the current scenario |
+| `Then the debug log contains {string}` | Polls the debug log until the substring appears — used by the driving-diagnostics scenarios that pin down what a shared drive log must capture |
 | `When GPS reports {int} km of movement` | Pushes synthetic GPS fixes through the fake LocationService (regression guard for the kilometer-tracking-predefined-routes bug — distance must not be inflated by GPS deltas) |
 | `Given GPS reports driving speed` | Starts a continuous feed of fixes at 25 m/s, the way a real position stream behaves mid-drive. This is the signal that must keep the arrival reminder silent whatever Activity Recognition claims |
 | `When GPS reports the vehicle has stopped` | Keeps the feed running at zero speed, so the movement signal goes stale and the reminder becomes reachable again |

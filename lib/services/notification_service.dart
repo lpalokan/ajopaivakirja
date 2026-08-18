@@ -3,6 +3,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 import '../models/trip_leg.dart';
+import 'log_service.dart';
 import 'reminder_store.dart';
 
 /// How long one "Ajan yhä" tap silences the arrival reminders — both the
@@ -63,11 +64,19 @@ Future<void> handleStillDrivingBackgroundAction(
   await cancel(NotificationService.arrivalReminderId);
   await cancel(NotificationService.scheduledReminderId);
   final now = DateTime.now();
-  await store.setSnoozedUntil(now.add(snoozeDuration));
+  final snoozedUntil = now.add(snoozeDuration);
+  await store.setSnoozedUntil(snoozedUntil);
   final destination = await store.destination() ?? 'määränpää';
   await scheduleBackstop(
     destination,
     now.add(stillDrivingBackstopRearmDuration),
+  );
+  // The one place the tap is ever handled on Android. With this line in the
+  // log, "the reminder came back anyway" can be split into "snooze expired
+  // and the driver was re-asked" vs "the tap never reached the handler".
+  await LogService().info(
+    'Reminder: still-driving tap — snoozed until $snoozedUntil, '
+    'backstop re-armed for $destination',
   );
 }
 
@@ -82,15 +91,21 @@ Future<void> handleStillDrivingBackgroundAction(
 @pragma('vm:entry-point')
 void notificationTapBackground(NotificationResponse response) {
   final plugin = FlutterLocalNotificationsPlugin();
-  handleStillDrivingBackgroundAction(
-    response,
-    cancel: plugin.cancel,
-    store: ReminderStore(),
-    scheduleBackstop: (destination, triggerTime) {
-      tz.initializeTimeZones();
-      return scheduleStillDrivingBackstop(plugin, destination, triggerTime);
-    },
-  );
+  () async {
+    // This isolate has its own LogService singleton; hook it up to the
+    // shared log file (when the user has logging enabled) so the tap
+    // handling below is visible in a drive log.
+    await LogService().initForBackgroundIsolate();
+    await handleStillDrivingBackgroundAction(
+      response,
+      cancel: plugin.cancel,
+      store: ReminderStore(),
+      scheduleBackstop: (destination, triggerTime) {
+        tz.initializeTimeZones();
+        return scheduleStillDrivingBackstop(plugin, destination, triggerTime);
+      },
+    );
+  }();
 }
 
 /// Registers the far-out "Vieläkö ajat?" platform backstop (id 3). Top-level
