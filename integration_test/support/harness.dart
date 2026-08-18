@@ -31,6 +31,7 @@ import 'package:kilometrikorvaus/services/background_service.dart';
 import 'package:kilometrikorvaus/services/database_service.dart';
 import 'package:kilometrikorvaus/services/file_opener_service.dart';
 import 'package:kilometrikorvaus/services/location_service.dart';
+import 'package:kilometrikorvaus/services/log_service.dart';
 import 'package:kilometrikorvaus/services/notification_service.dart';
 import 'package:kilometrikorvaus/services/odometer_vision_service.dart';
 import 'package:kilometrikorvaus/services/reminder_store.dart';
@@ -1113,6 +1114,32 @@ Future<void> toggleDebugLogging(WidgetTester tester) async {
   await scrollIntoView(tester, find.text('Virheloki'));
   await tester.tap(find.text('Virheloki'));
   await settle(tester);
+}
+
+/// Turns [LogService] on directly (no Settings navigation) and truncates any
+/// log left behind by a previous scenario, so `the debug log contains`
+/// assertions only ever see lines produced by the current scenario.
+Future<void> enableDebugLogging(WidgetTester tester) async {
+  await LogService().init(enabled: true);
+  final path = LogService().logPath;
+  if (path != null) {
+    File(path).writeAsStringSync('');
+  }
+  await tester.pump();
+}
+
+/// Polls the debug log until [text] appears (or a real-time deadline lapses —
+/// the log is written by async fire-and-forget calls, so the line may land a
+/// few frames after the action that produced it).
+Future<void> expectDebugLogContains(WidgetTester tester, String text) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 4));
+  String content = '';
+  while (DateTime.now().isBefore(deadline)) {
+    content = await LogService().readLogs();
+    if (content.contains(text)) return;
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+  fail('Debug log does not contain "$text". Log content:\n$content');
 }
 
 // ─── Draft helpers ─────────────────────────────────────────────────────────

@@ -77,7 +77,20 @@ class BackgroundService {
   Duration _inVehicleRecencyWindow;
   Duration _movementRecencyWindow;
 
+  /// At most one "GPS: fix" log line per this interval, so an hour of
+  /// 1–5 s fixes documents that the feed was alive without drowning the log.
+  static const Duration _gpsLogInterval = Duration(minutes: 1);
+
   Timer? _reminderTimer;
+
+  /// Diagnostics: which tick of the current trip is firing, when it was
+  /// expected to fire, and when a GPS fix was last logged. A tick that fires
+  /// minutes after [_tickExpectedAt] is direct log evidence that the OS
+  /// paused the process (Doze / cached-app freeze) — the poll cannot be
+  /// trusted to have been running in between.
+  int _tickCount = 0;
+  DateTime? _tickExpectedAt;
+  DateTime? _lastGpsLogAt;
 
   /// True until the first reminder of the current trip has been scheduled, so
   /// that the opening tick waits [_firstReminderDuration] (long) while every
@@ -187,6 +200,9 @@ class BackgroundService {
     _activityReceived = false;
     _lastInVehicleAt = null;
     _lastSeenSnooze = null;
+    _tickCount = 0;
+    _tickExpectedAt = null;
+    _lastGpsLogAt = null;
 
     final destination = leg.endLocation ?? leg.routeDescription ?? 'määränpää';
 
@@ -210,12 +226,25 @@ class BackgroundService {
     _movement = MovementSignal(recency: _movementRecencyWindow);
     _positionSub?.cancel();
     _positionSub = _locationService.positionStream.listen((p) {
+      final now = DateTime.now();
       _movement.onSample(
         speedMps: p.speed,
-        at: DateTime.now(),
+        at: now,
         latitude: p.latitude,
         longitude: p.longitude,
       );
+      // Throttled heartbeat proving the feed is (still) alive. Its absence
+      // over a stretch of driving is the log's proof that Android stopped
+      // delivering fixes — the movement signal then goes stale through no
+      // fault of the vehicle.
+      final lastLog = _lastGpsLogAt;
+      if (lastLog == null || now.difference(lastLog) >= _gpsLogInterval) {
+        _lastGpsLogAt = now;
+        LogService().info(
+          'GPS: fix speed=${p.speed.toStringAsFixed(1)}m/s '
+          'fast=${_ageLabel(_movement.lastFastSampleAt, now)}',
+        );
+      }
     });
 
     final hasLocation = await _locationService.hasPermissionGranted();
@@ -226,6 +255,17 @@ class BackgroundService {
         _onProximityNearHome,
       );
     }
+
+    // Snapshot of the conditions the whole trip's detection will run under.
+    // `whileInUse` here plus no "GPS: fix" lines after backgrounding is the
+    // signature of the mid-drive prompt bug.
+    final permissionDesc = await _locationService.describePermission();
+    LogService().info(
+      'Reminder: trip start — location permission: $permissionDesc, '
+      'first tick in ${_firstReminderDuration.inSeconds}s, '
+      'steady poll ${_reminderDuration.inSeconds}s, '
+      'platform backstop ${_platformBackstopDuration.inSeconds}s',
+    );
 
     // Best-effort: if activity recognition isn't available or permission is
     // denied, _lastActivity stays at .unknown, which the poll treats like
@@ -274,8 +314,13 @@ class BackgroundService {
     final nextTick =
         _firstReminderPending ? _firstReminderDuration : _reminderDuration;
     _firstReminderPending = false;
+    _tickExpectedAt = DateTime.now().add(nextTick);
     _reminderTimer = Timer(nextTick, () => _onReminderTick(leg));
   }
+
+  /// "123s ago" / "never", for the tick-evidence log line.
+  static String _ageLabel(DateTime? t, DateTime now) =>
+      t == null ? 'never' : '${now.difference(t).inSeconds}s ago';
 
   /// Callback the [LocationService]'s proximity Timer invokes when the
   /// user is inside the home zone. Gated on `_activeLeg != null` so a
@@ -339,6 +384,23 @@ class BackgroundService {
 
   Future<void> _onReminderTick(TripLeg leg) async {
     if (_activeLeg == null) return;
+
+    // Full evidence snapshot, logged before any decision. A drive-log where
+    // every input reads "never"/"stale" while the wheels were turning is the
+    // bug's fingerprint; and a tick firing long after its schedule means the
+    // OS paused the process in between. Seconds-precision on purpose — the
+    // suppression windows are minutes wide.
+    _tickCount++;
+    final now = DateTime.now();
+    final expected = _tickExpectedAt;
+    final lateBy = expected == null ? 0 : now.difference(expected).inSeconds;
+    LogService().info(
+      'Reminder: tick #$_tickCount (${lateBy}s late) — '
+      'activity=${_lastActivity.name} received=$_activityReceived '
+      'inVehicle=${_ageLabel(_lastInVehicleAt, now)} '
+      'gpsFix=${_ageLabel(_movement.lastSampleAt, now)} '
+      'gpsFast=${_ageLabel(_movement.lastFastSampleAt, now)}',
+    );
 
     final stillDriving = _stillDrivingReason();
     if (stillDriving != null) {

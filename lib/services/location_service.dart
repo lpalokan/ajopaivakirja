@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import '../models/app_settings.dart';
 import '../models/location_zone.dart';
 import 'database_service.dart';
+import 'log_service.dart';
 
 class LocationService {
   Position? _currentPosition;
@@ -50,6 +51,23 @@ class LocationService {
     final permission = await Geolocator.checkPermission();
     return permission == LocationPermission.whileInUse ||
         permission == LocationPermission.always;
+  }
+
+  /// One-line description of the current location grant, for the diagnostics
+  /// log. `whileInUse` vs `always` is the difference between "GPS keeps
+  /// feeding the movement signal with the screen off" and "GPS goes silent
+  /// the moment the phone is pocketed" — exactly what a log from a real
+  /// drive must show to explain a mid-drive "Oletko perillä?".
+  Future<String> describePermission() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        return 'location services disabled';
+      }
+      final permission = await Geolocator.checkPermission();
+      return permission.name;
+    } catch (e) {
+      return 'unavailable ($e)';
+    }
   }
 
   /// Check permission and, only if the user has not yet been asked this
@@ -147,9 +165,13 @@ class LocationService {
               _positionController.add(position);
             }
           },
-          onError: (Object _) {
+          onError: (Object e) {
             // A transient location error must not leak as an unhandled
             // async error; monitoring simply pauses until the next fix.
+            // It must be visible in the log, though: a stream that errors
+            // and goes quiet mid-drive is indistinguishable from a real
+            // stop to the movement signal.
+            LogService().warn('Location: position stream error: $e');
           },
           cancelOnError: false,
         );
