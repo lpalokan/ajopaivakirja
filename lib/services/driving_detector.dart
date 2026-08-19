@@ -48,9 +48,23 @@ class DetectionConfig {
 }
 
 class DrivingDetector {
-  final DetectionConfig config;
+  /// Thresholds this machine currently runs on. Mutable because the user can
+  /// retune them in Settings (issue #52) while monitoring is already running;
+  /// see [updateConfig].
+  DetectionConfig config;
 
   DrivingDetector({this.config = const DetectionConfig()});
+
+  /// Swap in new thresholds without disturbing the state machine.
+  ///
+  /// The counters are kept in *seconds*, not in samples, so they stay
+  /// meaningful across a threshold change: a drive that has already accrued
+  /// 20 s of fast movement keeps those 20 s and is simply measured against
+  /// the new limit from the next [tick] on — which is exactly the
+  /// "takes effect at the next check cycle" behaviour Settings promises.
+  void updateConfig(DetectionConfig next) {
+    config = next;
+  }
 
   DetectionState _state = DetectionState.idle;
   DetectionState get state => _state;

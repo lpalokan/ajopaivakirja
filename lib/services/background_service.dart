@@ -79,6 +79,13 @@ class BackgroundService {
 
   Timer? _reminderTimer;
 
+  /// When the pending reminder tick was supposed to run, and how many have
+  /// run this trip. A tick that fires far later than scheduled means the
+  /// process was frozen or dozed rather than "the signals went quiet" — the
+  /// two look identical in a bug report otherwise (issue #77).
+  DateTime? _nextTickDueAt;
+  int _tickCount = 0;
+
   /// True until the first reminder of the current trip has been scheduled, so
   /// that the opening tick waits [_firstReminderDuration] (long) while every
   /// later reschedule uses [_reminderDuration] (the short steady-state poll).
@@ -182,6 +189,7 @@ class BackgroundService {
 
   Future<void> onDrivingStarted(TripLeg leg) async {
     _activeLeg = leg;
+    _tickCount = 0;
     _reminderShown = false;
     _firstReminderPending = true;
     _activityReceived = false;
@@ -220,10 +228,22 @@ class BackgroundService {
 
     final hasLocation = await _locationService.hasPermissionGranted();
     if (hasLocation) {
+      // Starts the trip position stream under a location foreground service
+      // (see [LocationService.tripLocationSettings]) so fixes keep arriving
+      // once the driver locks the screen — without it the movement signal
+      // above is fed for a couple of minutes and then goes silent for the
+      // rest of the drive.
       await _locationService.startMonitoringDestination(
         destination,
         _settings,
         _onProximityNearHome,
+      );
+    } else {
+      // Worth a line: with no position stream the reminder gate is down to
+      // Activity Recognition alone, which goes quiet on a steady drive.
+      LogService().warn(
+        'Reminder: trip start without location permission — no GPS evidence '
+        'of driving will be available this trip',
       );
     }
 
@@ -274,6 +294,7 @@ class BackgroundService {
     final nextTick =
         _firstReminderPending ? _firstReminderDuration : _reminderDuration;
     _firstReminderPending = false;
+    _nextTickDueAt = DateTime.now().add(nextTick);
     _reminderTimer = Timer(nextTick, () => _onReminderTick(leg));
   }
 
@@ -337,8 +358,16 @@ class BackgroundService {
     return null;
   }
 
+  /// "tick #3 (0s late)" — the prefix every tick log line carries.
+  String _tickLabel() {
+    final due = _nextTickDueAt;
+    final late = due == null ? 0 : DateTime.now().difference(due).inSeconds;
+    return 'tick #$_tickCount (${late}s late)';
+  }
+
   Future<void> _onReminderTick(TripLeg leg) async {
     if (_activeLeg == null) return;
+    _tickCount++;
 
     final stillDriving = _stillDrivingReason();
     if (stillDriving != null) {
@@ -346,7 +375,9 @@ class BackgroundService {
       // latch so that whenever the driver next leaves the vehicle the
       // reminder is asked again for that fresh stop.
       _reminderShown = false;
-      LogService().info('Reminder: tick suppressed ($stillDriving)');
+      LogService().info(
+        'Reminder: ${_tickLabel()} suppressed ($stillDriving)',
+      );
       _scheduleTimeBasedReminder(leg);
       return;
     }
@@ -357,7 +388,9 @@ class BackgroundService {
       // after motion). Don't treat uncertainty as arrival — suppress and keep
       // polling, leaving the "shown" latch as-is. The platform backstop (id
       // 3) remains the safety net if the trip really has ended.
-      LogService().info('Reminder: tick suppressed (confident unknown)');
+      LogService().info(
+        'Reminder: ${_tickLabel()} suppressed (confident unknown)',
+      );
       _scheduleTimeBasedReminder(leg);
       return;
     }
@@ -426,6 +459,7 @@ class BackgroundService {
 
   Future<void> onDrivingStopped() async {
     _activeLeg = null;
+    _nextTickDueAt = null;
     _reminderShown = false;
     _firstReminderPending = false;
     _reminderTimer?.cancel();

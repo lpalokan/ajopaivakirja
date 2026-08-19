@@ -35,10 +35,39 @@ class TripDetectionService {
         _notificationService = notificationService,
         _detector = DrivingDetector(config: config);
 
-  /// Update app settings (reserved for future configuration).
+  /// Apply the user's auto-detection thresholds (Settings → Ajontunnistus).
+  ///
+  /// Safe to call at any time, including mid-monitoring: the detector keeps
+  /// its counters in seconds, so the new thresholds are simply what the next
+  /// check cycle measures against.
   void updateSettings(AppSettings settings) {
-    // Reserved for future use
+    final next = detectionConfigFrom(settings);
+    if (next.highSpeed == _detector.config.highSpeed &&
+        next.drivingAfterSeconds == _detector.config.drivingAfterSeconds &&
+        next.arrivedAfterSeconds == _detector.config.arrivedAfterSeconds) {
+      return;
+    }
+    _detector.updateConfig(next);
+    LogService().info(
+      'TripDetection: thresholds updated — '
+      '${next.highSpeed} m/s for ${next.drivingAfterSeconds}s, '
+      'arrival after ${next.arrivedAfterSeconds}s',
+    );
   }
+
+  /// Build detector thresholds from the persisted app settings, keeping the
+  /// fixed sampling cadence (the counters advance in real seconds, so this is
+  /// a property of the position feed rather than of the user's preference).
+  static DetectionConfig detectionConfigFrom(AppSettings settings) =>
+      DetectionConfig(
+        highSpeed: AppSettings.clampDetectionSpeed(settings.detectionSpeedMps),
+        drivingAfterSeconds: AppSettings.clampDetectionDrivingSeconds(
+          settings.detectionDrivingSeconds,
+        ),
+        arrivedAfterSeconds: AppSettings.clampDetectionArrivalSeconds(
+          settings.detectionArrivalSeconds,
+        ),
+      );
 
   Future<void> start() async {
     if (_detector.state != DetectionState.idle) return;
@@ -74,7 +103,11 @@ class TripDetectionService {
       (_) => _onTick(),
     );
 
-    LogService().info('TripDetection: started monitoring');
+    LogService().info(
+      'TripDetection: started monitoring (${_detector.config.highSpeed} m/s '
+      'for ${_detector.config.drivingAfterSeconds}s, arrival after '
+      '${_detector.config.arrivedAfterSeconds}s)',
+    );
   }
 
   Future<void> stop() async {

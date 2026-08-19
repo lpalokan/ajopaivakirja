@@ -56,11 +56,19 @@ codebase — they name the concepts behind good seams.
   spreadsheet becomes unreachable, the app creates a replacement and re-syncs
   the full history into it.
 - **Detection** — Background GPS monitoring that auto-detects when the user
-  starts driving (>5 m/s for 30s) and when they arrive (<1 m/s for 60s after
-  driving was detected).
+  starts driving (fast movement sustained for a while) and when they arrive
+  (a sustained stop after driving was detected). The thresholds are
+  user-configurable in Settings → Ajontunnistus; the defaults are >5 m/s for
+  30 s and <1 m/s for 60 s.
 - **Arrival monitoring** — GPS proximity checking against location zones.
   When the destination is Home, a periodic check fires a "have you arrived?"
   notification when within range.
+- **Trip location tracking** — The position stream that runs for the duration
+  of an active trip. On Android it runs under geolocator's **location
+  foreground service**, because a `whileInUse` app stops receiving location
+  the moment it is backgrounded — which is every real drive, since the driver
+  locks the screen. Without the service the movement signal below is fed for
+  a few minutes and then silently starves.
 - **Movement signal** (`MovementSignal`) — "was there a GPS fix at driving
   speed recently?", folded from the position stream that runs during a trip.
   Gates the "Oletko perillä?" reminder on both the poll and the proximity

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'models/app_settings.dart';
+import 'providers/settings_provider.dart';
 import 'screens/home_screen.dart';
 import 'services/activity_recognition_service.dart';
 import 'services/notification_service.dart';
@@ -51,7 +53,20 @@ final fileOpenerServiceProvider = Provider<FileOpenerService>((ref) {
 final tripDetectionServiceProvider = Provider<TripDetectionService>((ref) {
   final ls = ref.watch(locationServiceProvider);
   final ns = ref.watch(notificationServiceProvider);
-  return TripDetectionService(locationService: ls, notificationService: ns);
+  final service = TripDetectionService(
+    locationService: ls,
+    notificationService: ns,
+  );
+  // The auto-detection thresholds are user-configurable (issue #52). Applied
+  // by listening rather than watching on purpose: `watch` would rebuild the
+  // provider on every settings change, handing callers a fresh service while
+  // the old one kept its position stream and timer running.
+  service.updateSettings(ref.read(settingsProvider));
+  ref.listen<AppSettings>(
+    settingsProvider,
+    (_, next) => service.updateSettings(next),
+  );
+  return service;
 });
 
 final updateServiceProvider = Provider<UpdateService>((ref) {

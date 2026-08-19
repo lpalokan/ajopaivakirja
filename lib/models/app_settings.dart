@@ -1,6 +1,25 @@
 import 'package:flutter/foundation.dart';
 
 class AppSettings {
+  // ── Auto-detection thresholds (issue #52) ────────────────────────────────
+  //
+  // GPS trip auto-detection used to run on constants baked into
+  // DetectionConfig. They are a compromise: a threshold that works in city
+  // traffic misfires on a bicycle commute, and one tuned for motorway driving
+  // never notices a short errand. These bounds keep the user's choice inside
+  // the range the detector behaves sensibly in.
+  static const double defaultDetectionSpeedMps = 5.0;
+  static const double minDetectionSpeedMps = 3.0;
+  static const double maxDetectionSpeedMps = 8.0;
+
+  static const int defaultDetectionDrivingSeconds = 30;
+  static const int minDetectionDrivingSeconds = 15;
+  static const int maxDetectionDrivingSeconds = 120;
+
+  static const int defaultDetectionArrivalSeconds = 60;
+  static const int minDetectionArrivalSeconds = 30;
+  static const int maxDetectionArrivalSeconds = 180;
+
   final String homeLocation;
   final double kmRate;
   final double allowance6h;
@@ -9,6 +28,16 @@ class AppSettings {
   final String sheetTab;
   final String driverName;
   final bool debugLogging;
+
+  /// Speed (m/s) at or above which the device counts as "moving fast" for
+  /// auto-detection.
+  final double detectionSpeedMps;
+
+  /// How long that fast movement must be sustained before a trip is detected.
+  final int detectionDrivingSeconds;
+
+  /// How long the vehicle must stay stopped before arrival is detected.
+  final int detectionArrivalSeconds;
 
   const AppSettings({
     this.homeLocation = 'Koti',
@@ -19,7 +48,22 @@ class AppSettings {
     this.sheetTab = 'Taulukko1',
     this.driverName = kDebugMode ? 'Lapa' : '',
     this.debugLogging = false,
+    this.detectionSpeedMps = defaultDetectionSpeedMps,
+    this.detectionDrivingSeconds = defaultDetectionDrivingSeconds,
+    this.detectionArrivalSeconds = defaultDetectionArrivalSeconds,
   });
+
+  /// Clamp a stored/entered speed threshold into the supported range.
+  static double clampDetectionSpeed(double mps) =>
+      mps.clamp(minDetectionSpeedMps, maxDetectionSpeedMps).toDouble();
+
+  /// Clamp a stored/entered sustained-driving duration into range.
+  static int clampDetectionDrivingSeconds(int seconds) =>
+      seconds.clamp(minDetectionDrivingSeconds, maxDetectionDrivingSeconds);
+
+  /// Clamp a stored/entered arrival-stop duration into range.
+  static int clampDetectionArrivalSeconds(int seconds) =>
+      seconds.clamp(minDetectionArrivalSeconds, maxDetectionArrivalSeconds);
 
   AppSettings copyWith({
     String? homeLocation,
@@ -30,6 +74,9 @@ class AppSettings {
     String? sheetTab,
     String? driverName,
     bool? debugLogging,
+    double? detectionSpeedMps,
+    int? detectionDrivingSeconds,
+    int? detectionArrivalSeconds,
   }) {
     return AppSettings(
       homeLocation: homeLocation ?? this.homeLocation,
@@ -40,6 +87,11 @@ class AppSettings {
       sheetTab: sheetTab ?? this.sheetTab,
       driverName: driverName ?? this.driverName,
       debugLogging: debugLogging ?? this.debugLogging,
+      detectionSpeedMps: detectionSpeedMps ?? this.detectionSpeedMps,
+      detectionDrivingSeconds:
+          detectionDrivingSeconds ?? this.detectionDrivingSeconds,
+      detectionArrivalSeconds:
+          detectionArrivalSeconds ?? this.detectionArrivalSeconds,
     );
   }
 
@@ -53,6 +105,9 @@ class AppSettings {
       'sheet_tab': sheetTab,
       'driver_name': driverName,
       'debug_logging': debugLogging ? '1' : '0',
+      'detection_speed_mps': detectionSpeedMps.toString(),
+      'detection_driving_seconds': detectionDrivingSeconds.toString(),
+      'detection_arrival_seconds': detectionArrivalSeconds.toString(),
     };
   }
 
@@ -66,6 +121,21 @@ class AppSettings {
       sheetTab: map['sheet_tab'] ?? 'Taulukko1',
       driverName: map['driver_name'] ?? '',
       debugLogging: map['debug_logging'] == '1',
+      // Clamped on the way in: a value written by an older/newer build, or a
+      // hand-edited row, must not push the detector outside the range it was
+      // tuned for.
+      detectionSpeedMps: clampDetectionSpeed(
+        double.tryParse(map['detection_speed_mps'] ?? '') ??
+            defaultDetectionSpeedMps,
+      ),
+      detectionDrivingSeconds: clampDetectionDrivingSeconds(
+        int.tryParse(map['detection_driving_seconds'] ?? '') ??
+            defaultDetectionDrivingSeconds,
+      ),
+      detectionArrivalSeconds: clampDetectionArrivalSeconds(
+        int.tryParse(map['detection_arrival_seconds'] ?? '') ??
+            defaultDetectionArrivalSeconds,
+      ),
     );
   }
 

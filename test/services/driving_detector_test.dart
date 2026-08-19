@@ -54,6 +54,63 @@ void main() {
     });
   });
 
+  group('configurable thresholds (issue #52)', () {
+    test('a higher speed threshold ignores slower movement', () {
+      final d = DrivingDetector(
+        config: const DetectionConfig(highSpeed: 8.0),
+      )..startMonitoring();
+
+      // 6 m/s is "driving" under the default 5 m/s threshold, but not here.
+      expect(drive(d, 6, 10), isNull);
+      expect(d.state, DetectionState.monitoring);
+      expect(drive(d, 9, 3), DetectionEvent.drivingDetected);
+    });
+
+    test('a longer sustained duration defers detection', () {
+      final d = DrivingDetector(
+        config: const DetectionConfig(drivingAfterSeconds: 120),
+      )..startMonitoring();
+
+      expect(drive(d, 10, 11), isNull); // 110s: not yet
+      d.onSample(10); // 120s
+      expect(d.tick(), DetectionEvent.drivingDetected);
+    });
+
+    test('a longer stop duration defers arrival', () {
+      final d = DrivingDetector(
+        config: const DetectionConfig(arrivedAfterSeconds: 180),
+      )..startMonitoring();
+      drive(d, 10, 3); // -> driving
+
+      expect(drive(d, 0, 17), isNull); // 170s stopped: not yet
+      d.onSample(0); // 180s
+      expect(d.tick(), DetectionEvent.arrivedDetected);
+    });
+
+    test('updateConfig takes effect at the next check cycle', () {
+      final d = detector()..startMonitoring();
+      // 20s of fast movement accrued under the default 30s threshold.
+      expect(drive(d, 10, 2), isNull);
+
+      // The user drags the duration slider down mid-monitoring: the accrued
+      // seconds already clear the new limit, so the very next tick fires.
+      d.updateConfig(const DetectionConfig(drivingAfterSeconds: 15));
+      expect(d.tick(), DetectionEvent.drivingDetected);
+    });
+
+    test('updateConfig keeps the accrued counters', () {
+      final d = detector()..startMonitoring();
+      drive(d, 10, 2); // 20s fast
+
+      // Raising the threshold must not fire, and must not wipe the 20s: one
+      // more fast sample (30s) is still short of the new 40s limit.
+      d.updateConfig(const DetectionConfig(drivingAfterSeconds: 40));
+      expect(drive(d, 10, 1), isNull);
+      d.onSample(10); // 40s
+      expect(d.tick(), DetectionEvent.drivingDetected);
+    });
+  });
+
   group('arrival detection', () {
     DrivingDetector driving() {
       final d = detector()..startMonitoring();
