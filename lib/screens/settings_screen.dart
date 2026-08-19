@@ -34,6 +34,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _sheetTabController = TextEditingController();
   final _driverController = TextEditingController();
 
+  /// Auto-detection thresholds (issue #52). Held in local state so the
+  /// sliders move freely and are persisted with the rest of the form on
+  /// "Tallenna".
+  double _detectionSpeedMps = AppSettings.defaultDetectionSpeedMps;
+  double _detectionDrivingSeconds =
+      AppSettings.defaultDetectionDrivingSeconds.toDouble();
+  double _detectionArrivalSeconds =
+      AppSettings.defaultDetectionArrivalSeconds.toDouble();
+
   bool _saving = false;
   bool _signingIn = false;
   bool _signedIn = false;
@@ -57,6 +66,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _allowance10hController.text = settings.allowance10h.toString();
     _sheetTabController.text = settings.sheetTab;
     _driverController.text = settings.driverName;
+    _detectionSpeedMps = settings.detectionSpeedMps;
+    _detectionDrivingSeconds = settings.detectionDrivingSeconds.toDouble();
+    _detectionArrivalSeconds = settings.detectionArrivalSeconds.toDouble();
     _checkSignIn();
     _loadKmRates();
     _loadZones();
@@ -290,6 +302,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 16),
+            // Ajontunnistus
+            _buildDetectionCard(context),
+            const SizedBox(height: 16),
             // Vianmääritys
             Card(
               child: Column(
@@ -367,6 +382,111 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  /// Settings → Ajontunnistus: how sensitive automatic trip detection is.
+  ///
+  /// Sliders rather than free text because every value here has a range
+  /// outside which the detector misbehaves — too low a speed threshold turns
+  /// a bus ride into a trip, too long a sustained duration misses short
+  /// errands entirely. The speed is shown in km/h (what a driver thinks in)
+  /// while the stored value stays m/s (what the position stream reports).
+  Widget _buildDetectionCard(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Ajontunnistus',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Milloin sovellus tunnistaa ajon alkaneeksi ja päättyneeksi',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            _buildDetectionSlider(
+              context,
+              sliderKey: 'detection_speed',
+              label: 'Nopeusraja',
+              valueLabel: '${(_detectionSpeedMps * 3.6).round()} km/h',
+              value: _detectionSpeedMps,
+              min: AppSettings.minDetectionSpeedMps,
+              max: AppSettings.maxDetectionSpeedMps,
+              divisions: 10,
+              onChanged: (v) => setState(() => _detectionSpeedMps = v),
+            ),
+            _buildDetectionSlider(
+              context,
+              sliderKey: 'detection_driving',
+              label: 'Ajon kesto ennen tunnistusta',
+              valueLabel: '${_detectionDrivingSeconds.round()} s',
+              value: _detectionDrivingSeconds,
+              min: AppSettings.minDetectionDrivingSeconds.toDouble(),
+              max: AppSettings.maxDetectionDrivingSeconds.toDouble(),
+              divisions: 7,
+              onChanged: (v) => setState(() => _detectionDrivingSeconds = v),
+            ),
+            _buildDetectionSlider(
+              context,
+              sliderKey: 'detection_arrival',
+              label: 'Pysähdys ennen perilletuloa',
+              valueLabel: '${_detectionArrivalSeconds.round()} s',
+              value: _detectionArrivalSeconds,
+              min: AppSettings.minDetectionArrivalSeconds.toDouble(),
+              max: AppSettings.maxDetectionArrivalSeconds.toDouble(),
+              divisions: 10,
+              onChanged: (v) => setState(() => _detectionArrivalSeconds = v),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetectionSlider(
+    BuildContext context, {
+    required String sliderKey,
+    required String label,
+    required String valueLabel,
+    required double value,
+    required double min,
+    required double max,
+    required int divisions,
+    required ValueChanged<double> onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(child: Text(label)),
+            Text(
+              valueLabel,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+          ],
+        ),
+        Slider(
+          key: ValueKey(sliderKey),
+          value: value.clamp(min, max),
+          min: min,
+          max: max,
+          divisions: divisions,
+          label: valueLabel,
+          semanticFormatterCallback: (_) => '$label $valueLabel',
+          onChanged: onChanged,
+        ),
+      ],
     );
   }
 
@@ -829,6 +949,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         'allowance_10h': a10hStr,
         'sheet_tab': _sheetTabController.text.trim(),
         'driver_name': _driverController.text.trim(),
+        'detection_speed_mps': _detectionSpeedMps.toString(),
+        'detection_driving_seconds':
+            _detectionDrivingSeconds.round().toString(),
+        'detection_arrival_seconds':
+            _detectionArrivalSeconds.round().toString(),
       });
       // Sync current year rate to km_rates table
       final currentYear = DateTime.now().year;

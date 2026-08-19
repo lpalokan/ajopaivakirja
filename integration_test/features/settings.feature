@@ -61,3 +61,28 @@ Feature: Settings
     When I open settings
     And I toggle debug logging
     Then I see {'Jaa loki'}
+
+  Scenario: Auto-detection thresholds show their defaults
+    When I open settings
+    Then I see text containing {'Ajontunnistus'}
+    And I see text containing {'18 km/h'}
+    And I see text containing {'30 s'}
+    And I see text containing {'60 s'}
+
+  Scenario: Detection speed threshold persists
+    When I open settings
+    And I drag the {'detection_speed'} slider to its {'maximum'}
+    And I save settings
+    Then the {'detection_speed_mps'} setting is {'8.0'}
+
+  Scenario: Sustained driving duration persists
+    When I open settings
+    And I drag the {'detection_driving'} slider to its {'minimum'}
+    And I save settings
+    Then the {'detection_driving_seconds'} setting is {'15'}
+
+  Scenario: Arrival stop duration persists
+    When I open settings
+    And I drag the {'detection_arrival'} slider to its {'maximum'}
+    And I save settings
+    Then the {'detection_arrival_seconds'} setting is {'180'}

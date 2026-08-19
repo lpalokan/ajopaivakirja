@@ -110,6 +110,7 @@ feature). The suite is run via this aggregator. **When you add a new
 | `When the still driving notification action is tapped with a long snooze` | Same handler with a far-out snooze, to assert reminders stay silent for the whole snooze window |
 | `Given the in-vehicle recency window is long` | Stretches BackgroundService's in-vehicle recency window (test seam) so a confident `still` right after `in_vehicle` (red light) is asserted NOT to fire the reminder |
 | `When the app is backgrounded` | Drives `TripNotifier.onAppBackgrounded` (the `AppLifecycleState.paused` path) — the screen-lock state where trip tracking has to keep feeding the movement signal |
+| `When I drag the {string} slider to its {string}` | Drags a Settings slider (by widget key) to its `minimum`/`maximum`, so the persisted value is a fixed number regardless of track width |
 | `Then an arrival reminder has been shown` / `no arrival reminder has been shown` / `exactly {int} arrival reminder has been shown` | Asserts how many times the "Oletko perillä?" reminder was posted |
 | `Then the reminder notification has been dismissed` | Asserts the "Ajan yhä" tap cancelled BOTH reminder ids (the visible prompt and the platform backstop) |
 | `Then I see {string}` | Asserts text is visible (scrolls if needed) |

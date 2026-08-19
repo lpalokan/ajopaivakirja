@@ -1383,6 +1383,28 @@ Future<void> clearInMemoryTripState(WidgetTester tester) async {
   await tester.pump();
 }
 
+/// Drag a [Slider] (found by its widget key) all the way to one end.
+///
+/// Sliders are hard to set to an arbitrary value deterministically — the drag
+/// distance has to be converted to a fraction of the track. Dragging past
+/// either end is not: the value clamps to `min`/`max`, so the assertion is a
+/// fixed number regardless of track width or division count. That is enough
+/// to prove the value is read from the widget, persisted, and reloaded, which
+/// is what the auto-detection threshold scenarios are about.
+Future<void> dragSliderToExtreme(
+  WidgetTester tester,
+  String sliderKey,
+  String extreme,
+) async {
+  final f = find.byKey(ValueKey(sliderKey));
+  if (f.evaluate().isEmpty) await scrollIntoView(tester, f);
+  await tester.ensureVisible(f.first);
+  await tester.pump(const Duration(milliseconds: 100));
+  final dx = extreme == 'minimum' ? -600.0 : 600.0;
+  await tester.drag(f.first, Offset(dx, 0));
+  await settle(tester);
+}
+
 /// Simulates the user locking the screen mid-drive, driving the same
 /// `AppLifecycleState.paused` path as production via
 /// `TripNotifier.onAppBackgrounded`.
