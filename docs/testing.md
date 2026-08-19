@@ -15,6 +15,12 @@ document explains how the suite is laid out and how to maintain it.
 The Gherkin layer is the **test-case database**: the `.feature` files are
 the authoritative, human-readable catalogue of what the app does.
 
+Platform *wiring* that the emulator harness fakes away — which
+`LocationSettings` an active trip's position stream runs on, for instance —
+is pinned by unit tests instead (`test/services/location_service_test.dart`).
+The scenario says what the driver experiences; the unit test says which
+platform call delivers it.
+
 ## Directory layout
 
 ```
@@ -103,6 +109,7 @@ feature). The suite is run via this aggregator. **When you add a new
 | `When the still driving notification action is tapped` | Invokes the "Ajan yhä" BACKGROUND-isolate handler — the only path Android delivers the action to — with a short snooze, so re-ask behaviour is observable within one pump |
 | `When the still driving notification action is tapped with a long snooze` | Same handler with a far-out snooze, to assert reminders stay silent for the whole snooze window |
 | `Given the in-vehicle recency window is long` | Stretches BackgroundService's in-vehicle recency window (test seam) so a confident `still` right after `in_vehicle` (red light) is asserted NOT to fire the reminder |
+| `When the app is backgrounded` | Drives `TripNotifier.onAppBackgrounded` (the `AppLifecycleState.paused` path) — the screen-lock state where trip tracking has to keep feeding the movement signal |
 | `Then an arrival reminder has been shown` / `no arrival reminder has been shown` / `exactly {int} arrival reminder has been shown` | Asserts how many times the "Oletko perillä?" reminder was posted |
 | `Then the reminder notification has been dismissed` | Asserts the "Ajan yhä" tap cancelled BOTH reminder ids (the visible prompt and the platform backstop) |
 | `Then I see {string}` | Asserts text is visible (scrolls if needed) |

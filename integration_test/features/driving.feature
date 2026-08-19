@@ -256,3 +256,22 @@ Feature: Driving flow
     And I fill in the arrival mileage {1054} km
     And the location service detects proximity to home
     Then no arrival reminder has been shown
+
+  Scenario: Locking the phone mid-drive keeps the reminder suppressed
+    Given location permission is granted
+    And activity recognition reports {'still'}
+    And GPS reports driving speed
+    When I start the {'Töihin'} route at {1000} km
+    And the app is backgrounded
+    And the reminder backstop elapses
+    Then no arrival reminder has been shown
+
+  Scenario: The reminder fires when the vehicle stops with the app backgrounded
+    Given location permission is granted
+    And activity recognition reports {'still'}
+    And GPS reports driving speed
+    When I start the {'Töihin'} route at {1000} km
+    And the app is backgrounded
+    And GPS reports the vehicle has stopped
+    And the reminder backstop elapses
+    Then an arrival reminder has been shown

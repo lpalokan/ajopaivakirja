@@ -1383,6 +1383,22 @@ Future<void> clearInMemoryTripState(WidgetTester tester) async {
   await tester.pump();
 }
 
+/// Simulates the user locking the screen mid-drive, driving the same
+/// `AppLifecycleState.paused` path as production via
+/// `TripNotifier.onAppBackgrounded`.
+///
+/// This is the state issue #77 is about: on a real phone everything the
+/// arrival-reminder gate consults used to stop being fed here, because the
+/// position stream had no foreground service behind it. The scenarios that
+/// use this step assert the trip keeps consuming position fixes — and so
+/// keeps suppressing "Oletko perillä?" — after the app is backgrounded.
+Future<void> appIsBackgrounded(WidgetTester tester) async {
+  final scopeContext = tester.element(find.byType(KilometrikorvausApp));
+  final container = ProviderScope.containerOf(scopeContext, listen: false);
+  container.read(tripProvider.notifier).onAppBackgrounded();
+  await settle(tester);
+}
+
 /// Simulates the app returning to the foreground (e.g. the user reopening it
 /// from the driving notification), driving the same `AppLifecycleState.resumed`
 /// path as production by invoking `TripNotifier.onAppForegrounded`.
