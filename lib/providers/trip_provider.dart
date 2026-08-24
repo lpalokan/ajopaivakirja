@@ -262,6 +262,10 @@ class TripNotifier extends StateNotifier<TripState> {
   /// Start a trip (route-based or ad-hoc). Stops auto-detection, creates
   /// the leg, starts the background service, and begins GPS live-distance
   /// tracking. Replaces ~60 lines of orchestration in HomeScreen.
+  /// [startLocationConfirmed] says whether [startLocation] is a place the
+  /// driver asserted — the location chip resolved it from GPS, or they set it
+  /// by hand — rather than one the app guessed. Only an asserted name is
+  /// worth remembering; see [_rememberPlace].
   Future<void> startTrip({
     required int startOdometer,
     required String startLocation,
@@ -269,6 +273,7 @@ class TripNotifier extends StateNotifier<TripState> {
     String? purpose,
     String? driver,
     DateTime? startTime,
+    bool startLocationConfirmed = false,
   }) async {
     _ref.read(tripDetectionServiceProvider).stop();
 
@@ -300,9 +305,14 @@ class TripNotifier extends StateNotifier<TripState> {
       );
     }
 
-    // Same for the departure point: this is where the driver is at the
-    // instant they tap start.
-    unawaited(_rememberPlace(leg.startLocation));
+    // The departure point, but only when the driver actually told us where
+    // they are. Two names must never be learned here: the chip's fallback
+    // label (the configured home behind "(edellinen)") is the app's own
+    // guess, and a route's start location is its assumption about where the
+    // driver is standing — start "Töihin" from a customer's yard and it
+    // would pin "Koti" to that yard. A learned place sticks, so a wrong one
+    // is worse than none.
+    if (startLocationConfirmed) unawaited(_rememberPlace(startLocation));
 
     await backgroundService.onDrivingStarted(leg);
   }

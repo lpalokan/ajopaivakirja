@@ -92,6 +92,8 @@ feature). The suite is run via this aggregator. **When you add a new
 | `When I save settings` | Scrolls to and taps "Tallenna" (keeps SnackBar) |
 | `When I start the {string} route at {int} km` | Opens route, fills odometer, confirms |
 | `When I arrive at {int} km` | Taps "Olen perillä", confirms arrival odometer |
+| `When I start a free trip at {int} km` | Odometer + "Aloita ajo" without touching the location chip, so the start location is the app's own guess — the path that must never be recorded as a place |
+| `Then the app remembers the place {string}` / `does not remember the place {string}` | Asserts the learned-place table directly. Learning is invisible by design, so the database is the only honest witness; both poll briefly because learning is fire-and-forget |
 | `When I add route {string} from {string} to {string} of {int} km` | Adds a route via the dialog |
 | `When I open the add route dialog` | Opens the new-route dialog |
 | `When I swipe {string} left` / `right` | Dismissible swipe (delete / edit) |

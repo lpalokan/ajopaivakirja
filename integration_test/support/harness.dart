@@ -1023,6 +1023,66 @@ Future<void> arriveAdHoc(WidgetTester tester, String to, int odometer) async {
   await settle(tester);
 }
 
+/// Start a trip without touching the location chip: odometer, "Aloita ajo",
+/// nothing else. This is the path where the chip's label is the app's own
+/// guess (the configured home location behind "(edellinen)"), so it is what
+/// proves a guess is never recorded as a place.
+Future<void> startFreeTrip(WidgetTester tester, int odometer) async {
+  await tester.enterText(_odometerField, '$odometer');
+  final startBtn = find.widgetWithText(FilledButton, 'Aloita ajo');
+  await scrollIntoView(tester, startBtn);
+  await tester.tap(startBtn.first);
+  await settle(tester);
+  await waitFor(tester, find.widgetWithText(FilledButton, 'Olen perillä'));
+}
+
+/// Assert the app has learned [name] as a place, reading the zone table
+/// directly. Deliberately not a screen assertion: learning is invisible by
+/// design, so the database is the only honest witness.
+Future<void> expectPlaceRemembered(WidgetTester tester, String name) async {
+  final zones = await _pollForPlace(tester, name, expected: true);
+  expect(
+    zones.where((z) => z.name.trim().toLowerCase() == name.toLowerCase()),
+    isNotEmpty,
+    reason:
+        "the app did not remember '\$name' — the driver would have to teach "
+        'it that place by hand, which is exactly what must never happen',
+  );
+}
+
+/// Assert the app has NOT learned [name]. Guards the rule that a location the
+/// app merely guessed (or a route's assumption about where its start is) is
+/// never pinned to coordinates — once written, a wrong place would stick.
+Future<void> expectPlaceNotRemembered(WidgetTester tester, String name) async {
+  final zones = await _pollForPlace(tester, name, expected: false);
+  expect(
+    zones.where((z) => z.name.trim().toLowerCase() == name.toLowerCase()),
+    isEmpty,
+    reason:
+        "the app recorded '\$name' from a location it was only guessing at; "
+        'that guess would name the wrong spot for as long as it exists',
+  );
+}
+
+/// Learning is fire-and-forget (it never blocks a trip) and may take a fresh
+/// fix first, so both assertions have to give it a moment. Pumping — rather
+/// than sleeping — keeps the app's own futures running.
+Future<List<LocationZone>> _pollForPlace(
+  WidgetTester tester,
+  String name, {
+  required bool expected,
+}) async {
+  final wanted = name.trim().toLowerCase();
+  var zones = await DatabaseService.getAllLocationZones();
+  for (var i = 0; i < 20; i++) {
+    final found = zones.any((z) => z.name.trim().toLowerCase() == wanted);
+    if (found == expected) return zones;
+    await tester.pump(const Duration(milliseconds: 100));
+    zones = await DatabaseService.getAllLocationZones();
+  }
+  return zones;
+}
+
 /// Save a known location (a [LocationZone]) the way Settings → Sijaintialueet
 /// would, so scenarios can place the driver at a named spot.
 Future<void> addKnownLocation(

@@ -388,7 +388,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     }
 
     final settings = ref.read(settingsProvider);
-    final startLocation = _pickedLocation ?? settings.homeLocation;
+    // Non-null only when the chip has an answer the driver stands behind:
+    // a GPS-resolved place or one they picked. Null means the chip is
+    // showing its fallback guess, which must not be recorded as a place.
+    final confirmedLocation = _pickedLocation;
+    final startLocation = confirmedLocation ?? settings.homeLocation;
     final purpose = _selectedPurpose ?? '';
 
     model.Route? selectedRoute;
@@ -403,6 +407,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         .startTrip(
           startOdometer: odometer,
           startLocation: startLocation,
+          startLocationConfirmed: confirmedLocation != null,
           route: selectedRoute,
           purpose: purpose,
           driver: settings.driverName,

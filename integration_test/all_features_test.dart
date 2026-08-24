@@ -20,6 +20,7 @@ import 'features/driving_test.dart' as driving;
 import 'features/history_test.dart' as history;
 import 'features/home_context_test.dart' as home_context;
 import 'features/navigation_test.dart' as navigation;
+import 'features/place_learning_test.dart' as place_learning;
 import 'features/nearby_routes_test.dart' as nearby_routes;
 import 'features/route_management_test.dart' as route_management;
 import 'features/seeded_routes_test.dart' as seeded_routes;
@@ -40,6 +41,7 @@ void main() {
   drafts.main();
   current_position.main();
   nearby_routes.main();
+  place_learning.main();
   accessibility.main();
   update_check.main();
 }
