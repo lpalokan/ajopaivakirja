@@ -2,41 +2,66 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/material_symbols_icons.dart';
 import '../models/route.dart' as model;
 
-/// A full-width row of the user's most-recent routes as large shortcut buttons.
+/// A full-width row of route shortcut buttons.
 ///
 /// Placed just above the StartCard. Tapping a button pre-fills the start
-/// location + purpose on the parent's StartCard. The home view passes the two
-/// most-recent routes: one route fills the full width, two split it evenly.
+/// location + purpose on the parent's StartCard. The home view passes two
+/// routes: one fills the full width, two split it evenly.
+///
+/// [title] names which two they are ("Lähellä" when they were picked by GPS
+/// proximity, "Viimeksi ajetut" when the position is unknown and the list
+/// fell back to recency). Without it a nearby list with one entry is
+/// indistinguishable from a bug.
 class RouteChipRow extends StatelessWidget {
   final List<model.Route> routes;
   final int? selectedRouteId;
   final ValueChanged<model.Route> onRouteSelected;
+  final String? title;
 
   const RouteChipRow({
     super.key,
     required this.routes,
     this.selectedRouteId,
     required this.onRouteSelected,
+    this.title,
   });
 
   @override
   Widget build(BuildContext context) {
     if (routes.isEmpty) return const SizedBox.shrink();
 
+    final theme = Theme.of(context);
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          for (var i = 0; i < routes.length; i++) ...[
-            if (i > 0) const SizedBox(width: 8),
-            Expanded(
-              child: RouteChip(
-                route: routes[i],
-                isSelected: routes[i].id == selectedRouteId,
-                onTap: () => onRouteSelected(routes[i]),
+          if (title != null) ...[
+            Text(
+              title!,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
               ),
             ),
+            const SizedBox(height: 6),
           ],
+          Row(
+            children: [
+              for (var i = 0; i < routes.length; i++) ...[
+                if (i > 0) const SizedBox(width: 8),
+                Expanded(
+                  child: RouteChip(
+                    route: routes[i],
+                    isSelected: routes[i].id == selectedRouteId,
+                    onTap: () => onRouteSelected(routes[i]),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ],
       ),
     );

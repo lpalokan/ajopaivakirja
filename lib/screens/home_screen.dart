@@ -7,6 +7,7 @@ import '../main.dart';
 import '../models/route.dart' as model;
 import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
+import '../providers/position_provider.dart';
 import '../providers/route_provider.dart';
 import '../providers/trip_provider.dart';
 import '../providers/settings_provider.dart';
@@ -93,6 +94,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         }
       }
 
+      // Resolve where we are, then keep following while the screen is up.
+      // A trip has its own position stream, so the idle watch stays off
+      // while one is running (see the tripProvider listener in build).
+      final position = ref.read(currentPositionProvider.notifier);
+      await position.refresh();
+      if (ref.read(tripProvider).activeLeg == null) position.startIdleWatch();
+
       final backgroundService = ref.read(backgroundServiceProvider);
       await backgroundService.initialize();
 
@@ -133,10 +141,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final tripNotifier = ref.read(tripProvider.notifier);
+    final position = ref.read(currentPositionProvider.notifier);
     if (state == AppLifecycleState.paused) {
       tripNotifier.onAppBackgrounded();
+      // Nobody is looking at the chip — stop paying for fixes.
+      position.stopIdleWatch();
     } else if (state == AppLifecycleState.resumed) {
       tripNotifier.onAppForegrounded();
+      // The driver has almost certainly moved since the app was last on
+      // screen; re-resolve before they read the position off the chip.
+      position.refresh();
+      if (ref.read(tripProvider).activeLeg == null) position.startIdleWatch();
     }
   }
 
@@ -145,9 +160,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final routes = ref.watch(routeProvider);
     final tripState = ref.watch(tripProvider);
     final settings = ref.watch(settingsProvider);
-    final recentRoutes = ref
-        .read(routeProvider.notifier)
-        .getRecentRoutes(limit: 2);
+
+    // An active trip already runs a position stream; a second idle one would
+    // pay for the same fixes twice.
+    ref.listen<TripState>(tripProvider, (previous, next) {
+      final position = ref.read(currentPositionProvider.notifier);
+      if (next.activeLeg != null) {
+        position.stopIdleWatch();
+      } else {
+        position.startIdleWatch();
+      }
+    });
+
+    // Shortcut row: the routes that start where we are, falling back to the
+    // recently driven ones whenever the position can't answer — an empty row
+    // would read as lost data.
+    final nearbyRoutes = ref.watch(nearbyRoutesProvider);
+    final showingNearby = nearbyRoutes.isNotEmpty;
+    var shortcutRoutes = showingNearby
+        ? nearbyRoutes
+        : ref.read(routeProvider.notifier).getRecentRoutes(limit: 2);
+    // A route the user has already tapped stays on screen even if the next
+    // fix would drop it from the list: a chip must never change identity
+    // between finger-down and finger-up.
+    if (_selectedRouteId != null &&
+        !shortcutRoutes.any((r) => r.id == _selectedRouteId)) {
+      final selected = routes
+          .where((r) => r.id == _selectedRouteId)
+          .firstOrNull;
+      if (selected != null) {
+        shortcutRoutes = [selected, ...shortcutRoutes].take(2).toList();
+      }
+    }
 
     final lastOdometerFuture = tripState.activeLeg == null
         ? DatabaseService.getLastLeg()
@@ -161,7 +205,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
               tripState,
               routes,
               settings,
-              recentRoutes,
+              shortcutRoutes,
+              showingNearby,
               lastOdometerFuture,
             ),
       bottomNavigationBar: const MainBottomNav(selectedIndex: 0),
@@ -225,7 +270,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     TripState tripState,
     List<model.Route> routes,
     AppSettings settings,
-    List<model.Route> recentRoutes,
+    List<model.Route> shortcutRoutes,
+    bool showingNearby,
     Future<TripLeg?>? lastOdometerFuture,
   ) {
     // Resolve the selected route from the live routes list rather than
@@ -244,9 +290,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         // wins over the day timeline, which wins over the ad-hoc card.
         Expanded(flex: 3, child: _buildTopZone(tripState, selectedRoute)),
         // Route chips
-        if (recentRoutes.isNotEmpty) ...[
+        if (shortcutRoutes.isNotEmpty) ...[
           RouteChipRow(
-            routes: recentRoutes,
+            title: showingNearby ? 'Lähellä' : 'Viimeksi ajetut',
+            routes: shortcutRoutes,
             selectedRouteId: _selectedRouteId,
             onRouteSelected: (route) {
               if (route.id == _selectedRouteId) {
@@ -282,7 +329,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                 visionService: ref.read(odometerVisionServiceProvider),
                 locationChip: LocationChip(
                   key: _locationChipKey,
-                  locationService: ref.read(locationServiceProvider),
                   fallbackLabel:
                       selectedRoute?.startLocation ??
                       _pickedLocation ??

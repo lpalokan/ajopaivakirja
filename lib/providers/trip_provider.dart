@@ -16,6 +16,7 @@ import '../services/trip_calculator.dart';
 import '../services/log_service.dart';
 import '../widgets/odometer_dialog.dart';
 import '../main.dart';
+import 'position_provider.dart';
 import 'settings_provider.dart';
 import 'route_provider.dart';
 
@@ -186,6 +187,10 @@ class TripNotifier extends StateNotifier<TripState> {
     // down (e.g. test teardown); don't touch providers/state after dispose.
     if (!mounted) return leg;
 
+    // We are standing at the destination right now — the one moment its
+    // name and its coordinates are both known.
+    await _rememberPlace(leg.endLocation);
+
     // Persist an ad-hoc journey as a reusable route (also makes its start
     // and end locations available as suggestions next time).
     if (wasAdHoc &&
@@ -293,7 +298,33 @@ class TripNotifier extends StateNotifier<TripState> {
       );
     }
 
+    // Same for the departure point: this is where the driver is at the
+    // instant they tap start.
+    await _rememberPlace(leg.startLocation);
+
     await backgroundService.onDrivingStarted(leg);
+  }
+
+  /// Learn [name] as a known location at the current GPS position, so the
+  /// home screen can recognise the place — and offer the routes that start
+  /// there — the next time the driver is here.
+  ///
+  /// Best-effort by design: no fix, no name, or a name the user already has a
+  /// zone for and nothing happens. A trip must never fail over bookkeeping.
+  Future<void> _rememberPlace(String? name) async {
+    if (name == null || name.trim().isEmpty) return;
+    final position = _ref.read(currentPositionProvider).position;
+    if (position == null) return;
+    try {
+      final learned = await _ref
+          .read(locationServiceProvider)
+          .rememberPlace(name, position);
+      if (learned != null && mounted) {
+        await _ref.read(currentPositionProvider.notifier).rematch();
+      }
+    } catch (e) {
+      LogService().warn('GPS: could not remember "$name": $e');
+    }
   }
 
   /// Stop the active trip, showing the arrival dialog first so the user

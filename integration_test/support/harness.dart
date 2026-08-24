@@ -24,6 +24,8 @@ import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:kilometrikorvaus/main.dart';
 import 'package:kilometrikorvaus/models/trip_leg.dart';
 import 'package:kilometrikorvaus/models/update_info.dart';
+import 'package:kilometrikorvaus/models/location_zone.dart';
+import 'package:kilometrikorvaus/providers/position_provider.dart';
 import 'package:kilometrikorvaus/providers/trip_provider.dart';
 import 'package:kilometrikorvaus/providers/update_check_provider.dart';
 import 'package:kilometrikorvaus/services/activity_recognition_service.dart';
@@ -58,6 +60,7 @@ class _FakeNotificationService extends NotificationService {
   Future<void> showArrivalReminder(String destination) async {
     arrivalReminderShownCount++;
   }
+
   @override
   Future<void> scheduleTimeBasedReminder(String d, DateTime t) async {}
   @override
@@ -174,15 +177,58 @@ class _FakeLocationService extends LocationService {
   String? _currentTarget;
   bool permissionGranted = false;
 
+  // Whether the trip position stream is open. Unlike `_onNearHome` this IS
+  // cleared by stopMonitoring, because the real stream stops delivering when
+  // the trip ends — and the home screen's idle watch takes over.
+  bool _tripStreamOpen = false;
+
+  // Where the device "is". Read by the one-shot position calls and pushed
+  // through the idle stream, so a scenario can move the driver around and
+  // both the position chip and the nearby-route list follow.
+  Position? currentPosition;
+
+  /// The home screen's "where am I" stream (no trip running). Separate from
+  /// [_fakeController] so a scenario can tell the two subscriptions apart.
+  final StreamController<Position> _idleController =
+      StreamController<Position>.broadcast();
+
   @override
   Stream<Position> get positionStream => _fakeController.stream;
+
+  @override
+  Stream<Position> watchIdlePosition() => _idleController.stream;
 
   @override
   Future<bool> hasPermission() async => permissionGranted;
   @override
   Future<bool> hasPermissionGranted() async => permissionGranted;
   @override
-  Future<Position?> getCurrentPosition() async => null;
+  Future<Position?> getCurrentPosition({
+    Duration timeLimit = const Duration(seconds: 15),
+    LocationAccuracy accuracy = LocationAccuracy.high,
+  }) async => permissionGranted ? currentPosition : null;
+  @override
+  Future<Position?> getLastKnownPosition() async =>
+      permissionGranted ? currentPosition : null;
+
+  /// Move the device to [latitude],[longitude] and report it the way the
+  /// platform would: through the idle stream while the home screen is
+  /// watching, and through the trip stream while a trip is running.
+  void moveTo(double latitude, double longitude) {
+    final fix = makeFakePosition(latitude: latitude, longitude: longitude);
+    currentPosition = fix;
+    // The platform delivers nothing to an app without location permission,
+    // so neither does the fake — that is what the "no permission" scenarios
+    // are asserting about.
+    if (!permissionGranted) return;
+    if (!_idleController.isClosed) _idleController.add(fix);
+    // The trip stream only exists while a trip is running; outside one, a
+    // backgrounded app hears nothing until it resumes and asks again.
+    if (_tripStreamOpen && !_fakeController.isClosed) {
+      _fakeController.add(fix);
+    }
+  }
+
   @override
   Future<void> startMonitoringDestination(
     String destinationName,
@@ -191,12 +237,14 @@ class _FakeLocationService extends LocationService {
   ) async {
     _onNearHome = onNearHome;
     _currentTarget = destinationName;
+    _tripStreamOpen = true;
   }
 
   @override
   Future<void> stopMonitoring() async {
     // Deliberately do NOT clear `_onNearHome` / `_currentTarget` — see
     // the field comment above.
+    _tripStreamOpen = false;
   }
 
   void pushFakePosition(Position p) {
@@ -225,9 +273,7 @@ class _FakeLocationService extends LocationService {
     _feedSpeedMps = mps;
     _speedFeed ??= Timer.periodic(
       const Duration(milliseconds: 100),
-      (_) => pushFakePosition(
-        makeFakePosition(speed: _feedSpeedMps),
-      ),
+      (_) => pushFakePosition(makeFakePosition(speed: _feedSpeedMps)),
     );
   }
 
@@ -422,6 +468,10 @@ Future<void> resetDatabase() async {
   await db.delete('routes');
   await db.delete('settings');
   await db.delete('deleted_leg_ids');
+  // Zones are learned automatically now (LocationService.rememberPlace), so
+  // one scenario's trip would otherwise decide what the next one considers
+  // "nearby".
+  await db.delete('location_zones');
 }
 
 /// Fixed pumps without settling — for transient UI (SnackBars) that
@@ -522,8 +572,8 @@ bool _isOnScreen(WidgetTester tester, Finder f) {
   if (f.evaluate().isEmpty) return false;
   try {
     final centre = tester.getCenter(f.first);
-    final surface = Offset.zero &
-        (tester.view.physicalSize / tester.view.devicePixelRatio);
+    final surface =
+        Offset.zero & (tester.view.physicalSize / tester.view.devicePixelRatio);
     return surface.contains(centre);
   } catch (_) {
     return false;
@@ -973,6 +1023,34 @@ Future<void> arriveAdHoc(WidgetTester tester, String to, int odometer) async {
   await settle(tester);
 }
 
+/// Save a known location (a [LocationZone]) the way Settings → Sijaintialueet
+/// would, so scenarios can place the driver at a named spot.
+Future<void> addKnownLocation(
+  String name,
+  double latitude,
+  double longitude,
+) async {
+  await DatabaseService.insertLocationZone(
+    LocationZone(
+      name: name,
+      latitude: latitude,
+      longitude: longitude,
+      createdAt: DateTime.now().toIso8601String(),
+    ),
+  );
+}
+
+/// Move the device and let the app react: the home screen's position chip
+/// and its nearby-route row both hang off the resulting fix.
+Future<void> reportGpsPosition(
+  WidgetTester tester,
+  double latitude,
+  double longitude,
+) async {
+  _fakeLocation.moveTo(latitude, longitude);
+  await settle(tester);
+}
+
 /// Push two synthetic GPS fixes ~[km] kilometres apart through the fake
 /// LocationService's broadcast stream. Used to prove that the active-trip
 /// distance is not inflated by GPS deltas (the kilometer-tracking-
@@ -1366,8 +1444,7 @@ Future<void> tapArrivalAction(WidgetTester tester) async {
   expect(
     bg,
     isNotNull,
-    reason:
-        'No test BackgroundService is registered — was launchApp() called?',
+    reason: 'No test BackgroundService is registered — was launchApp() called?',
   );
   bg!.onArrived?.call();
   await settle(tester);
@@ -1418,6 +1495,9 @@ Future<void> appIsBackgrounded(WidgetTester tester) async {
   final scopeContext = tester.element(find.byType(KilometrikorvausApp));
   final container = ProviderScope.containerOf(scopeContext, listen: false);
   container.read(tripProvider.notifier).onAppBackgrounded();
+  // Mirrors HomeScreen.didChangeAppLifecycleState: position updates stop
+  // while nobody is looking at them.
+  container.read(currentPositionProvider.notifier).stopIdleWatch();
   await settle(tester);
 }
 
@@ -1428,6 +1508,11 @@ Future<void> appReturnsToForeground(WidgetTester tester) async {
   final scopeContext = tester.element(find.byType(KilometrikorvausApp));
   final container = ProviderScope.containerOf(scopeContext, listen: false);
   await container.read(tripProvider.notifier).onAppForegrounded();
+  // Mirrors HomeScreen.didChangeAppLifecycleState: the driver has moved
+  // while the app was away, so the position is re-resolved on the way back.
+  final position = container.read(currentPositionProvider.notifier);
+  await position.refresh();
+  if (container.read(tripProvider).activeLeg == null) position.startIdleWatch();
   await settle(tester);
 }
 

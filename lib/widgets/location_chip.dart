@@ -1,141 +1,120 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_symbols_icons/material_symbols_icons.dart';
-import '../services/location_service.dart';
+import '../providers/position_provider.dart';
 import '../services/database_service.dart';
 import '../models/location_zone.dart';
 import 'location_autocomplete.dart';
 
 /// Source of the location label shown in the chip.
-enum LocationChipSource { zone, geocoded, fallback, searching }
+enum LocationChipSource { zone, picked, fallback, searching }
 
-/// A chip that auto-resolves the user's GPS location and displays a label.
+/// A chip that shows where the driver is right now and doubles as the trip's
+/// start-location field.
+///
+/// The position itself comes from [currentPositionProvider], not from this
+/// widget: the chip used to resolve GPS once in `initState` and then show
+/// that first answer forever, which is exactly the staleness this is fixed
+/// to avoid. Here it only renders the shared position and lets the user
+/// override or remember it.
 ///
 /// - Tapping opens the [LocationAutocomplete] dialog to override.
 /// - Long-pressing saves the resolved position as a new [LocationZone].
-class LocationChip extends StatefulWidget {
-  final LocationService locationService;
+class LocationChip extends ConsumerStatefulWidget {
   final ValueChanged<String> onChanged;
 
-  /// Pre-populated fallback label (e.g. last used endLocation).
+  /// Pre-populated fallback label (e.g. last used endLocation), shown while
+  /// the position is unknown.
   final String? fallbackLabel;
 
-  const LocationChip({
-    super.key,
-    required this.locationService,
-    required this.onChanged,
-    this.fallbackLabel,
-  });
+  const LocationChip({super.key, required this.onChanged, this.fallbackLabel});
 
   @override
-  State<LocationChip> createState() => _LocationChipState();
+  ConsumerState<LocationChip> createState() => LocationChipState();
 }
 
-class _LocationChipState extends State<LocationChip> {
-  LocationChipSource _source = LocationChipSource.searching;
-  String _label = '';
-  String? _resolvedLat;
-  String? _resolvedLon;
+class LocationChipState extends ConsumerState<LocationChip> {
+  /// A location the user typed or picked by hand. Wins over GPS until the
+  /// trip starts — the driver knows better than the geofence.
+  String? _override;
+
+  /// Last GPS-derived name handed to [LocationChip.onChanged]. Kept so a
+  /// rebuild doesn't re-notify the parent with a name it already has.
+  String? _notifiedName;
 
   @override
   void initState() {
     super.initState();
-    // Show fallback immediately while resolving
-    if (widget.fallbackLabel != null && widget.fallbackLabel!.isNotEmpty) {
-      _label = widget.fallbackLabel!;
-      _source = LocationChipSource.fallback;
-    } else {
-      _label = 'Etsitään...';
-    }
-    _resolve();
-  }
-
-  Future<void> _resolve() async {
-    try {
-      final hasPerm = await widget.locationService.hasPermissionGranted();
-      if (!hasPerm) {
-        _setFallbackOrEmpty();
-        return;
-      }
-
-      final pos = await widget.locationService.getCurrentPosition().timeout(
-        const Duration(seconds: 3),
-      );
-      if (pos == null) {
-        _setFallbackOrEmpty();
-        return;
-      }
-
-      _resolvedLat = pos.latitude.toString();
-      _resolvedLon = pos.longitude.toString();
-
-      // Check saved zones
-      final zones = await DatabaseService.getAllLocationZones();
-      for (final zone in zones) {
-        final dist = LocationService.haversineDistance(
-          pos.latitude,
-          pos.longitude,
-          zone.latitude,
-          zone.longitude,
-        );
-        if (dist <= zone.radiusMeters) {
-          if (!mounted) return;
-          setState(() {
-            _label = zone.name;
-            _source = LocationChipSource.zone;
-          });
-          widget.onChanged(zone.name);
-          return;
-        }
-      }
-
-      // Reverse geocoding fallback
-      final name = await widget.locationService.getLocationName(pos);
-      if (!mounted) return;
-      if (name != null && name.isNotEmpty) {
-        setState(() {
-          _label = name;
-          _source = LocationChipSource.geocoded;
-        });
-        widget.onChanged(name);
-      } else {
-        _setFallbackOrEmpty();
-      }
-    } catch (_) {
-      _setFallbackOrEmpty();
-    }
-  }
-
-  void _setFallbackOrEmpty() {
-    if (!mounted) return;
-    if (_label.isNotEmpty && _source == LocationChipSource.fallback) return;
-    setState(() {
-      if (widget.fallbackLabel != null && widget.fallbackLabel!.isNotEmpty) {
-        _label = widget.fallbackLabel!;
-        _source = LocationChipSource.fallback;
-      } else {
-        _label = 'Ei sijaintia';
-        _source = LocationChipSource.fallback;
-      }
+    // Ask for a fresh fix as soon as the chip appears. Cheap when one is
+    // already in flight (the notifier collapses concurrent refreshes).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ref.read(currentPositionProvider.notifier).refresh();
     });
   }
 
-  String get label => _label;
+  /// What the chip is currently offering as the start location.
+  ({String label, LocationChipSource source}) _resolveLabel(
+    CurrentPositionState position,
+  ) {
+    final override = _override;
+    if (override != null && override.isNotEmpty) {
+      return (label: override, source: LocationChipSource.picked);
+    }
 
-  IconData get _icon {
-    return switch (_source) {
-      LocationChipSource.searching => Symbols.location_searching,
-      LocationChipSource.zone => Symbols.my_location,
-      LocationChipSource.geocoded => Symbols.near_me,
-      LocationChipSource.fallback => Symbols.place,
-    };
+    final place = position.placeName;
+    if (place != null && place.isNotEmpty) {
+      return (label: place, source: LocationChipSource.zone);
+    }
+
+    final fallback = widget.fallbackLabel;
+    if (fallback != null && fallback.isNotEmpty) {
+      return (label: fallback, source: LocationChipSource.fallback);
+    }
+
+    if (position.status == PositionStatus.searching) {
+      return (label: 'Etsitään...', source: LocationChipSource.searching);
+    }
+    return (label: 'Ei sijaintia', source: LocationChipSource.fallback);
   }
+
+  /// Why the chip is showing a fallback rather than where we are. Without
+  /// this, "no location permission" and "GPS hasn't answered yet" look
+  /// identical — the user has no way to tell that the chip is never going
+  /// to catch up on its own.
+  String _suffixFor(CurrentPositionState position) =>
+      position.status == PositionStatus.noPermission
+      ? '  (ei sijaintilupaa)'
+      : '  (edellinen)';
+
+  IconData _iconFor(LocationChipSource source) => switch (source) {
+    LocationChipSource.searching => Symbols.location_searching,
+    LocationChipSource.zone => Symbols.my_location,
+    LocationChipSource.picked => Symbols.near_me,
+    LocationChipSource.fallback => Symbols.place,
+  };
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final searching = _source == LocationChipSource.searching;
+    final position = ref.watch(currentPositionProvider);
+    final resolved = _resolveLabel(position);
+    final searching = resolved.source == LocationChipSource.searching;
 
+    // Tell the parent about a GPS-resolved place as soon as we have one, so
+    // "Aloita ajo" starts from where the driver actually is. A manual pick
+    // has already been reported by the picker itself and must not be
+    // overwritten here.
+    final place = position.placeName;
+    if (_override == null && place != null && place != _notifiedName) {
+      _notifiedName = place;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onChanged(place);
+      });
+    }
+
+    // NOTE: no Tooltip wrapper here — its long-press recognizer would win
+    // the gesture arena against _saveAsZone, silently killing "long-press to
+    // remember this place".
     return GestureDetector(
       onLongPress: _saveAsZone,
       child: InputChip(
@@ -147,9 +126,9 @@ class _LocationChipState extends State<LocationChip> {
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
             : Icon(
-                _icon,
+                _iconFor(resolved.source),
                 size: 18,
-                color: _source == LocationChipSource.zone
+                color: resolved.source == LocationChipSource.zone
                     ? colorScheme.primary
                     : colorScheme.onSurfaceVariant,
               ),
@@ -157,25 +136,31 @@ class _LocationChipState extends State<LocationChip> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Flexible(
-              child: Text(_label, maxLines: 1, overflow: TextOverflow.ellipsis),
+              child: Text(
+                resolved.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-            if (_source == LocationChipSource.fallback)
-              const Text(
-                '  (edellinen)',
-                style: TextStyle(fontSize: 11, color: Colors.grey),
+            if (resolved.source == LocationChipSource.fallback)
+              Text(
+                _suffixFor(position),
+                style: const TextStyle(fontSize: 11, color: Colors.grey),
               ),
           ],
         ),
-        onPressed: searching ? null : () => _showLocationPicker(context),
+        onPressed: searching
+            ? null
+            : () => _showLocationPicker(context, resolved.label),
       ),
     );
   }
 
   /// Opens a dialog that lets the user override the auto-detected location
   /// by typing or picking from previously-used locations.
-  Future<void> _showLocationPicker(BuildContext context) async {
+  Future<void> _showLocationPicker(BuildContext context, String current) async {
     final suggestions = await DatabaseService.getUniqueLocations();
-    final ctrl = TextEditingController(text: _label);
+    final ctrl = TextEditingController(text: current);
 
     if (!context.mounted) return;
     final result = await showDialog<String>(
@@ -204,15 +189,20 @@ class _LocationChipState extends State<LocationChip> {
     );
 
     if (result != null && result.isNotEmpty && mounted) {
-      setState(() => _label = result);
+      setState(() => _override = result);
       widget.onChanged(result);
     }
   }
 
+  /// Long-press: remember the spot we are standing on under the chip's
+  /// current label, so GPS can name it (and surface its routes) next time.
   Future<void> _saveAsZone() async {
-    if (_label.isEmpty || _resolvedLat == null || _resolvedLon == null) return;
+    final position = ref.read(currentPositionProvider);
+    final fix = position.position;
+    final current = _resolveLabel(position).label;
+    if (fix == null || current.isEmpty) return;
 
-    final nameCtrl = TextEditingController(text: _label);
+    final nameCtrl = TextEditingController(text: current);
     final radiusCtrl = TextEditingController(text: '100');
 
     if (!mounted) return;
@@ -257,12 +247,15 @@ class _LocationChipState extends State<LocationChip> {
       await DatabaseService.insertLocationZone(
         LocationZone(
           name: nameCtrl.text.trim(),
-          latitude: double.parse(_resolvedLat!),
-          longitude: double.parse(_resolvedLon!),
+          latitude: fix.latitude,
+          longitude: fix.longitude,
           radiusMeters: radius,
           createdAt: DateTime.now().toIso8601String(),
         ),
       );
+      // The chip is named after a zone match, so it only picks up the new
+      // zone once the fix is re-matched against the table.
+      if (mounted) await ref.read(currentPositionProvider.notifier).rematch();
     }
   }
 }

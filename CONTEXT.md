@@ -15,8 +15,14 @@ codebase — they name the concepts behind good seams.
 - **Expense** (Kulu) — An additional cost incurred during a leg (parking,
   toll, meal, other).
 - **Location zone** (Sijaintialue) — A geofence (lat/lon + radius) named
-  after a physical place. Used for automatic arrival detection and location
-  naming from GPS.
+  after a physical place. Used for automatic arrival detection, for naming
+  the current position from GPS, and for deciding which routes start near
+  the driver. Entered by hand in Settings, saved by long-pressing the
+  position chip, or learned automatically from where a leg starts and ends.
+- **Nearby route** (Lähellä oleva reitti) — A route whose start location is
+  a known location within 500 m of the current GPS fix. The home screen
+  offers these as shortcuts, falling back to the recently driven routes when
+  the position is unknown.
 - **Km rate** (Kilometrikorvaus) — Year-specific per-km reimbursement rate
   published by the Finnish Tax Administration.
 - **Home** (Koti) — The user's home location, configured in settings. Used as
