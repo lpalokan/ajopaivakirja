@@ -19,7 +19,10 @@ Feature: The app learns places from driving
     Given location permission is granted
     When GPS reports position {60.2} {24.65}
     And I start a free trip at {1000} km
-    Then the app does not remember the place {'Koti'}
+    And GPS reports position {60.4} {25.0}
+    And I finish driving at {'Asiakas'} at {1054} km
+    Then the app remembers the place {'Asiakas'}
+    And the app does not remember the place {'Koti'}
 
   Scenario: A start location I set myself is recorded
     Given location permission is granted
