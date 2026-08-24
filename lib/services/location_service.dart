@@ -44,6 +44,7 @@ class LocationService {
   Position? _currentPosition;
   StreamSubscription<Position>? _positionStream;
   DateTime? _lastHeartbeatAt;
+  DateTime? _lastIdleHeartbeatAt;
 
   /// Broadcast stream of GPS positions for live distance tracking.
   /// Consumers (e.g. ActiveTripCard) subscribe to this for updates.
@@ -303,8 +304,23 @@ class LocationService {
           )
           .map((position) {
             _currentPosition = position;
+            _logIdleHeartbeat(position);
             return position;
           });
+
+  /// One throttled line per minute while the idle watch is delivering fixes.
+  /// This is how the battery question gets answered from a real day rather
+  /// than an estimate: no idle lines in Virheloki between two rides means the
+  /// watch was not running then.
+  void _logIdleHeartbeat(Position position) {
+    final now = DateTime.now();
+    final last = _lastIdleHeartbeatAt;
+    if (last != null && now.difference(last) < gpsHeartbeatInterval) return;
+    _lastIdleHeartbeatAt = now;
+    LogService().info(
+      'GPS: idle fix acc=${position.accuracy.toStringAsFixed(0)}m',
+    );
+  }
 
   /// Whether [settings] will make the platform run location updates under a
   /// foreground service.

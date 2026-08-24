@@ -13,6 +13,7 @@ import '../models/app_settings.dart';
 import '../services/database_service.dart';
 import '../services/sheets_sync.dart';
 import '../services/trip_calculator.dart';
+import '../services/location_service.dart';
 import '../services/log_service.dart';
 import '../widgets/odometer_dialog.dart';
 import '../main.dart';
@@ -188,8 +189,9 @@ class TripNotifier extends StateNotifier<TripState> {
     if (!mounted) return leg;
 
     // We are standing at the destination right now — the one moment its
-    // name and its coordinates are both known.
-    await _rememberPlace(leg.endLocation);
+    // name and its coordinates are both known. Unawaited: it may need a
+    // fresh fix, and arrival must not wait on the GPS chip.
+    unawaited(_rememberPlace(leg.endLocation));
 
     // Persist an ad-hoc journey as a reusable route (also makes its start
     // and end locations available as suggestions next time).
@@ -300,7 +302,7 @@ class TripNotifier extends StateNotifier<TripState> {
 
     // Same for the departure point: this is where the driver is at the
     // instant they tap start.
-    await _rememberPlace(leg.startLocation);
+    unawaited(_rememberPlace(leg.startLocation));
 
     await backgroundService.onDrivingStarted(leg);
   }
@@ -310,15 +312,29 @@ class TripNotifier extends StateNotifier<TripState> {
   /// there — the next time the driver is here.
   ///
   /// Best-effort by design: no fix, no name, or a name the user already has a
-  /// zone for and nothing happens. A trip must never fail over bookkeeping.
+  /// zone for and nothing happens. A trip must never fail over bookkeeping,
+  /// so it is never awaited.
   Future<void> _rememberPlace(String? name) async {
     if (name == null || name.trim().isEmpty) return;
-    final position = _ref.read(currentPositionProvider).position;
-    if (position == null) return;
+    final service = _ref.read(locationServiceProvider);
     try {
-      final learned = await _ref
-          .read(locationServiceProvider)
-          .rememberPlace(name, position);
+      var position = _ref.read(currentPositionProvider).position;
+      // The idle watch runs on medium accuracy to stay cheap, which is fine
+      // for naming a place we already know but too coarse to *place* one: a
+      // 200 m zone centred on a 300 m-accurate fix would name the wrong
+      // spot for as long as the zone exists. Starting or ending a trip is
+      // rare enough to pay for one precise fix.
+      if (position == null ||
+          position.accuracy > LocationService.learnAccuracyLimitMeters) {
+        position =
+            await service.getCurrentPosition(
+              timeLimit: const Duration(seconds: 8),
+            ) ??
+            position;
+      }
+      if (position == null || !mounted) return;
+
+      final learned = await service.rememberPlace(name, position);
       if (learned != null && mounted) {
         await _ref.read(currentPositionProvider.notifier).rematch();
       }
