@@ -26,6 +26,16 @@ class _TestableLocationService extends LocationService {
     openCount++;
     return _feed;
   }
+
+  LocationSettings? idleSettingsUsed;
+  int idleOpenCount = 0;
+
+  @override
+  Stream<Position> openIdlePositionStream(LocationSettings settings) {
+    idleSettingsUsed = settings;
+    idleOpenCount++;
+    return _feed;
+  }
 }
 
 Position _fix({double speed = 25.0}) => Position(
@@ -47,8 +57,7 @@ void main() {
       final settings = LocationService.tripLocationSettings(android: true);
 
       expect(settings, isA<AndroidSettings>());
-      final config =
-          (settings as AndroidSettings).foregroundNotificationConfig;
+      final config = (settings as AndroidSettings).foregroundNotificationConfig;
       expect(
         config,
         isNotNull,
@@ -84,6 +93,80 @@ void main() {
     });
   });
 
+  group('idleLocationSettings', () {
+    test('does not run a foreground service', () {
+      final settings = LocationService.idleLocationSettings();
+
+      expect(
+        LocationService.isForegroundBacked(settings),
+        isFalse,
+        reason:
+            'the home screen\'s "where am I" stream is cancelled the moment '
+            'the app is backgrounded, so it must never cost the user an '
+            'ongoing notification or a wake lock',
+      );
+    });
+
+    test('uses the coarse idle distance filter', () {
+      expect(
+        LocationService.idleLocationSettings().distanceFilter,
+        LocationService.idleDistanceFilterMeters,
+      );
+      expect(
+        LocationService.idleLocationSettings().accuracy,
+        LocationAccuracy.medium,
+      );
+    });
+  });
+
+  group('watchIdlePosition', () {
+    late StreamController<Position> feed;
+    late _TestableLocationService service;
+
+    setUp(() {
+      feed = StreamController<Position>.broadcast();
+      service = _TestableLocationService(feed.stream);
+    });
+
+    tearDown(() async => feed.close());
+
+    test('opens the platform stream with the idle settings', () async {
+      final seen = <Position>[];
+      final sub = service.watchIdlePosition().listen(seen.add);
+
+      feed.add(_fix(speed: 0));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(service.idleOpenCount, 1);
+      expect(
+        LocationService.isForegroundBacked(service.idleSettingsUsed!),
+        isFalse,
+      );
+      expect(seen, hasLength(1));
+      await sub.cancel();
+    });
+
+    test(
+      'a stream error pauses the watch instead of taking the screen down',
+      () async {
+        final seen = <Position>[];
+        Object? escaped;
+        final sub = service.watchIdlePosition().listen(
+          seen.add,
+          onError: (Object e) => escaped = e,
+        );
+
+        feed.addError(StateError('no fix'));
+        feed.add(_fix(speed: 0));
+        await Future<void>.delayed(Duration.zero);
+
+        expect(escaped, isNull);
+        expect(seen, hasLength(1));
+        await sub.cancel();
+      },
+    );
+  });
+
   group('startMonitoringDestination', () {
     late StreamController<Position> feed;
     late _TestableLocationService service;
@@ -98,24 +181,26 @@ void main() {
       await feed.close();
     });
 
-    test('opens the trip stream with the foreground-service settings',
-        () async {
-      await service.startMonitoringDestination(
-        'Koti',
-        const AppSettings(),
-        (_) async {},
-      );
+    test(
+      'opens the trip stream with the foreground-service settings',
+      () async {
+        await service.startMonitoringDestination(
+          'Koti',
+          const AppSettings(),
+          (_) async {},
+        );
 
-      expect(service.openCount, 1);
-      expect(service.settingsUsed, isNotNull);
-      expect(
-        LocationService.isForegroundBacked(
-          LocationService.tripLocationSettings(android: true),
-        ),
-        isTrue,
-      );
-      expect(service.isMonitoring, isTrue);
-    });
+        expect(service.openCount, 1);
+        expect(service.settingsUsed, isNotNull);
+        expect(
+          LocationService.isForegroundBacked(
+            LocationService.tripLocationSettings(android: true),
+          ),
+          isTrue,
+        );
+        expect(service.isMonitoring, isTrue);
+      },
+    );
 
     test('republishes incoming fixes on positionStream', () async {
       final seen = <Position>[];

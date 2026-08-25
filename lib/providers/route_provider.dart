@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/route.dart';
 import '../services/database_service.dart';
+import '../services/nearby_routes.dart';
+import 'position_provider.dart';
 
 class RouteNotifier extends StateNotifier<List<Route>> {
   RouteNotifier() : super([]);
@@ -54,4 +56,15 @@ class RouteNotifier extends StateNotifier<List<Route>> {
 
 final routeProvider = StateNotifierProvider<RouteNotifier, List<Route>>((ref) {
   return RouteNotifier();
+});
+
+/// The routes that start where the driver is standing, nearest start first.
+///
+/// Empty when the position is unknown or no known location is within reach —
+/// the home screen falls back to the recently driven routes in that case, so
+/// the shortcut row is never blank.
+final nearbyRoutesProvider = Provider<List<Route>>((ref) {
+  final routes = ref.watch(routeProvider);
+  final position = ref.watch(currentPositionProvider);
+  return routesStartingNear(routes, position.nearbyZones);
 });

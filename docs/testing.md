@@ -92,6 +92,8 @@ feature). The suite is run via this aggregator. **When you add a new
 | `When I save settings` | Scrolls to and taps "Tallenna" (keeps SnackBar) |
 | `When I start the {string} route at {int} km` | Opens route, fills odometer, confirms |
 | `When I arrive at {int} km` | Taps "Olen perillä", confirms arrival odometer |
+| `When I start a free trip at {int} km` | Odometer + "Aloita ajo" without touching the location chip, so the start location is the app's own guess — the path that must never be recorded as a place |
+| `Then the app remembers the place {string}` / `does not remember the place {string}` | Asserts the learned-place table directly. Learning is invisible by design, so the database is the only honest witness; both poll briefly because learning is fire-and-forget |
 | `When I add route {string} from {string} to {string} of {int} km` | Adds a route via the dialog |
 | `When I open the add route dialog` | Opens the new-route dialog |
 | `When I swipe {string} left` / `right` | Dismissible swipe (delete / edit) |
@@ -103,13 +105,16 @@ feature). The suite is run via this aggregator. **When you add a new
 | `When GPS reports {int} km of movement` | Pushes synthetic GPS fixes through the fake LocationService (regression guard for the kilometer-tracking-predefined-routes bug — distance must not be inflated by GPS deltas) |
 | `Given GPS reports driving speed` | Starts a continuous feed of fixes at 25 m/s, the way a real position stream behaves mid-drive. This is the signal that must keep the arrival reminder silent whatever Activity Recognition claims |
 | `When GPS reports the vehicle has stopped` | Keeps the feed running at zero speed, so the movement signal goes stale and the reminder becomes reachable again |
+| `Given a known location {string} at {double} {double}` | Saves a location zone (name + lat/lon, 200 m radius) the way Settings → Sijaintialueet would, so the driver can be placed at a named spot |
+| `When GPS reports position {double} {double}` | Moves the device and reports the fix the way the platform would — through the idle stream the home screen watches, and through the trip stream while a trip is running. Silently delivers nothing without location permission, which is what the "no permission" scenarios assert |
 | `Given activity recognition reports {string}` | Pushes a synthetic motion activity (`in_vehicle`/`still`/…) into the stream BackgroundService watches |
 | `When the reminder backstop elapses` | Pumps past whichever reminder duration is scheduled (long first-tick deferral or short steady-state poll) so the in-process reminder tick fires |
 | `Given the first reminder is deferred well beyond the steady poll` | Pushes the first-reminder deferral far out (test seam) so the next backstop pump asserts the very first reminder of a trip is held back, without a flaky wall-clock margin |
 | `When the still driving notification action is tapped` | Invokes the "Ajan yhä" BACKGROUND-isolate handler — the only path Android delivers the action to — with a short snooze, so re-ask behaviour is observable within one pump |
 | `When the still driving notification action is tapped with a long snooze` | Same handler with a far-out snooze, to assert reminders stay silent for the whole snooze window |
 | `Given the in-vehicle recency window is long` | Stretches BackgroundService's in-vehicle recency window (test seam) so a confident `still` right after `in_vehicle` (red light) is asserted NOT to fire the reminder |
-| `When the app is backgrounded` | Drives `TripNotifier.onAppBackgrounded` (the `AppLifecycleState.paused` path) — the screen-lock state where trip tracking has to keep feeding the movement signal |
+| `When the app is backgrounded` | Drives `TripNotifier.onAppBackgrounded` (the `AppLifecycleState.paused` path) — the screen-lock state where trip tracking has to keep feeding the movement signal — and stops the home screen's idle position watch, mirroring `HomeScreen.didChangeAppLifecycleState` |
+| `When the app returns to the foreground` | The `AppLifecycleState.resumed` path: resumes the trip and re-resolves the position, since the driver has usually moved while the app was away |
 | `When I drag the {string} slider to its {string}` | Drags a Settings slider (by widget key) to its `minimum`/`maximum`, so the persisted value is a fixed number regardless of track width |
 | `Then an arrival reminder has been shown` / `no arrival reminder has been shown` / `exactly {int} arrival reminder has been shown` | Asserts how many times the "Oletko perillä?" reminder was posted |
 | `Then the reminder notification has been dismissed` | Asserts the "Ajan yhä" tap cancelled BOTH reminder ids (the visible prompt and the platform backstop) |

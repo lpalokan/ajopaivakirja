@@ -13,9 +13,11 @@ import '../models/app_settings.dart';
 import '../services/database_service.dart';
 import '../services/sheets_sync.dart';
 import '../services/trip_calculator.dart';
+import '../services/location_service.dart';
 import '../services/log_service.dart';
 import '../widgets/odometer_dialog.dart';
 import '../main.dart';
+import 'position_provider.dart';
 import 'settings_provider.dart';
 import 'route_provider.dart';
 
@@ -186,6 +188,11 @@ class TripNotifier extends StateNotifier<TripState> {
     // down (e.g. test teardown); don't touch providers/state after dispose.
     if (!mounted) return leg;
 
+    // We are standing at the destination right now — the one moment its
+    // name and its coordinates are both known. Unawaited: it may need a
+    // fresh fix, and arrival must not wait on the GPS chip.
+    unawaited(_rememberPlace(leg.endLocation));
+
     // Persist an ad-hoc journey as a reusable route (also makes its start
     // and end locations available as suggestions next time).
     if (wasAdHoc &&
@@ -255,6 +262,10 @@ class TripNotifier extends StateNotifier<TripState> {
   /// Start a trip (route-based or ad-hoc). Stops auto-detection, creates
   /// the leg, starts the background service, and begins GPS live-distance
   /// tracking. Replaces ~60 lines of orchestration in HomeScreen.
+  /// [startLocationConfirmed] says whether [startLocation] is a place the
+  /// driver asserted — the location chip resolved it from GPS, or they set it
+  /// by hand — rather than one the app guessed. Only an asserted name is
+  /// worth remembering; see [_rememberPlace].
   Future<void> startTrip({
     required int startOdometer,
     required String startLocation,
@@ -262,6 +273,7 @@ class TripNotifier extends StateNotifier<TripState> {
     String? purpose,
     String? driver,
     DateTime? startTime,
+    bool startLocationConfirmed = false,
   }) async {
     _ref.read(tripDetectionServiceProvider).stop();
 
@@ -293,7 +305,52 @@ class TripNotifier extends StateNotifier<TripState> {
       );
     }
 
+    // The departure point, but only when the driver actually told us where
+    // they are. Two names must never be learned here: the chip's fallback
+    // label (the configured home behind "(edellinen)") is the app's own
+    // guess, and a route's start location is its assumption about where the
+    // driver is standing — start "Töihin" from a customer's yard and it
+    // would pin "Koti" to that yard. A learned place sticks, so a wrong one
+    // is worse than none.
+    if (startLocationConfirmed) unawaited(_rememberPlace(startLocation));
+
     await backgroundService.onDrivingStarted(leg);
+  }
+
+  /// Learn [name] as a known location at the current GPS position, so the
+  /// home screen can recognise the place — and offer the routes that start
+  /// there — the next time the driver is here.
+  ///
+  /// Best-effort by design: no fix, no name, or a name the user already has a
+  /// zone for and nothing happens. A trip must never fail over bookkeeping,
+  /// so it is never awaited.
+  Future<void> _rememberPlace(String? name) async {
+    if (name == null || name.trim().isEmpty) return;
+    final service = _ref.read(locationServiceProvider);
+    try {
+      var position = _ref.read(currentPositionProvider).position;
+      // The idle watch runs on medium accuracy to stay cheap, which is fine
+      // for naming a place we already know but too coarse to *place* one: a
+      // 200 m zone centred on a 300 m-accurate fix would name the wrong
+      // spot for as long as the zone exists. Starting or ending a trip is
+      // rare enough to pay for one precise fix.
+      if (position == null ||
+          position.accuracy > LocationService.learnAccuracyLimitMeters) {
+        position =
+            await service.getCurrentPosition(
+              timeLimit: const Duration(seconds: 8),
+            ) ??
+            position;
+      }
+      if (position == null || !mounted) return;
+
+      final learned = await service.rememberPlace(name, position);
+      if (learned != null && mounted) {
+        await _ref.read(currentPositionProvider.notifier).rematch();
+      }
+    } catch (e) {
+      LogService().warn('GPS: could not remember "$name": $e');
+    }
   }
 
   /// Stop the active trip, showing the arrival dialog first so the user

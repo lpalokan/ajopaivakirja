@@ -15,6 +15,26 @@ class LocationService {
   /// the GPS chip is not queried continuously.
   static const int tripDistanceFilterMeters = 50;
 
+  /// How far the device must move before the idle (no trip running) position
+  /// stream emits another fix. Coarser than the trip filter: this stream only
+  /// feeds the home screen's "where am I" chip and the nearby-route list, and
+  /// both are answered at the granularity of a named place.
+  static const int idleDistanceFilterMeters = 100;
+
+  /// How close a known [LocationZone] has to be before we call it "where I
+  /// am". Deliberately larger than a zone's own radius: the driver is usually
+  /// on the street outside the geofence, not standing in its centre, and both
+  /// the position chip and the nearby-route list would otherwise go blank
+  /// exactly where they are most useful.
+  static const double nearbyMatchRadiusMeters = 500;
+
+  /// Radius given to a zone the app learns by itself (see [rememberPlace]).
+  static const double learnedZoneRadiusMeters = 200;
+
+  /// A learned zone is only worth saving from a fix this accurate. A 500 m
+  /// scatter would name the wrong place for every later visit.
+  static const double learnAccuracyLimitMeters = 100;
+
   /// Minimum gap between "GPS: fix" heartbeat log lines. The log is the only
   /// way to tell, from a drive shared through Settings → Virheloki, whether
   /// fixes kept arriving once the screen was locked — but one line per fix
@@ -24,6 +44,7 @@ class LocationService {
   Position? _currentPosition;
   StreamSubscription<Position>? _positionStream;
   DateTime? _lastHeartbeatAt;
+  DateTime? _lastIdleHeartbeatAt;
 
   /// Broadcast stream of GPS positions for live distance tracking.
   /// Consumers (e.g. ActiveTripCard) subscribe to this for updates.
@@ -45,14 +66,33 @@ class LocationService {
   bool get isMonitoring => _isMonitoring;
 
   /// Get current GPS position (one-shot).
-  Future<Position?> getCurrentPosition() async {
+  ///
+  /// [timeLimit] is passed to the platform so a fix that never arrives fails
+  /// here rather than leaving the caller to race it with its own timeout —
+  /// which is what made the home screen give up after 3 s and show a stale
+  /// place for the rest of the session.
+  Future<Position?> getCurrentPosition({
+    Duration timeLimit = const Duration(seconds: 15),
+    LocationAccuracy accuracy = LocationAccuracy.high,
+  }) async {
     try {
       _currentPosition = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
+        locationSettings: LocationSettings(
+          accuracy: accuracy,
+          timeLimit: timeLimit,
         ),
       );
       return _currentPosition;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// The platform's cached fix, if any. Costs no GPS time, so it is what the
+  /// home screen shows *while* a real fix is being acquired.
+  Future<Position?> getLastKnownPosition() async {
+    try {
+      return await Geolocator.getLastKnownPosition();
     } catch (_) {
       return null;
     }
@@ -101,32 +141,93 @@ class LocationService {
   /// Returns null if no zone is within range.
   Future<LocationZone?> findNearestZone(Position position) async {
     final zones = await DatabaseService.getAllLocationZones();
-    if (zones.isEmpty) return null;
+    final matches = matchZones(
+      zones,
+      position.latitude,
+      position.longitude,
+      slackMeters: 0,
+    );
+    return matches.isEmpty ? null : matches.first.zone;
+  }
 
-    LocationZone? nearest;
-    double nearestDist = double.infinity;
-
+  /// Every known location the driver can reasonably be said to be at right
+  /// now, nearest first. A zone counts when the fix is inside its own radius
+  /// *or* within [slackMeters] of its centre, so a wide zone stays a match
+  /// from the inside and a small one still matches from the street outside.
+  static List<ZoneMatch> matchZones(
+    List<LocationZone> zones,
+    double latitude,
+    double longitude, {
+    double slackMeters = nearbyMatchRadiusMeters,
+  }) {
+    final matches = <ZoneMatch>[];
     for (final zone in zones) {
       final dist = haversineDistance(
-        position.latitude,
-        position.longitude,
+        latitude,
+        longitude,
         zone.latitude,
         zone.longitude,
       );
-      if (dist <= zone.radiusMeters && dist < nearestDist) {
-        nearest = zone;
-        nearestDist = dist;
+      final limit = zone.radiusMeters > slackMeters
+          ? zone.radiusMeters
+          : slackMeters;
+      if (dist <= limit) {
+        matches.add(ZoneMatch(zone: zone, distanceMeters: dist));
       }
     }
+    matches.sort((a, b) => a.distanceMeters.compareTo(b.distanceMeters));
+    return matches;
+  }
 
-    return nearest;
+  /// The known locations the driver is at right now, nearest first.
+  Future<List<ZoneMatch>> findNearbyZones(Position position) async {
+    final zones = await DatabaseService.getAllLocationZones();
+    return matchZones(zones, position.latitude, position.longitude);
   }
 
   /// Get the best location name for the current GPS position.
   /// Returns null if no zone matches.
   Future<String?> getLocationName(Position position) async {
-    final zone = await findNearestZone(position);
-    return zone?.name;
+    final matches = await findNearbyZones(position);
+    return matches.isEmpty ? null : matches.first.zone.name;
+  }
+
+  /// Learn [name] as a known location at [position], so the next visit can be
+  /// recognised from GPS alone.
+  ///
+  /// Without this the whole zone vocabulary has to be entered by hand in
+  /// Settings, and on a fresh install nothing on the home screen can be named
+  /// or matched. Deliberately conservative: only a name the user has never
+  /// used for a zone before, and only from a fix accurate enough to be worth
+  /// recognising later. Returns the saved zone, or null when nothing was
+  /// learned.
+  Future<LocationZone?> rememberPlace(String name, Position? position) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty || position == null) return null;
+    if (position.accuracy > learnAccuracyLimitMeters) return null;
+    // A fix we are no longer allowed to have must not become a permanent
+    // record of where the user lives and works.
+    if (!await hasPermissionGranted()) return null;
+
+    final zones = await DatabaseService.getAllLocationZones();
+    final known = trimmed.toLowerCase();
+    if (zones.any((z) => z.name.trim().toLowerCase() == known)) return null;
+
+    final zone = await DatabaseService.insertLocationZone(
+      LocationZone(
+        name: trimmed,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        radiusMeters: learnedZoneRadiusMeters,
+        createdAt: DateTime.now().toIso8601String(),
+      ),
+    );
+    LogService().info(
+      'GPS: learned location "$trimmed" at '
+      '${position.latitude.toStringAsFixed(4)}, '
+      '${position.longitude.toStringAsFixed(4)}',
+    );
+    return zone;
   }
 
   /// Location settings for the position stream that runs for the duration of
@@ -169,6 +270,55 @@ class LocationService {
         enableWakeLock: true,
         setOngoing: true,
       ),
+    );
+  }
+
+  /// Location settings for the "where am I" stream that runs while the home
+  /// screen is open and no trip is in progress.
+  ///
+  /// Deliberately NOT foreground-service backed (unlike
+  /// [tripLocationSettings]): this stream exists only to keep the position
+  /// chip and the nearby-route list honest while the driver is looking at
+  /// them, and it is cancelled the moment the app is backgrounded. A coarse
+  /// distance filter and medium accuracy keep it cheap — the answer is a
+  /// place name, not a metre reading.
+  static LocationSettings idleLocationSettings() => const LocationSettings(
+    accuracy: LocationAccuracy.medium,
+    distanceFilter: idleDistanceFilterMeters,
+  );
+
+  /// Opens the platform position stream used while idling on the home screen.
+  /// Overridden in tests so the wiring can be exercised without Geolocator.
+  @protected
+  @visibleForOverriding
+  Stream<Position> openIdlePositionStream(LocationSettings settings) =>
+      Geolocator.getPositionStream(locationSettings: settings);
+
+  /// Live positions for the home screen while no trip is running. Errors are
+  /// swallowed into a pause rather than surfacing: a missing fix must never
+  /// take the home screen down.
+  Stream<Position> watchIdlePosition() =>
+      openIdlePositionStream(idleLocationSettings())
+          .handleError(
+            (Object e) => LogService().warn('GPS: idle stream error: $e'),
+          )
+          .map((position) {
+            _currentPosition = position;
+            _logIdleHeartbeat(position);
+            return position;
+          });
+
+  /// One throttled line per minute while the idle watch is delivering fixes.
+  /// This is how the battery question gets answered from a real day rather
+  /// than an estimate: no idle lines in Virheloki between two rides means the
+  /// watch was not running then.
+  void _logIdleHeartbeat(Position position) {
+    final now = DateTime.now();
+    final last = _lastIdleHeartbeatAt;
+    if (last != null && now.difference(last) < gpsHeartbeatInterval) return;
+    _lastIdleHeartbeatAt = now;
+    LogService().info(
+      'GPS: idle fix acc=${position.accuracy.toStringAsFixed(0)}m',
     );
   }
 
@@ -334,4 +484,17 @@ class LocationService {
   }
 
   static double _toRadians(double degrees) => degrees * pi / 180.0;
+}
+
+/// A known location the driver is currently at, with how far away it is.
+class ZoneMatch {
+  final LocationZone zone;
+  final double distanceMeters;
+
+  const ZoneMatch({required this.zone, required this.distanceMeters});
+
+  String get name => zone.name;
+
+  @override
+  String toString() => 'ZoneMatch(${zone.name}, ${distanceMeters.round()}m)';
 }
