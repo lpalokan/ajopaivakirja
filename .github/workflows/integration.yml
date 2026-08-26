@@ -66,14 +66,23 @@ jobs:
               done ) &
           script: |
             echo "::group::Run BDD suite"
+            set +e
             flutter test integration_test/all_features_test.dart --reporter expanded
+            status=$?
+            set -e
             echo "::endgroup::"
-
-      - name: Collect logcat on failure
-        if: failure()
-        run: |
-          mkdir -p test-results
-          adb logcat -d > test-results/logcat.txt 2>/dev/null || true
+            # Collect logcat HERE, inside the emulator-runner script, while the
+            # emulator is still alive. As a separate step it ran after the
+            # action had already killed the emulator, so `adb logcat -d`
+            # blocked forever waiting for a device: every failing run burned
+            # the full 60-minute job timeout and was reported as "cancelled"
+            # rather than as the test failure it was. `timeout` is the belt to
+            # that braces.
+            if [ $status -ne 0 ]; then
+              mkdir -p test-results
+              timeout 60 adb logcat -d > test-results/logcat.txt 2>/dev/null || true
+            fi
+            exit $status
 
       - name: Upload test report
         if: always()

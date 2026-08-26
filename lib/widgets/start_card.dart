@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -79,7 +80,25 @@ class StartCardState extends State<StartCard> {
     final n = widget.odometerNotifier;
     if (n == null) return;
     final parsed = int.tryParse(_odometerCtrl.text.trim());
-    if (n.value != parsed) n.value = parsed;
+    if (n.value == parsed) return;
+
+    // Publishing during a build would mark the notifier's listeners dirty
+    // mid-build, and the one that matters — the route preview card — is a
+    // sibling already built this frame. That is a framework error
+    // ("setState() called during build"), and it fires on the paths that
+    // seed the field from code: initState, and didUpdateWidget when the
+    // last leg changes as the home screen rebuilds. Deferring only the
+    // notification keeps the text field itself updating immediately.
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final latest = int.tryParse(_odometerCtrl.text.trim());
+        if (n.value != latest) n.value = latest;
+      });
+      return;
+    }
+    n.value = parsed;
   }
 
   @override
