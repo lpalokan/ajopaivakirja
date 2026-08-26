@@ -64,25 +64,20 @@ jobs:
                 adb shell pm grant fi.lpalokan.kilometrikorvaus android.permission.POST_NOTIFICATIONS 2>/dev/null && break
                 sleep 2
               done ) &
+          # android-emulator-runner executes this script ONE LINE PER `sh -c`,
+          # so no state carries between lines and a multi-line `if` is a
+          # syntax error. Everything conditional has to fit on one line.
+          #
+          # Logcat is collected here, inside the script, while the emulator is
+          # still alive. As a separate step it ran after the action had
+          # already killed the emulator, so `adb logcat -d` blocked forever
+          # waiting for a device: a failing run burned the full 60-minute job
+          # timeout and was reported as "cancelled" rather than as the test
+          # failure it was. `timeout` is the belt to that braces.
           script: |
             echo "::group::Run BDD suite"
-            set +e
-            flutter test integration_test/all_features_test.dart --reporter expanded
-            status=$?
-            set -e
+            flutter test integration_test/all_features_test.dart --reporter expanded || { mkdir -p test-results; timeout 60 adb logcat -d > test-results/logcat.txt 2>/dev/null || true; exit 1; }
             echo "::endgroup::"
-            # Collect logcat HERE, inside the emulator-runner script, while the
-            # emulator is still alive. As a separate step it ran after the
-            # action had already killed the emulator, so `adb logcat -d`
-            # blocked forever waiting for a device: every failing run burned
-            # the full 60-minute job timeout and was reported as "cancelled"
-            # rather than as the test failure it was. `timeout` is the belt to
-            # that braces.
-            if [ $status -ne 0 ]; then
-              mkdir -p test-results
-              timeout 60 adb logcat -d > test-results/logcat.txt 2>/dev/null || true
-            fi
-            exit $status
 
       - name: Upload test report
         if: always()
