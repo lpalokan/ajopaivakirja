@@ -367,6 +367,19 @@ class DatabaseService {
     return maps.map((m) => TripLeg.fromMap(m)).toList();
   }
 
+  /// Legs from [fromDate] onwards (`yyyy-MM-dd`), oldest first. Used to
+  /// gather a työmatka that spans dates — the per-date query cannot see it.
+  static Future<List<TripLeg>> getLegsFrom(String fromDate) async {
+    final db = await database;
+    final maps = await db.query(
+      'trip_legs',
+      where: 'date >= ?',
+      whereArgs: [fromDate],
+      orderBy: 'date ASC, leg_order ASC',
+    );
+    return maps.map((m) => TripLeg.fromMap(m)).toList();
+  }
+
   static Future<List<TripLeg>> getAllLegs() async {
     final db = await database;
     final maps = await db.query(

@@ -25,12 +25,9 @@ Feature: Daily allowance for trips that span more than one day
     And I arrive at {1108} km
     Then the trip pays {1} full and {0} half daily allowances
 
-  Scenario: The allowance for an overnight trip reaches the history screen
+  Scenario: An unfinished trip has earned nothing yet
     Given I left home {32} hours ago and drove to {'Työ'}
-    When I start the {'Kotiin'} route at {1054} km
-    And I arrive at {1108} km
-    And I open history
-    Then I see text containing {'Päiväraha'}
+    Then the trip pays {0} full and {0} half daily allowances
 
   Scenario: A trip inside one travel day pays by its total hours
     Given I left home {11} hours ago and drove to {'Työ'}

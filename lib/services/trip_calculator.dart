@@ -1,7 +1,11 @@
+import 'package:collection/collection.dart';
+
+import '../models/daily_allowance.dart';
 import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
 import 'database_service.dart';
 import 'log_service.dart';
+import 'travel_day.dart';
 
 class TripCalculator {
   final AppSettings _settings;
@@ -156,6 +160,202 @@ class TripCalculator {
       await DatabaseService.updateTripLeg(leg);
     }
     return updated;
+  }
+
+  /// The legs belonging to the työmatka that ends with [last]: walk backwards
+  /// through [allLegsAsc] (oldest first) until the leg that departed from
+  /// home, inclusive.
+  ///
+  /// A trip is not a calendar date. Leaving home on Monday and returning on
+  /// Tuesday is one työmatka spanning two dates, and its päivärahat depend on
+  /// the whole span — which is exactly what the old per-date finalization
+  /// could not see.
+  static List<TripLeg> tripLegsEndingWith(
+    List<TripLeg> allLegsAsc,
+    TripLeg last,
+    String home,
+  ) {
+    final endIndex = allLegsAsc.indexWhere((l) => l.id == last.id);
+    if (endIndex < 0) return [last];
+
+    var startIndex = endIndex;
+    for (var i = endIndex; i >= 0; i--) {
+      startIndex = i;
+      final leg = allLegsAsc[i];
+      if (leg.startLocation.trim().toLowerCase() == home.trim().toLowerCase()) {
+        break;
+      }
+      // A gap this long is a new trip, not the same one: without this an
+      // install whose history never contains a departure from home would
+      // drag every leg it has ever recorded into one "trip".
+      if (i > 0) {
+        final previous = allLegsAsc[i - 1];
+        final previousEnd = previous.endTime ?? previous.startTime;
+        if (leg.startTime.difference(previousEnd) > const Duration(days: 7)) {
+          break;
+        }
+      }
+    }
+
+    return allLegsAsc.sublist(startIndex, endIndex + 1);
+  }
+
+  /// The päivärahat a completed työmatka earns, one per travel day.
+  ///
+  /// [tripLegs] must be the whole trip (see [tripLegsEndingWith]), oldest
+  /// first. A leg carrying a manual `dailyAllowanceType` overrides whatever
+  /// the clock computed for the travel day starting on that leg's date —
+  /// the driver's judgement wins, as it did before.
+  List<DailyAllowance> allowancesForTrip(List<TripLeg> tripLegs) {
+    if (tripLegs.isEmpty) return const [];
+
+    final departure = tripLegs.first.startTime;
+    final last = tripLegs.last;
+    final returnAt = last.endTime;
+    if (returnAt == null) return const [];
+
+    final overridesByDate = <String, int>{};
+    for (final leg in tripLegs) {
+      final type = leg.dailyAllowanceType;
+      if (type != null) overridesByDate[leg.date] = type;
+    }
+
+    final now = DateTime.now().toIso8601String();
+    final days = travelDaysFor(departure, returnAt);
+
+    return [
+      for (final day in days)
+        () {
+          final override = overridesByDate[day.date];
+          final type = override ?? (day.type == AllowanceType.full ? 2 : 1);
+          return DailyAllowance(
+            date: day.date,
+            periodStart: day.start.toIso8601String(),
+            type: type,
+            amount: switch (type) {
+              1 => allowance6h,
+              2 => allowance10h,
+              _ => 0.0,
+            },
+            createdAt: now,
+          );
+        }(),
+    ];
+  }
+
+  /// Finalize a whole työmatka: per-leg values, working times, and one
+  /// päiväraha per travel day written to the allowance table.
+  ///
+  /// Replaces the per-date finalization. The allowances are keyed by their
+  /// travel day, so a middle day nobody drove still gets paid; each date's
+  /// total is mirrored onto that date's last leg so the day view and the
+  /// export keep reading what they always read.
+  Future<List<TripLeg>> finalizeAndPersistTrip(List<TripLeg> tripLegs) async {
+    if (tripLegs.isEmpty) return tripLegs;
+
+    var updated = tripLegs.map((l) => calculateLeg(l)).toList();
+    updated = _applyWorkingTimesPerDate(updated);
+
+    final allowances = allowancesForTrip(updated);
+    // Drop this trip's previous allowances first: an edited trip that now
+    // earns fewer travel days must not leave the extra ones behind.
+    await DatabaseService.deleteDailyAllowancesFrom(
+      updated.first.startTime.toIso8601String(),
+    );
+    for (final allowance in allowances) {
+      await DatabaseService.upsertDailyAllowance(allowance);
+    }
+
+    final totalByDate = <String, double>{};
+    for (final allowance in allowances) {
+      totalByDate[allowance.date] =
+          (totalByDate[allowance.date] ?? 0) + allowance.amount;
+    }
+
+    updated = _mirrorAllowancesOntoLegs(updated, totalByDate);
+
+    LogService().info(
+      'Calc: finalized trip of ${updated.length} legs over '
+      '${allowances.length} travel day(s), '
+      '${allowances.fold<double>(0, (s, a) => s + a.amount)}€ päivärahaa',
+    );
+
+    for (final leg in updated) {
+      await DatabaseService.updateTripLeg(leg);
+    }
+    return updated;
+  }
+
+  /// Working time is still a per-date notion (time at the work site that
+  /// day), so it is computed per date within the trip.
+  List<TripLeg> _applyWorkingTimesPerDate(List<TripLeg> legs) {
+    final byDate = <String, List<TripLeg>>{};
+    for (final leg in legs) {
+      byDate.putIfAbsent(leg.date, () => []).add(leg);
+    }
+    final result = <String, TripLeg>{};
+    for (final entry in byDate.entries) {
+      for (final leg in calculateWorkingTimes(entry.value)) {
+        result[_legKey(leg)] = leg;
+      }
+    }
+    return legs.map((l) => result[_legKey(l)] ?? l).toList();
+  }
+
+  /// Put each date's päiväraha total on that date's last leg, and clear it
+  /// from the others, so nothing is counted twice.
+  List<TripLeg> _mirrorAllowancesOntoLegs(
+    List<TripLeg> legs,
+    Map<String, double> totalByDate,
+  ) {
+    final lastLegKeyByDate = <String, String>{};
+    for (final leg in legs) {
+      lastLegKeyByDate[leg.date] = _legKey(leg);
+    }
+    return [
+      for (final leg in legs)
+        leg.copyWith(
+          dailyAllowance: lastLegKeyByDate[leg.date] == _legKey(leg)
+              ? (totalByDate[leg.date] ?? 0)
+              : 0,
+        ),
+    ];
+  }
+
+  static String _legKey(TripLeg leg) =>
+      '${leg.id ?? -1}|${leg.date}|${leg.legOrder}';
+
+  /// Re-finalize whatever työmatka [date] belongs to.
+  ///
+  /// Editing a leg has to recompute the same thing recording it did, or the
+  /// allowance table and the legs drift apart. When the trip containing this
+  /// date has already returned home, the whole trip is finalized; when it
+  /// has not, the day is finalized the old way — an unfinished trip has not
+  /// earned a päiväraha yet, and cannot know how many travel days it will
+  /// run to.
+  Future<List<TripLeg>> refinalizeAroundDate(String date) async {
+    final from = DateTime.now().subtract(const Duration(days: 30));
+    final fromDate =
+        '${from.year.toString().padLeft(4, '0')}-'
+        '${from.month.toString().padLeft(2, '0')}-'
+        '${from.day.toString().padLeft(2, '0')}';
+    final candidates = await DatabaseService.getLegsFrom(fromDate);
+    if (candidates.every((l) => l.date != date)) return const [];
+
+    final closing = candidates.firstWhereOrNull(
+      (l) =>
+          l.endTime != null &&
+          l.date.compareTo(date) >= 0 &&
+          l.isReturnHomeTo(homeLocation),
+    );
+    if (closing == null) {
+      return finalizeAndPersistDay(
+        candidates.where((l) => l.date == date).toList(),
+      );
+    }
+    return finalizeAndPersistTrip(
+      tripLegsEndingWith(candidates, closing, homeLocation),
+    );
   }
 
   /// Calculate a day summary: total km, total allowances.
