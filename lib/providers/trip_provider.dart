@@ -203,10 +203,19 @@ class TripNotifier extends StateNotifier<TripState> {
     }
 
     if (leg.isReturnHome) {
-      final dayLegs = await DatabaseService.getLegsForDate(_today);
-      LogService().info('Trip: finalizing day with ${dayLegs.length} legs');
-      final updatedDayLegs = await _calculator.finalizeAndPersistDay(dayLegs);
-      _syncToSheets(updatedDayLegs);
+      // The työmatka being finalized may have started days ago: päivärahat
+      // are counted in 24-hour travel days from departure, so finalizing
+      // only today's legs paid nothing for an overnight trip and nothing at
+      // all for the day it left on.
+      final tripLegs = await _tripLegsEndingWith(leg);
+      LogService().info(
+        'Trip: finalizing työmatka of ${tripLegs.length} leg(s) from '
+        '${tripLegs.first.date} to ${leg.date}',
+      );
+      final updatedTripLegs = await _calculator.finalizeAndPersistTrip(
+        tripLegs,
+      );
+      _syncToSheets(updatedTripLegs);
     }
 
     final todayLegs = await DatabaseService.getLegsForDate(_today);
@@ -215,6 +224,23 @@ class TripNotifier extends StateNotifier<TripState> {
     state = state.copyWith(activeLeg: null, todayLegs: todayLegs);
 
     return leg;
+  }
+
+  /// The legs of the työmatka ending with [last], back to the departure from
+  /// home. Looks 30 days back — far enough for any real trip, bounded so a
+  /// history with no departure-from-home can't drag in everything.
+  Future<List<TripLeg>> _tripLegsEndingWith(TripLeg last) async {
+    final from = DateTime.now().subtract(const Duration(days: 30));
+    final fromDate =
+        '${from.year.toString().padLeft(4, '0')}-'
+        '${from.month.toString().padLeft(2, '0')}-'
+        '${from.day.toString().padLeft(2, '0')}';
+    final candidates = await DatabaseService.getLegsFrom(fromDate);
+    return TripCalculator.tripLegsEndingWith(
+      candidates,
+      last,
+      _settings.homeLocation,
+    );
   }
 
   Future<void> extendReminder() async {
@@ -614,10 +640,7 @@ class TripNotifier extends StateNotifier<TripState> {
   }
 
   Future<void> finalizeDay() async {
-    final legs = await DatabaseService.getLegsForDate(_today);
-    if (legs.isNotEmpty) {
-      await _calculator.finalizeAndPersistDay(legs);
-    }
+    await _calculator.refinalizeAroundDate(_today);
     await load();
   }
 

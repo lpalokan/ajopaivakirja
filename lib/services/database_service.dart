@@ -5,6 +5,7 @@ import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
 import '../models/km_rate.dart';
 import '../models/expense.dart';
+import '../models/daily_allowance.dart';
 import '../models/location_zone.dart';
 import 'log_service.dart';
 
@@ -33,7 +34,7 @@ class DatabaseService {
 
     return openDatabase(
       path,
-      version: 7,
+      version: 8,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -125,7 +126,24 @@ class DatabaseService {
         created_at TEXT NOT NULL
       )
     ''');
+
+    await db.execute(_createDailyAllowances);
   }
+
+  /// Päivärahat are keyed by the travel day they belong to, not by a leg: a
+  /// 24-hour travel day can fall on a date nobody drove. UNIQUE(period_start)
+  /// is what makes re-finalizing a trip replace its allowances instead of
+  /// duplicating them.
+  static const String _createDailyAllowances = '''
+    CREATE TABLE IF NOT EXISTS daily_allowances (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,
+      period_start TEXT NOT NULL UNIQUE,
+      type INTEGER NOT NULL,
+      amount REAL NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  ''';
 
   static Future<void> _onUpgrade(
     Database db,
@@ -192,6 +210,13 @@ class DatabaseService {
         whereArgs: [2026],
       );
     }
+    if (oldVersion < 8) {
+      await _migrateToDailyAllowances(db);
+    }
+  }
+
+  static Future<void> _migrateToDailyAllowances(Database db) async {
+    await db.execute(_createDailyAllowances);
   }
 
   static Future<void> _seedKmRates(Database db) async {
@@ -338,6 +363,19 @@ class DatabaseService {
       where: 'date = ?',
       whereArgs: [date],
       orderBy: 'leg_order ASC',
+    );
+    return maps.map((m) => TripLeg.fromMap(m)).toList();
+  }
+
+  /// Legs from [fromDate] onwards (`yyyy-MM-dd`), oldest first. Used to
+  /// gather a työmatka that spans dates — the per-date query cannot see it.
+  static Future<List<TripLeg>> getLegsFrom(String fromDate) async {
+    final db = await database;
+    final maps = await db.query(
+      'trip_legs',
+      where: 'date >= ?',
+      whereArgs: [fromDate],
+      orderBy: 'date ASC, leg_order ASC',
     );
     return maps.map((m) => TripLeg.fromMap(m)).toList();
   }
@@ -623,6 +661,53 @@ class DatabaseService {
   }
 
   // ── Location Zones ──
+
+  // ── Daily allowances (päivärahat, one per travel day) ──
+
+  /// Store one travel day's allowance, replacing any earlier record for the
+  /// same 24-hour period so re-finalizing a trip is idempotent.
+  static Future<void> upsertDailyAllowance(DailyAllowance allowance) async {
+    final db = await database;
+    await db.insert(
+      'daily_allowances',
+      allowance.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  static Future<List<DailyAllowance>> getDailyAllowancesForDate(
+    String date,
+  ) async {
+    final db = await database;
+    final maps = await db.query(
+      'daily_allowances',
+      where: 'date = ?',
+      whereArgs: [date],
+      orderBy: 'period_start ASC',
+    );
+    return maps.map((m) => DailyAllowance.fromMap(m)).toList();
+  }
+
+  static Future<List<DailyAllowance>> getAllDailyAllowances() async {
+    final db = await database;
+    final maps = await db.query(
+      'daily_allowances',
+      orderBy: 'period_start ASC',
+    );
+    return maps.map((m) => DailyAllowance.fromMap(m)).toList();
+  }
+
+  /// Clear the allowances covering a trip before writing its new ones, so an
+  /// edited trip that now earns fewer travel days doesn't leave orphans
+  /// behind.
+  static Future<void> deleteDailyAllowancesFrom(String periodStartIso) async {
+    final db = await database;
+    await db.delete(
+      'daily_allowances',
+      where: 'period_start >= ?',
+      whereArgs: [periodStartIso],
+    );
+  }
 
   static Future<LocationZone> insertLocationZone(LocationZone zone) async {
     final db = await database;

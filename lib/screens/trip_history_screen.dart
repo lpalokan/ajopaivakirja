@@ -418,22 +418,16 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
       await DatabaseService.markLegUnsynced(updated.id!);
     }
 
-    // Recalculate daily allowance for both old and new dates
-    final oldDateLegs = await DatabaseService.getLegsForDate(leg.date);
-    if (oldDateLegs.isNotEmpty) {
-      await calc.finalizeAndPersistDay(oldDateLegs);
-      for (final l in oldDateLegs) {
-        if (l.id != null) await DatabaseService.markLegUnsynced(l.id!);
-      }
+    // Recalculate the työmatka each affected date belongs to — a päiväraha
+    // depends on the whole trip, so re-running just this date would put the
+    // legs and the allowance table out of step.
+    for (final l in await calc.refinalizeAroundDate(leg.date)) {
+      if (l.id != null) await DatabaseService.markLegUnsynced(l.id!);
     }
     final newDate = DateFormat('yyyy-MM-dd').format(pickedDate);
     if (newDate != leg.date) {
-      final newDateLegs = await DatabaseService.getLegsForDate(newDate);
-      if (newDateLegs.isNotEmpty) {
-        await calc.finalizeAndPersistDay(newDateLegs);
-        for (final l in newDateLegs) {
-          if (l.id != null) await DatabaseService.markLegUnsynced(l.id!);
-        }
+      for (final l in await calc.refinalizeAroundDate(newDate)) {
+        if (l.id != null) await DatabaseService.markLegUnsynced(l.id!);
       }
     }
 

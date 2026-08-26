@@ -24,6 +24,7 @@ import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:kilometrikorvaus/main.dart';
 import 'package:kilometrikorvaus/models/trip_leg.dart';
 import 'package:kilometrikorvaus/models/update_info.dart';
+import 'package:kilometrikorvaus/models/daily_allowance.dart';
 import 'package:kilometrikorvaus/models/location_zone.dart';
 import 'package:kilometrikorvaus/providers/position_provider.dart';
 import 'package:kilometrikorvaus/providers/trip_provider.dart';
@@ -472,6 +473,9 @@ Future<void> resetDatabase() async {
   // one scenario's trip would otherwise decide what the next one considers
   // "nearby".
   await db.delete('location_zones');
+  // Päivärahat outlive their legs by design (a travel day can have none), so
+  // they need clearing explicitly or one scenario's trip pays the next one.
+  await db.delete('daily_allowances');
 }
 
 /// Fixed pumps without settling — for transient UI (SnackBars) that
@@ -1278,6 +1282,75 @@ Future<TripLeg> createDraftLeg({
     driver: 'Testikuljettaja',
   );
   return await DatabaseService.insertTripLeg(leg);
+}
+
+/// Record the outbound half of a trip that started [hoursAgo] hours ago and
+/// is still away from home — the state a driver is in on the morning of day
+/// two of an overnight työmatka.
+///
+/// Seeded straight into the database rather than driven through the UI
+/// because the app clock is real: a scenario cannot wait a day. The times are
+/// relative to now so the travel-day arithmetic is the same whenever CI runs.
+Future<TripLeg> seedOutboundLeg(
+  WidgetTester tester, {
+  required int hoursAgo,
+  required String destination,
+}) async {
+  final departure = DateTime.now().subtract(Duration(hours: hoursAgo));
+  final arrival = departure.add(const Duration(hours: 3));
+  final date =
+      '${departure.year.toString().padLeft(4, '0')}-'
+      '${departure.month.toString().padLeft(2, '0')}-'
+      '${departure.day.toString().padLeft(2, '0')}';
+
+  final leg = TripLeg(
+    date: date,
+    legOrder: 1,
+    startTime: departure,
+    endTime: arrival,
+    startOdometer: 1000,
+    endOdometer: 1054,
+    startLocation: 'Koti',
+    endLocation: destination,
+    kmDriven: 54,
+    routeDescription: 'Töihin',
+    driver: 'Testikuljettaja',
+  );
+  final saved = await DatabaseService.insertTripLeg(leg);
+  await settle(tester);
+  return saved;
+}
+
+/// Assert how many full (kokopäiväraha) and half (osapäiväraha) allowances
+/// the finished trip earned, reading the allowance table directly.
+///
+/// The table is the source of truth precisely because a travel day can fall
+/// on a date with no legs, so there is nothing on screen to assert against
+/// for the middle day of a long trip.
+Future<void> expectDailyAllowances(
+  WidgetTester tester, {
+  required int full,
+  required int half,
+}) async {
+  var allowances = <DailyAllowance>[];
+  for (var i = 0; i < 30; i++) {
+    allowances = await DatabaseService.getAllDailyAllowances();
+    final f = allowances.where((a) => a.isFull).length;
+    final h = allowances.where((a) => a.isHalf).length;
+    if (f == full && h == half) return;
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+  final found = allowances.map((a) => a.toString()).join(", ");
+  expect(
+    allowances.where((a) => a.isFull).length,
+    full,
+    reason: "expected $full full allowance(s), got: $found",
+  );
+  expect(
+    allowances.where((a) => a.isHalf).length,
+    half,
+    reason: "expected $half half allowance(s), got: $found",
+  );
 }
 
 // ─── CSV content verification ──────────────────────────────────────────────
