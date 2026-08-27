@@ -186,6 +186,9 @@ class _FakeLocationService extends LocationService {
   // callback fires late.
   Future<void> Function(String destination)? _onNearHome;
   String? _currentTarget;
+
+  /// Where the running trip is heading, as the app told the location service.
+  String? get currentTarget => _currentTarget;
   bool permissionGranted = false;
 
   // Whether the trip position stream is open. Unlike `_onNearHome` this IS
@@ -253,10 +256,9 @@ class _FakeLocationService extends LocationService {
   @override
   Future<void> startMonitoringDestination(
     String destinationName,
-    settings,
-    Future<void> Function(String destination) onNearHome,
+    Future<void> Function(String destination) onArrived,
   ) async {
-    _onNearHome = onNearHome;
+    _onNearHome = onArrived;
     _currentTarget = destinationName;
     _tripStreamOpen = true;
   }
@@ -1587,13 +1589,39 @@ void deferFirstReminderFarOut() {
   );
 }
 
-/// Simulate the live [LocationService]'s 30-second proximity Timer firing
-/// "you're near the home zone". Invokes whatever callback BackgroundService
-/// registered with `startMonitoringDestination`, exercising the trip-active
-/// gate that prevents post-arrival reminders.
-Future<void> simulateNearHomeProximity(WidgetTester tester) async {
+/// Simulate the live [LocationService]'s 30-second proximity Timer deciding
+/// "we have arrived". Invokes whatever callback BackgroundService registered
+/// with `startMonitoringDestination`, exercising the trip-active gate that
+/// prevents post-arrival reminders — and only that gate: the decision itself
+/// is what [driverReachesDestination] covers.
+Future<void> simulateArrivalReported(WidgetTester tester) async {
   await _fakeLocation.triggerNearHome();
   await tester.pump(const Duration(milliseconds: 50));
+}
+
+/// Run the real arrival rule — [LocationService.hasArrivedAt] — over the
+/// learned places and the driver's current fix, and prompt only if it says
+/// we are there.
+///
+/// The fake location service replaces the whole proximity timer, so without
+/// this the suite could never tell "arrived at the destination" from "drove
+/// past somewhere else the app happens to know". The rule is the production
+/// one; only the timer that would have called it is simulated.
+Future<void> driverReachesDestination(WidgetTester tester) async {
+  final destination = _fakeLocation.currentTarget;
+  final fix = _fakeLocation.currentPosition;
+  if (destination == null || fix == null) return;
+
+  final zones = await DatabaseService.getAllLocationZones();
+  if (!LocationService.hasArrivedAt(
+    zones,
+    destination,
+    fix.latitude,
+    fix.longitude,
+  )) {
+    return;
+  }
+  await simulateArrivalReported(tester);
 }
 
 /// Make the next GPS fix take [delay] to arrive, the way a cold start on a

@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import '../models/trip_leg.dart';
-import '../models/app_settings.dart';
 import 'activity_recognition_service.dart';
 import 'driving_detector.dart';
 import 'location_service.dart';
@@ -127,7 +126,6 @@ class BackgroundService {
   bool _reminderShown = false;
 
   TripLeg? _activeLeg;
-  AppSettings _settings = const AppSettings();
 
   void Function()? onArrived;
   void Function()? onStillDriving;
@@ -142,24 +140,20 @@ class BackgroundService {
     Duration platformBackstopDuration = defaultPlatformBackstopDuration,
     Duration inVehicleRecencyWindow = defaultInVehicleRecencyWindow,
     Duration movementRecencyWindow = defaultMovementRecencyWindow,
-  })  : _notificationService = notificationService,
-        _locationService = locationService,
-        _activityService = activityService,
-        _reminderStore = reminderStore ?? ReminderStore(),
-        _reminderDuration = reminderDuration,
-        _firstReminderDuration = firstReminderDuration,
-        _platformBackstopDuration = platformBackstopDuration,
-        _inVehicleRecencyWindow = inVehicleRecencyWindow,
-        _movementRecencyWindow = movementRecencyWindow;
+  }) : _notificationService = notificationService,
+       _locationService = locationService,
+       _activityService = activityService,
+       _reminderStore = reminderStore ?? ReminderStore(),
+       _reminderDuration = reminderDuration,
+       _firstReminderDuration = firstReminderDuration,
+       _platformBackstopDuration = platformBackstopDuration,
+       _inVehicleRecencyWindow = inVehicleRecencyWindow,
+       _movementRecencyWindow = movementRecencyWindow;
 
   Future<void> initialize() async {
     await _notificationService.initialize();
     _notificationService.onArrived = () => onArrived?.call();
     _notificationService.onStillDriving = () => onStillDriving?.call();
-  }
-
-  void updateSettings(AppSettings settings) {
-    _settings = settings;
   }
 
   /// Test seam: lengthen the first-reminder deferral for a single scenario
@@ -235,8 +229,7 @@ class BackgroundService {
       // rest of the drive.
       await _locationService.startMonitoringDestination(
         destination,
-        _settings,
-        _onProximityNearHome,
+        _onProximityArrived,
       );
     } else {
       // Worth a line: with no position stream the reminder gate is down to
@@ -277,8 +270,7 @@ class BackgroundService {
   void _scheduleTimeBasedReminder(TripLeg leg) {
     _reminderTimer?.cancel();
 
-    final destination =
-        leg.endLocation ?? leg.routeDescription ?? 'määränpää';
+    final destination = leg.endLocation ?? leg.routeDescription ?? 'määränpää';
 
     // Platform-level fallback (re)scheduled far enough out that, while the
     // process is alive, the in-process poll below (the long first-tick
@@ -287,12 +279,16 @@ class BackgroundService {
     // is no duplicate notification. It only fires if the process is killed
     // and no poll runs for the whole backstop window.
     final platformTrigger = DateTime.now().add(_platformBackstopDuration);
-    _notificationService.scheduleTimeBasedReminder(destination, platformTrigger);
+    _notificationService.scheduleTimeBasedReminder(
+      destination,
+      platformTrigger,
+    );
 
     // First tick of a trip waits the long deferral; every subsequent
     // reschedule falls back to the short steady-state poll.
-    final nextTick =
-        _firstReminderPending ? _firstReminderDuration : _reminderDuration;
+    final nextTick = _firstReminderPending
+        ? _firstReminderDuration
+        : _reminderDuration;
     _firstReminderPending = false;
     _nextTickDueAt = DateTime.now().add(nextTick);
     _reminderTimer = Timer(nextTick, () => _onReminderTick(leg));
@@ -310,7 +306,7 @@ class BackgroundService {
   /// the prompt on every tick — which is why "Ajan yhä" appeared to do
   /// nothing when arriving home (the tap dismissed the notification and the
   /// next 30-second tick put an identical one straight back).
-  Future<void> _onProximityNearHome(String destination) async {
+  Future<void> _onProximityArrived(String destination) async {
     if (_activeLeg == null) return;
     // Driving through/into the zone — not an arrival yet. Once the driver
     // parks, the movement signal goes stale and the activity flips to
@@ -375,9 +371,7 @@ class BackgroundService {
       // latch so that whenever the driver next leaves the vehicle the
       // reminder is asked again for that fresh stop.
       _reminderShown = false;
-      LogService().info(
-        'Reminder: ${_tickLabel()} suppressed ($stillDriving)',
-      );
+      LogService().info('Reminder: ${_tickLabel()} suppressed ($stillDriving)');
       _scheduleTimeBasedReminder(leg);
       return;
     }

@@ -304,7 +304,6 @@ class TripNotifier extends StateNotifier<TripState> {
     _ref.read(tripDetectionServiceProvider).stop();
 
     final backgroundService = _ref.read(backgroundServiceProvider);
-    backgroundService.updateSettings(_settings);
 
     TripLeg leg;
     if (route != null) {
