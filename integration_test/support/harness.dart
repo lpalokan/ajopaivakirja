@@ -203,11 +203,19 @@ class _FakeLocationService extends LocationService {
   Future<bool> hasPermission() async => permissionGranted;
   @override
   Future<bool> hasPermissionGranted() async => permissionGranted;
+  /// How long the next one-shot fix takes to come back. Real GPS can sit
+  /// here for many seconds on a cold start, and the fake returning instantly
+  /// is what hid a startup sequence that waited on it.
+  Duration fixDelay = Duration.zero;
+
   @override
   Future<Position?> getCurrentPosition({
     Duration timeLimit = const Duration(seconds: 15),
     LocationAccuracy accuracy = LocationAccuracy.high,
-  }) async => permissionGranted ? currentPosition : null;
+  }) async {
+    if (fixDelay > Duration.zero) await Future<void>.delayed(fixDelay);
+    return permissionGranted ? currentPosition : null;
+  }
   @override
   Future<Position?> getLastKnownPosition() async =>
       permissionGranted ? currentPosition : null;
@@ -1456,6 +1464,14 @@ void deferFirstReminderFarOut() {
 Future<void> simulateNearHomeProximity(WidgetTester tester) async {
   await _fakeLocation.triggerNearHome();
   await tester.pump(const Duration(milliseconds: 50));
+}
+
+/// Make the next GPS fix take [delay] to arrive, the way a cold start on a
+/// real phone does. Used to prove that startup work behind the position
+/// resolve — the update check that draws the home banner — does not wait on
+/// it.
+void setSlowFirstGpsFix(Duration delay) {
+  _fakeLocation.fixDelay = delay;
 }
 
 /// Flip the fake [LocationService] into "permission granted" so

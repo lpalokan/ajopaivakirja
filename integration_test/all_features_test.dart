@@ -26,6 +26,7 @@ import 'features/nearby_routes_test.dart' as nearby_routes;
 import 'features/route_management_test.dart' as route_management;
 import 'features/seeded_routes_test.dart' as seeded_routes;
 import 'features/settings_test.dart' as settings;
+import 'features/startup_test.dart' as startup;
 import 'features/update_check_test.dart' as update_check;
 
 void main() {
@@ -45,5 +46,6 @@ void main() {
   nearby_routes.main();
   place_learning.main();
   accessibility.main();
+  startup.main();
   update_check.main();
 }
