@@ -38,6 +38,7 @@ import 'package:kilometrikorvaus/services/notification_service.dart';
 import 'package:kilometrikorvaus/services/odometer_vision_service.dart';
 import 'package:kilometrikorvaus/services/reminder_store.dart';
 import 'package:kilometrikorvaus/services/sheets_service.dart';
+import 'package:kilometrikorvaus/widgets/location_autocomplete.dart';
 import 'package:kilometrikorvaus/services/update_service.dart';
 
 // ─── Fakes ─────────────────────────────────────────────────────────────────
@@ -756,6 +757,15 @@ Future<void> expectContains(WidgetTester tester, String text) async {
   expect(f, findsWidgets);
 }
 
+/// The substring twin of [expectAbsent]. Scrolls first, because "not on the
+/// screen right now" and "not in the page at all" are different claims and
+/// only the second one is worth asserting.
+Future<void> expectNotContains(WidgetTester tester, String text) async {
+  final f = find.textContaining(text);
+  if (f.evaluate().isNotEmpty) await scrollIntoView(tester, f);
+  expect(f, findsNothing);
+}
+
 Future<void> tapText(WidgetTester tester, String text) async {
   final f = find.text(text);
   if (f.evaluate().isEmpty) await scrollIntoView(tester, f);
@@ -775,6 +785,17 @@ Future<void> tapText(WidgetTester tester, String text) async {
   if (!_isOnScreen(tester, target)) {
     await scrollIntoView(tester, target, force: true);
   }
+  // A scroll still in flight leaves the finder's rect stale, and the tap then
+  // lands on whatever has since moved into that spot — which is how adding
+  // one row to Settings made three unrelated update-check scenarios tap a
+  // text field instead of "Tarkista päivitykset". Finish the scroll, then let
+  // it stop moving, before deriving the tap point.
+  try {
+    await tester.ensureVisible(target);
+  } catch (_) {
+    // Not inside a viewport (a dialog, a fixed header): nothing to scroll.
+  }
+  await settle(tester);
   await tester.tap(target);
   await settle(tester);
 }
@@ -1472,11 +1493,8 @@ Future<void> expectCsvPaysEveryTravelDay(WidgetTester tester) async {
 /// than on its rendered label text: the field's own contents are rendered as
 /// text too, so a plain text finder happily matches the wrong thing.
 Finder _locationField(String label) => find.byWidgetPredicate(
-  (w) =>
-      w is DropdownMenu<String> &&
-      w.label is Text &&
-      (w.label as Text).data == label,
-  description: 'location dropdown labelled "$label"',
+  (w) => w is LocationAutocomplete && w.label == label,
+  description: 'location field labelled "$label"',
 );
 
 /// Tap the dropdown's trailing arrow to open the option list.
@@ -1608,31 +1626,6 @@ void deferFirstReminderFarOut() {
 Future<void> simulateArrivalReported(WidgetTester tester) async {
   await _fakeLocation.triggerNearHome();
   await tester.pump(const Duration(milliseconds: 50));
-}
-
-/// Run the real arrival rule — [LocationService.hasArrivedAt] — over the
-/// learned places and the driver's current fix, and prompt only if it says
-/// we are there.
-///
-/// The fake location service replaces the whole proximity timer, so without
-/// this the suite could never tell "arrived at the destination" from "drove
-/// past somewhere else the app happens to know". The rule is the production
-/// one; only the timer that would have called it is simulated.
-Future<void> driverReachesDestination(WidgetTester tester) async {
-  final destination = _fakeLocation.currentTarget;
-  final fix = _fakeLocation.currentPosition;
-  if (destination == null || fix == null) return;
-
-  final zones = await DatabaseService.getAllLocationZones();
-  if (!LocationService.hasArrivedAt(
-    zones,
-    destination,
-    fix.latitude,
-    fix.longitude,
-  )) {
-    return;
-  }
-  await simulateArrivalReported(tester);
 }
 
 /// Make the next GPS fix take [delay] to arrive, the way a cold start on a

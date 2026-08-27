@@ -121,6 +121,54 @@ void main() {
     expect(find.text('Asiakas'), findsOneWidget);
   });
 
+  testWidgets('tapping the field leaves the dialog buttons reachable', (
+    tester,
+  ) async {
+    // The regression the emulator suite caught: a field that opens its menu
+    // when tapped drops that menu over the dialog's actions, so the next tap
+    // — aimed at "Käytä" — dismisses the menu instead of pressing the
+    // button. Typing a location must not cost a tap on the primary action.
+    final controller = TextEditingController(text: 'Koti');
+    addTearDown(controller.dispose);
+    var applied = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AlertDialog(
+            content: SizedBox(
+              width: double.maxFinite,
+              child: LocationAutocomplete(
+                controller: controller,
+                label: 'Sijainti',
+                suggestions: _suggestions,
+              ),
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () => applied = true,
+                child: const Text('Käytä'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byType(TextField));
+    await tester.pumpAndSettle();
+    expect(
+      _option('Koti'),
+      findsNothing,
+      reason: 'tapping the field must not open the menu',
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Käytä'));
+    await tester.pumpAndSettle();
+
+    expect(applied, isTrue);
+  });
+
   testWidgets('lays out inside an AlertDialog', (tester) async {
     final controller = TextEditingController(text: 'Koti');
     addTearDown(controller.dispose);

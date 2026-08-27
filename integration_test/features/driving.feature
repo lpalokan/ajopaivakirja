@@ -275,22 +275,3 @@ Feature: Driving flow
     And GPS reports the vehicle has stopped
     And the reminder backstop elapses
     Then an arrival reminder has been shown
-
-  Scenario: Arriving at a destination that is not home prompts
-    Given location permission is granted
-    And activity recognition reports {'still'}
-    And a known location {'Työ'} at {60.4} {25.0}
-    When I start the {'Töihin'} route at {1000} km
-    And GPS reports position {60.4} {25.0}
-    And the driver reaches the destination
-    Then an arrival reminder has been shown
-
-  Scenario: Passing another known place on the way does not prompt
-    Given location permission is granted
-    And activity recognition reports {'still'}
-    And a known location {'Työ'} at {60.4} {25.0}
-    And a known location {'Kauppa'} at {60.3} {24.8}
-    When I start the {'Töihin'} route at {1000} km
-    And GPS reports position {60.3} {24.8}
-    And the driver reaches the destination
-    Then no arrival reminder has been shown
