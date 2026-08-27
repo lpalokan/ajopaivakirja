@@ -1287,6 +1287,17 @@ Future<void> expectFileOpened(WidgetTester tester) async {
   expect(_fakeFileOpener.openedPath, endsWith('.csv'));
 }
 
+/// Flip the SwitchListTile whose title is [label]. Tapping the title works
+/// on a SwitchListTile and needs no knowledge of where the switch itself
+/// sits, so this stays honest about what a driver actually does.
+Future<void> toggleSwitch(WidgetTester tester, String label) async {
+  final title = find.text(label);
+  await scrollIntoView(tester, title);
+  await waitFor(tester, title);
+  await tester.tap(title);
+  await settle(tester);
+}
+
 Future<void> toggleDebugLogging(WidgetTester tester) async {
   await scrollIntoView(tester, find.text('Virheloki'));
   await tester.tap(find.text('Virheloki'));

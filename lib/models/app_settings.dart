@@ -29,6 +29,13 @@ class AppSettings {
   final String driverName;
   final bool debugLogging;
 
+  /// Whether the app watches GPS for the start of a drive at all.
+  ///
+  /// On by default, so nothing changes for anyone who never opens this. Off
+  /// is for drivers who start every trip by hand and would rather the app
+  /// did not hold a position stream open while it waits for one.
+  final bool autoDetect;
+
   /// Speed (m/s) at or above which the device counts as "moving fast" for
   /// auto-detection.
   final double detectionSpeedMps;
@@ -48,6 +55,7 @@ class AppSettings {
     this.sheetTab = 'Taulukko1',
     this.driverName = kDebugMode ? 'Lapa' : '',
     this.debugLogging = false,
+    this.autoDetect = true,
     this.detectionSpeedMps = defaultDetectionSpeedMps,
     this.detectionDrivingSeconds = defaultDetectionDrivingSeconds,
     this.detectionArrivalSeconds = defaultDetectionArrivalSeconds,
@@ -74,6 +82,7 @@ class AppSettings {
     String? sheetTab,
     String? driverName,
     bool? debugLogging,
+    bool? autoDetect,
     double? detectionSpeedMps,
     int? detectionDrivingSeconds,
     int? detectionArrivalSeconds,
@@ -87,6 +96,7 @@ class AppSettings {
       sheetTab: sheetTab ?? this.sheetTab,
       driverName: driverName ?? this.driverName,
       debugLogging: debugLogging ?? this.debugLogging,
+      autoDetect: autoDetect ?? this.autoDetect,
       detectionSpeedMps: detectionSpeedMps ?? this.detectionSpeedMps,
       detectionDrivingSeconds:
           detectionDrivingSeconds ?? this.detectionDrivingSeconds,
@@ -105,6 +115,7 @@ class AppSettings {
       'sheet_tab': sheetTab,
       'driver_name': driverName,
       'debug_logging': debugLogging ? '1' : '0',
+      'auto_detect': autoDetect ? '1' : '0',
       'detection_speed_mps': detectionSpeedMps.toString(),
       'detection_driving_seconds': detectionDrivingSeconds.toString(),
       'detection_arrival_seconds': detectionArrivalSeconds.toString(),
@@ -121,6 +132,9 @@ class AppSettings {
       sheetTab: map['sheet_tab'] ?? 'Taulukko1',
       driverName: map['driver_name'] ?? '',
       debugLogging: map['debug_logging'] == '1',
+      // Absent means on: an install that predates the toggle keeps the
+      // behaviour it already had.
+      autoDetect: (map['auto_detect'] ?? '1') != '0',
       // Clamped on the way in: a value written by an older/newer build, or a
       // hand-edited row, must not push the detector outside the range it was
       // tuned for.

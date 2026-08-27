@@ -38,10 +38,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// sliders move freely and are persisted with the rest of the form on
   /// "Tallenna".
   double _detectionSpeedMps = AppSettings.defaultDetectionSpeedMps;
-  double _detectionDrivingSeconds =
-      AppSettings.defaultDetectionDrivingSeconds.toDouble();
-  double _detectionArrivalSeconds =
-      AppSettings.defaultDetectionArrivalSeconds.toDouble();
+  double _detectionDrivingSeconds = AppSettings.defaultDetectionDrivingSeconds
+      .toDouble();
+  double _detectionArrivalSeconds = AppSettings.defaultDetectionArrivalSeconds
+      .toDouble();
+
+  /// Whether auto-detection runs at all. Gates the thresholds below it —
+  /// tuning a detector that is switched off is a choice with no effect, so
+  /// the sliders go with it.
+  bool _autoDetect = true;
 
   bool _saving = false;
   bool _signingIn = false;
@@ -69,6 +74,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _detectionSpeedMps = settings.detectionSpeedMps;
     _detectionDrivingSeconds = settings.detectionDrivingSeconds.toDouble();
     _detectionArrivalSeconds = settings.detectionArrivalSeconds.toDouble();
+    _autoDetect = settings.autoDetect;
     _checkSignIn();
     _loadKmRates();
     _loadZones();
@@ -410,40 +416,49 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               'Milloin sovellus tunnistaa ajon alkaneeksi ja päättyneeksi',
               style: Theme.of(context).textTheme.bodySmall,
             ),
-            const SizedBox(height: 8),
-            _buildDetectionSlider(
-              context,
-              sliderKey: 'detection_speed',
-              label: 'Nopeusraja',
-              valueLabel: '${(_detectionSpeedMps * 3.6).round()} km/h',
-              value: _detectionSpeedMps,
-              min: AppSettings.minDetectionSpeedMps,
-              max: AppSettings.maxDetectionSpeedMps,
-              divisions: 10,
-              onChanged: (v) => setState(() => _detectionSpeedMps = v),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Tunnista ajo automaattisesti'),
+              subtitle: const Text('Kun pois päältä, ajo aloitetaan aina itse'),
+              value: _autoDetect,
+              onChanged: (v) => setState(() => _autoDetect = v),
             ),
-            _buildDetectionSlider(
-              context,
-              sliderKey: 'detection_driving',
-              label: 'Ajon kesto ennen tunnistusta',
-              valueLabel: '${_detectionDrivingSeconds.round()} s',
-              value: _detectionDrivingSeconds,
-              min: AppSettings.minDetectionDrivingSeconds.toDouble(),
-              max: AppSettings.maxDetectionDrivingSeconds.toDouble(),
-              divisions: 7,
-              onChanged: (v) => setState(() => _detectionDrivingSeconds = v),
-            ),
-            _buildDetectionSlider(
-              context,
-              sliderKey: 'detection_arrival',
-              label: 'Pysähdys ennen perilletuloa',
-              valueLabel: '${_detectionArrivalSeconds.round()} s',
-              value: _detectionArrivalSeconds,
-              min: AppSettings.minDetectionArrivalSeconds.toDouble(),
-              max: AppSettings.maxDetectionArrivalSeconds.toDouble(),
-              divisions: 10,
-              onChanged: (v) => setState(() => _detectionArrivalSeconds = v),
-            ),
+            if (!_autoDetect) const SizedBox(height: 4),
+            if (_autoDetect) ...[
+              _buildDetectionSlider(
+                context,
+                sliderKey: 'detection_speed',
+                label: 'Nopeusraja',
+                valueLabel: '${(_detectionSpeedMps * 3.6).round()} km/h',
+                value: _detectionSpeedMps,
+                min: AppSettings.minDetectionSpeedMps,
+                max: AppSettings.maxDetectionSpeedMps,
+                divisions: 10,
+                onChanged: (v) => setState(() => _detectionSpeedMps = v),
+              ),
+              _buildDetectionSlider(
+                context,
+                sliderKey: 'detection_driving',
+                label: 'Ajon kesto ennen tunnistusta',
+                valueLabel: '${_detectionDrivingSeconds.round()} s',
+                value: _detectionDrivingSeconds,
+                min: AppSettings.minDetectionDrivingSeconds.toDouble(),
+                max: AppSettings.maxDetectionDrivingSeconds.toDouble(),
+                divisions: 7,
+                onChanged: (v) => setState(() => _detectionDrivingSeconds = v),
+              ),
+              _buildDetectionSlider(
+                context,
+                sliderKey: 'detection_arrival',
+                label: 'Pysähdys ennen perilletuloa',
+                valueLabel: '${_detectionArrivalSeconds.round()} s',
+                value: _detectionArrivalSeconds,
+                min: AppSettings.minDetectionArrivalSeconds.toDouble(),
+                max: AppSettings.maxDetectionArrivalSeconds.toDouble(),
+                divisions: 10,
+                onChanged: (v) => setState(() => _detectionArrivalSeconds = v),
+              ),
+            ],
           ],
         ),
       ),
@@ -602,9 +617,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ClipboardData(text: SheetsService.urlFor(sheetId)),
             );
             if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Linkki kopioitu')),
-            );
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('Linkki kopioitu')));
           },
         ),
       ],
@@ -619,9 +634,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ? const AppSettings().sheetTab
           : _sheetTabController.text.trim();
       final target = await sheets.createSpreadsheet(tabName: tab);
-      await ref
-          .read(settingsProvider.notifier)
-          .update({'sheet_id': target.id, 'sheet_tab': tab});
+      await ref.read(settingsProvider.notifier).update({
+        'sheet_id': target.id,
+        'sheet_tab': tab,
+      });
       _sheetTitle = target.title;
     } catch (e) {
       if (mounted) {
@@ -949,11 +965,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         'allowance_10h': a10hStr,
         'sheet_tab': _sheetTabController.text.trim(),
         'driver_name': _driverController.text.trim(),
+        'auto_detect': _autoDetect ? '1' : '0',
         'detection_speed_mps': _detectionSpeedMps.toString(),
-        'detection_driving_seconds':
-            _detectionDrivingSeconds.round().toString(),
-        'detection_arrival_seconds':
-            _detectionArrivalSeconds.round().toString(),
+        'detection_driving_seconds': _detectionDrivingSeconds
+            .round()
+            .toString(),
+        'detection_arrival_seconds': _detectionArrivalSeconds
+            .round()
+            .toString(),
       });
       // Sync current year rate to km_rates table
       final currentYear = DateTime.now().year;
@@ -1021,7 +1040,8 @@ class _UpdateCheckTile extends ConsumerWidget {
       leading: const Icon(Symbols.system_update),
       title: const Text('Tarkista päivitykset'),
       subtitle: Text(resultLine, style: TextStyle(color: resultColor)),
-      trailing: trailing ??
+      trailing:
+          trailing ??
           IconButton(
             icon: const Icon(Symbols.refresh),
             tooltip: 'Tarkista uudelleen',
