@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -94,11 +96,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         }
       }
 
+      // Silent update check. Started first and never awaited, because it is
+      // the only startup step with something to show for itself — the home
+      // banner — and it must not queue behind anything. Result lands in
+      // updateCheckProvider; the UpdateBanner widget watches the same state
+      // and surfaces the banner only when an update is found. Errors stay in
+      // the provider state, so a flaky network doesn't nag the user.
+      ref.read(updateCheckProvider.notifier).check();
+
       // Resolve where we are, then keep following while the screen is up.
       // A trip has its own position stream, so the idle watch stays off
       // while one is running (see the tripProvider listener in build).
+      //
+      // NOT awaited: a cold GPS fix can take the full 15-second platform
+      // budget, and awaiting it here put every later step — notification
+      // permission, trip callbacks, the update check — behind the chip. The
+      // update banner stopped appearing on the home screen for exactly that
+      // reason; only Settings, which checks on its own, still worked.
       final position = ref.read(currentPositionProvider.notifier);
-      await position.refresh();
+      unawaited(position.refresh());
       if (ref.read(tripProvider).activeLeg == null) position.startIdleWatch();
 
       final backgroundService = ref.read(backgroundServiceProvider);
@@ -121,13 +137,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       // Delegate all callback wiring and detection lifecycle to
       // TripNotifier — the orchestration seam for trip state.
       tripNotif2.initialize();
-
-      // Silent update check on startup. Result lands in
-      // updateCheckProvider; the UpdateBanner widget watches the same
-      // state and surfaces the banner only when an update is found.
-      // Errors stay in the provider state — we don't bubble them into
-      // a snackbar so a flaky network doesn't nag the user.
-      ref.read(updateCheckProvider.notifier).check();
     });
   }
 
