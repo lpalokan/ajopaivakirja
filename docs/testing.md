@@ -42,6 +42,12 @@ build.yaml                 # bdd_widget_test configuration
 files are git-ignored and rebuilt on every run, so **never edit a
 `*_test.dart`** — edit the `.feature` or the step/harness instead.
 
+**Fake configuration set before `the app is running`** (the update mode, how
+long the first GPS fix takes) survives the launch: `launchApp` rebuilds the
+fakes so no scenario inherits another's state, and re-applies whatever the
+preceding Givens asked for. That is what lets a scenario exercise the app's
+own startup work rather than a step that pokes it afterwards.
+
 `all_features_test.dart` imports every generated test and runs them under
 one binding so the app is built/installed **once** (not once per
 feature). The suite is run via this aggregator. **When you add a new
@@ -122,6 +128,7 @@ feature). The suite is run via this aggregator. **When you add a new
 | `Then I do not see {string}` | Asserts text is absent |
 | `Then I see text containing {string}` | Substring assertion |
 | `Then the {string} setting is {string}` | Asserts a persisted value in the SQLite settings table (deterministic; avoids re-reading a rebuilt screen) |
+| `Given the first GPS fix takes {int} seconds` | Makes the fake location service take its time over the next one-shot fix, the way a cold start on a real phone does. Set it BEFORE `the app is running` to cover startup work that must not queue behind the GPS chip |
 | `Given the update download is held open` | Arms the fake update service so `downloadAndInstall` reports progress then parks, leaving the "Ladataan…" indicator on screen |
 | `When the held download is released` | Completes a held download so the install flow clears the in-app progress state |
 

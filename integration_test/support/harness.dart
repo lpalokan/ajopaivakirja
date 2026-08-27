@@ -159,6 +159,16 @@ _FakeActivityRecognitionService _fakeActivity =
     _FakeActivityRecognitionService();
 _FakeUpdateService _fakeUpdate = _FakeUpdateService();
 
+// Fake configuration a scenario sets BEFORE `the app is running`.
+//
+// launchApp builds fresh fakes so no scenario inherits another's state, which
+// silently discards a Given that has to be in place *at startup* — the update
+// mode the app's own check reads, or how long the first GPS fix takes. These
+// hold that configuration across the rebuild; `a clean database` clears them
+// at the top of each scenario.
+String? _pendingUpdateMode;
+Duration _pendingFixDelay = Duration.zero;
+
 class _FakeLocationService extends LocationService {
   // Owns its own broadcast controller so scenarios can synthesise GPS
   // updates without touching real Geolocator. Used by the regression
@@ -484,6 +494,9 @@ Future<void> resetDatabase() async {
   // Päivärahat outlive their legs by design (a travel day can have none), so
   // they need clearing explicitly or one scenario's trip pays the next one.
   await db.delete('daily_allowances');
+  // Pre-launch fake configuration belongs to one scenario only.
+  _pendingUpdateMode = null;
+  _pendingFixDelay = Duration.zero;
 }
 
 /// Fixed pumps without settling — for transient UI (SnackBars) that
@@ -629,6 +642,9 @@ Future<void> launchApp(WidgetTester tester) async {
   _fakeActivity = _FakeActivityRecognitionService();
   _fakeUpdate = _FakeUpdateService();
   _fakeSheets = _FakeSheetsService();
+  // Carry over anything a Given set before the app was launched.
+  if (_pendingUpdateMode != null) _applyUpdateServiceMode(_pendingUpdateMode!);
+  _fakeLocation.fixDelay = _pendingFixDelay;
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -1471,6 +1487,7 @@ Future<void> simulateNearHomeProximity(WidgetTester tester) async {
 /// resolve — the update check that draws the home banner — does not wait on
 /// it.
 void setSlowFirstGpsFix(Duration delay) {
+  _pendingFixDelay = delay;
   _fakeLocation.fixDelay = delay;
 }
 
@@ -1531,6 +1548,11 @@ void expectReminderDismissed() {
 ///     with a buildNumber strictly greater than the running app's, so
 ///     UpdateCheckNotifier surfaces it as "update available".
 void setUpdateServiceMode(String mode) {
+  _pendingUpdateMode = mode;
+  _applyUpdateServiceMode(mode);
+}
+
+void _applyUpdateServiceMode(String mode) {
   switch (mode) {
     case 'up_to_date':
       _fakeUpdate.mockUpdate = null;
@@ -1544,7 +1566,7 @@ void setUpdateServiceMode(String mode) {
       );
       break;
     default:
-      throw ArgumentError('Unknown update mode: $mode');
+      throw ArgumentError('Unknown update mode: \$mode');
   }
 }
 
