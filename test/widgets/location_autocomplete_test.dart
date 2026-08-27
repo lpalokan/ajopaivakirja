@@ -27,6 +27,25 @@ Finder get _arrow => find.descendant(
 
 Finder _option(String label) => find.widgetWithText(MenuItemButton, label);
 
+/// The production layout: the field lives inside an AlertDialog, between
+/// other fields, with its width coming from the dialog rather than from
+/// itself.
+Widget _dialogHarness(TextEditingController controller) => MaterialApp(
+  home: Scaffold(
+    body: AlertDialog(
+      title: const Text('Muuta sijainti'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: LocationAutocomplete(
+          controller: controller,
+          label: 'Sijainti',
+          suggestions: _suggestions,
+        ),
+      ),
+    ),
+  ),
+);
+
 void main() {
   testWidgets('the arrow lists every location even when the field is filled', (
     tester,
@@ -100,5 +119,41 @@ void main() {
       'Asiakas',
     );
     expect(find.text('Asiakas'), findsOneWidget);
+  });
+
+  testWidgets('lays out inside an AlertDialog', (tester) async {
+    final controller = TextEditingController(text: 'Koti');
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(_dialogHarness(controller));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(TextField), findsOneWidget);
+  });
+
+  testWidgets('a controller write sticks while the menu is open', (
+    tester,
+  ) async {
+    // Exactly what the integration harness does to set an ad-hoc trip's
+    // start location: tap the field — which opens the menu — then write the
+    // location straight onto the controller and read it back.
+    final controller = TextEditingController(text: 'Koti');
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(_dialogHarness(controller));
+    await tester.tap(find.byType(TextField));
+    await tester.pumpAndSettle();
+
+    controller.text = 'Siba';
+    controller.selection = const TextSelection.collapsed(offset: 4);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(controller.text, 'Siba');
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller?.text,
+      'Siba',
+    );
   });
 }
