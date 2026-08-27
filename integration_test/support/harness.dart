@@ -213,6 +213,7 @@ class _FakeLocationService extends LocationService {
   Future<bool> hasPermission() async => permissionGranted;
   @override
   Future<bool> hasPermissionGranted() async => permissionGranted;
+
   /// How long the next one-shot fix takes to come back. Real GPS can sit
   /// here for many seconds on a cold start, and the fake returning instantly
   /// is what hid a startup sequence that waited on it.
@@ -226,6 +227,7 @@ class _FakeLocationService extends LocationService {
     if (fixDelay > Duration.zero) await Future<void>.delayed(fixDelay);
     return permissionGranted ? currentPosition : null;
   }
+
   @override
   Future<Position?> getLastKnownPosition() async =>
       permissionGranted ? currentPosition : null;
@@ -1392,6 +1394,61 @@ Future<void> expectCsvHasOnlyHeaderRow(WidgetTester tester) async {
       .where((l) => l.trim().isNotEmpty)
       .toList();
   expect(lines.length, 1, reason: 'Expected only header row, got:\n$content');
+}
+
+// ─── Location dropdown (LocationAutocomplete) ─────────────────────────────
+
+/// The [LocationAutocomplete] labelled [label]. Matched on the widget rather
+/// than on its rendered label text: the field's own contents are rendered as
+/// text too, so a plain text finder happily matches the wrong thing.
+Finder _locationField(String label) => find.byWidgetPredicate(
+  (w) =>
+      w is DropdownMenu<String> &&
+      w.label is Text &&
+      (w.label as Text).data == label,
+  description: 'location dropdown labelled "$label"',
+);
+
+/// Tap the dropdown's trailing arrow to open the option list.
+///
+/// The arrow is the whole point of the scenario: it used to be a bare icon
+/// that only requested focus, so on a pre-filled field it did nothing
+/// visible. It is now the DropdownMenu trailing button — the only
+/// IconButton the field renders.
+Future<void> openLocationDropdown(WidgetTester tester, String label) async {
+  final field = _locationField(label);
+  await waitFor(tester, field);
+  final arrow = find.descendant(of: field, matching: find.byType(IconButton));
+  expect(
+    arrow,
+    findsOneWidget,
+    reason:
+        'the "$label" dropdown has no trailing button to tap — '
+        'LocationAutocomplete changed and the harness needs updating',
+  );
+  await tester.tap(arrow);
+  await settle(tester);
+}
+
+/// Pick [value] from the open option list. Scoped to the menu entry so it
+/// cannot match the same text sitting in a field behind the menu.
+Future<void> pickLocationOption(WidgetTester tester, String value) async {
+  final option = find.widgetWithText(MenuItemButton, value);
+  await waitFor(tester, option);
+  await tester.tap(option.first);
+  await settle(tester);
+}
+
+/// Assert the location field labelled [label] now holds [value].
+Future<void> expectLocationFieldValue(
+  WidgetTester tester,
+  String label,
+  String value,
+) async {
+  final field = _locationField(label);
+  await waitFor(tester, field);
+  final input = find.descendant(of: field, matching: find.byType(TextField));
+  expect(tester.widget<TextField>(input.first).controller?.text, value);
 }
 
 // ─── Bottom "Olen perillä" button ─────────────────────────────────────────

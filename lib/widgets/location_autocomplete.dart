@@ -1,15 +1,22 @@
 import 'package:flutter/material.dart';
-import 'package:material_symbols_icons/material_symbols_icons.dart';
 
 /// Text field with a dropdown of known locations.
 ///
 /// The supplied [controller] is the single source of truth: it is passed
-/// straight through to the underlying field so typed (or programmatically
-/// entered) text always lands on it. The previous implementation kept a
-/// second, Autocomplete-owned controller and copied `controller.text` into
-/// it on every build, which clobbered freshly entered text before the caller
-/// could read it back.
-class LocationAutocomplete extends StatefulWidget {
+/// straight through to the underlying [DropdownMenu] so typed, picked, or
+/// programmatically entered text always lands on it, and callers can read
+/// `controller.text` back at any time.
+///
+/// Built on [DropdownMenu] rather than `RawAutocomplete` because the arrow
+/// has to *work*. With `RawAutocomplete` the suffix arrow could only request
+/// focus, so tapping it while the field was already focused did nothing at
+/// all — and when the field arrives pre-filled (editing a route, or the
+/// "Muuta sijainti" dialog seeded with the current location) the option list
+/// was filtered down by that pre-filled text, so the one gesture that means
+/// "show me the list" showed a list of one, or none. `DropdownMenu`'s
+/// trailing button toggles the menu and deliberately drops the filter while
+/// doing so, which is exactly the intent.
+class LocationAutocomplete extends StatelessWidget {
   final TextEditingController controller;
   final String label;
   final List<String> suggestions;
@@ -22,74 +29,29 @@ class LocationAutocomplete extends StatefulWidget {
   });
 
   @override
-  State<LocationAutocomplete> createState() => _LocationAutocompleteState();
-}
-
-class _LocationAutocompleteState extends State<LocationAutocomplete> {
-  final FocusNode _focusNode = FocusNode();
-
-  @override
-  void dispose() {
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return RawAutocomplete<String>(
-      textEditingController: widget.controller,
-      focusNode: _focusNode,
-      optionsBuilder: (textEditingValue) {
-        final text = textEditingValue.text.toLowerCase();
-        if (text.isEmpty) return widget.suggestions;
-        return widget.suggestions.where((s) => s.toLowerCase().contains(text));
-      },
-      onSelected: (_) {
-        // RawAutocomplete already wrote the selection into the shared
-        // controller; just close the options overlay.
-        FocusManager.instance.primaryFocus?.unfocus();
-      },
-      fieldViewBuilder: (context, fieldController, focusNode, onFieldSubmitted) {
-        return TextField(
-          controller: fieldController,
-          focusNode: focusNode,
-          decoration: InputDecoration(
-            labelText: widget.label,
-            border: const OutlineInputBorder(),
-            suffixIcon: GestureDetector(
-              onTap: () => focusNode.requestFocus(),
-              child: const Icon(Symbols.arrow_drop_down),
-            ),
-          ),
-          onSubmitted: (_) => onFieldSubmitted(),
-        );
-      },
-      optionsViewBuilder: (context, onSelected, options) {
-        return Align(
-          alignment: Alignment.topLeft,
-          child: Material(
-            elevation: 4,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 240, maxWidth: 360),
-              child: ListView.builder(
-                padding: EdgeInsets.zero,
-                shrinkWrap: true,
-                itemCount: options.length,
-                itemBuilder: (context, index) {
-                  final option = options.elementAt(index);
-                  return InkWell(
-                    onTap: () => onSelected(option),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(option),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-        );
-      },
+    return DropdownMenu<String>(
+      controller: controller,
+      label: Text(label),
+      // Free text is the point: a location that has never been visited must
+      // still be typeable. requestFocusOnTap keeps the keyboard available,
+      // enableFilter narrows the list as the user types, and picking from
+      // the list stays a shortcut rather than the only way in.
+      requestFocusOnTap: true,
+      enableFilter: true,
+      enableSearch: true,
+      // Fill the parent's width. Without this the menu sizes itself to its
+      // widest entry, which inside an AlertDialog leaves the field visibly
+      // narrower than the plain TextFields it sits between.
+      expandedInsets: EdgeInsets.zero,
+      menuHeight: 240,
+      inputDecorationTheme: const InputDecorationTheme(
+        border: OutlineInputBorder(),
+      ),
+      dropdownMenuEntries: [
+        for (final suggestion in suggestions)
+          DropdownMenuEntry<String>(value: suggestion, label: suggestion),
+      ],
     );
   }
 }
