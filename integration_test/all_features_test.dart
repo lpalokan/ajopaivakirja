@@ -19,6 +19,7 @@ import 'features/drafts_test.dart' as drafts;
 import 'features/driving_test.dart' as driving;
 import 'features/history_test.dart' as history;
 import 'features/home_context_test.dart' as home_context;
+import 'features/home_ux_test.dart' as home_ux;
 import 'features/multiday_allowance_test.dart' as multiday_allowance;
 import 'features/navigation_test.dart' as navigation;
 import 'features/place_learning_test.dart' as place_learning;
@@ -39,6 +40,7 @@ void main() {
   driving.main();
   history.main();
   home_context.main();
+  home_ux.main();
   calculations.main();
   multiday_allowance.main();
   drafts.main();
