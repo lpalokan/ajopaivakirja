@@ -2,6 +2,7 @@ import 'package:http/http.dart' as http;
 import 'package:googleapis/sheets/v4.dart' as sheets;
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis_auth/auth_io.dart';
+import '../models/daily_allowance.dart';
 import '../models/trip_leg.dart';
 import 'log_service.dart';
 
@@ -74,7 +75,7 @@ class SheetsService {
   ];
 
   SheetsService()
-      : _googleSignIn = GoogleSignIn(scopes: const [driveFileScope]);
+    : _googleSignIn = GoogleSignIn(scopes: const [driveFileScope]);
 
   bool isConfigured(String sheetId) => sheetId.isNotEmpty;
 
@@ -172,9 +173,7 @@ class SheetsService {
         sheets.Spreadsheet(
           properties: sheets.SpreadsheetProperties(title: title),
           sheets: [
-            sheets.Sheet(
-              properties: sheets.SheetProperties(title: tabName),
-            ),
+            sheets.Sheet(properties: sheets.SheetProperties(title: tabName)),
           ],
         ),
       );
@@ -251,7 +250,9 @@ class SheetsService {
   Future<void> _writeHeaderRow(String sheetId, String tabName) async {
     final headerRange = "'$tabName'!A1:Q1";
     await _sheetsApi!.spreadsheets.values.update(
-      sheets.ValueRange()..range = headerRange..values = [_headerRow],
+      sheets.ValueRange()
+        ..range = headerRange
+        ..values = [_headerRow],
       sheetId,
       headerRange,
       valueInputOption: 'USER_ENTERED',
@@ -262,8 +263,13 @@ class SheetsService {
   Future<void> _ensureSheet(String sheetId, String tabName) async {
     try {
       LogService().info('Sheets: checking tab "$tabName"...');
-      final spreadsheet = await _sheetsApi!.spreadsheets.get(sheetId, includeGridData: false);
-      final exists = spreadsheet.sheets?.any((s) => s.properties?.title == tabName) ?? false;
+      final spreadsheet = await _sheetsApi!.spreadsheets.get(
+        sheetId,
+        includeGridData: false,
+      );
+      final exists =
+          spreadsheet.sheets?.any((s) => s.properties?.title == tabName) ??
+          false;
 
       if (exists) {
         LogService().info('Sheets: tab "$tabName" found');
@@ -292,7 +298,10 @@ class SheetsService {
     }
   }
 
-  Future<Map<String, int>> _buildIdRowMap(String sheetId, String sheetTab) async {
+  Future<Map<String, int>> _buildIdRowMap(
+    String sheetId,
+    String sheetTab,
+  ) async {
     final map = <String, int>{};
     try {
       final response = await _sheetsApi!.spreadsheets.values.get(
@@ -313,12 +322,15 @@ class SheetsService {
       }
       LogService().info('Sheets: ID map built (${map.length} rows)');
     } catch (e) {
-      LogService().warn('Sheets: could not read ID column ($e), will append all');
+      LogService().warn(
+        'Sheets: could not read ID column ($e), will append all',
+      );
     }
     return map;
   }
 
-  Future<void> appendLeg(TripLeg leg, {
+  Future<void> appendLeg(
+    TripLeg leg, {
     required String sheetId,
     required String sheetTab,
     Map<String, int>? idToRow,
@@ -333,35 +345,58 @@ class SheetsService {
 
     await _ensureSheet(sheetId, sheetTab);
 
-    final row = _legToRow(leg);
-    final legId = leg.id?.toString() ?? '';
+    await _writeRow(
+      _legToRow(leg),
+      rowId: leg.id?.toString() ?? '',
+      sheetId: sheetId,
+      sheetTab: sheetTab,
+      idToRow: idToRow,
+    );
+  }
 
-    if (idToRow != null && legId.isNotEmpty && idToRow.containsKey(legId)) {
-      final rowNum = idToRow[legId]!;
+  /// Update the row already carrying [rowId] in the ID column, or append a
+  /// new one. Shared by legs and by allowance-only travel days so both are
+  /// written back the same way.
+  Future<void> _writeRow(
+    List<Object?> row, {
+    required String rowId,
+    required String sheetId,
+    required String sheetTab,
+    Map<String, int>? idToRow,
+  }) async {
+    if (idToRow != null && rowId.isNotEmpty && idToRow.containsKey(rowId)) {
+      final rowNum = idToRow[rowId]!;
       final range = "'$sheetTab'!A$rowNum:Q$rowNum";
       await _sheetsApi!.spreadsheets.values.update(
-        sheets.ValueRange()..range = range..values = [row],
+        sheets.ValueRange()
+          ..range = range
+          ..values = [row],
         sheetId,
         range,
         valueInputOption: 'USER_ENTERED',
       );
-      LogService().info('Sheets: updated row $rowNum for leg $legId');
+      LogService().info('Sheets: updated row $rowNum for $rowId');
     } else {
       final range = "'$sheetTab'!A1:Q1";
       await _sheetsApi!.spreadsheets.values.append(
-        sheets.ValueRange()..range = range..values = [row],
+        sheets.ValueRange()
+          ..range = range
+          ..values = [row],
         sheetId,
         range,
         valueInputOption: 'USER_ENTERED',
         insertDataOption: 'INSERT_ROWS',
       );
-      LogService().info('Sheets: appended leg $legId');
+      LogService().info('Sheets: appended $rowId');
     }
   }
 
   Future<int?> _getSheetGid(String spreadsheetId, String tabName) async {
     try {
-      final spreadsheet = await _sheetsApi!.spreadsheets.get(spreadsheetId, includeGridData: false);
+      final spreadsheet = await _sheetsApi!.spreadsheets.get(
+        spreadsheetId,
+        includeGridData: false,
+      );
       for (final sheet in spreadsheet.sheets ?? []) {
         if (sheet.properties?.title == tabName) {
           return sheet.properties?.sheetId;
@@ -373,11 +408,17 @@ class SheetsService {
     return null;
   }
 
+  /// The ID-column value for a travel day that has no leg to be keyed on.
+  /// Namespaced so it can never collide with a leg id, which lets a re-sync
+  /// update the row in place instead of appending a duplicate.
+  static String allowanceRowId(String date) => 'pv:$date';
+
   Future<int> appendLegs(
     List<TripLeg> legs, {
     required String sheetId,
     required String sheetTab,
     List<int>? deletedLegIds,
+    List<DailyAllowance> allowanceDays = const [],
     Future<void> Function(int legId)? onSynced,
   }) async {
     await _ensureApiClient();
@@ -389,11 +430,35 @@ class SheetsService {
 
     for (final leg in legs) {
       try {
-        await appendLeg(leg, sheetId: sheetId, sheetTab: sheetTab, idToRow: idToRow);
+        await appendLeg(
+          leg,
+          sheetId: sheetId,
+          sheetTab: sheetTab,
+          idToRow: idToRow,
+        );
         await onSynced?.call(leg.id!);
         synced++;
       } catch (e) {
         LogService().error('Sheets: append/update failed for leg ${leg.id}', e);
+        throw Exception('Synkronointi epäonnistui: $e');
+      }
+    }
+
+    // Travel days with no driving. They are keyed by date rather than by leg
+    // id, so writing them every sync is idempotent — and without them the
+    // spreadsheet under-reports the trip they belong to.
+    for (final day in allowanceDays) {
+      try {
+        await _writeRow(
+          _allowanceToRow(day),
+          rowId: allowanceRowId(day.date),
+          sheetId: sheetId,
+          sheetTab: sheetTab,
+          idToRow: idToRow,
+        );
+        synced++;
+      } catch (e) {
+        LogService().error('Sheets: allowance write failed for ${day.date}', e);
         throw Exception('Synkronointi epäonnistui: $e');
       }
     }
@@ -411,7 +476,9 @@ class SheetsService {
       if (rowsToDelete.isNotEmpty) {
         final gid = await _getSheetGid(sheetId, sheetTab);
         if (gid == null) {
-          LogService().warn('Sheets: could not find sheet gid for "$sheetTab", skipping delete');
+          LogService().warn(
+            'Sheets: could not find sheet gid for "$sheetTab", skipping delete',
+          );
         } else {
           rowsToDelete.sort((a, b) => b.compareTo(a)); // descending
           for (final row in rowsToDelete) {
@@ -468,6 +535,31 @@ class SheetsService {
       leg.legDurationHours,
       leg.workingTimeHours,
       leg.id?.toString() ?? '',
+    ];
+  }
+
+  /// A travel day with no driving, in the leg row's shape: the columns that
+  /// describe a drive stay empty, and the päiväraha columns carry the day.
+  List<Object?> _allowanceToRow(DailyAllowance day) {
+    final date = DateTime.parse(day.date);
+    return [
+      _formatDate(date),
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      day.isFull ? 'Kokopäiväraha (ei ajoja)' : 'Osapäiväraha (ei ajoja)',
+      '',
+      0,
+      day.amount,
+      day.amount,
+      '',
+      '',
+      allowanceRowId(day.date),
     ];
   }
 

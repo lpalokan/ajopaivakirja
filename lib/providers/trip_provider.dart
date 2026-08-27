@@ -628,6 +628,7 @@ class TripNotifier extends StateNotifier<TripState> {
         sheetId: plan.target.id,
         sheetTab: settings.sheetTab,
         deletedLegIds: plan.deletedLegIds,
+        allowanceDays: await DatabaseService.getAllowanceDaysWithoutLegs(),
         onSynced: (legId) => DatabaseService.markLegSynced(legId),
       );
       if (plan.deletedLegIds.isNotEmpty) {

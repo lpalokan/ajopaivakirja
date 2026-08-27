@@ -440,18 +440,26 @@ class _FakeSheetsService extends SheetsService {
     return _target(sheetId, created: false);
   }
 
+  /// Travel days written as their own rows in the last sync, so a scenario
+  /// can assert that a day with no driving still reaches the spreadsheet.
+  final List<DailyAllowance> allowanceDaysSent = [];
+
   @override
   Future<int> appendLegs(
     List<TripLeg> legs, {
     required String sheetId,
     required String sheetTab,
     List<int>? deletedLegIds,
+    List<DailyAllowance> allowanceDays = const [],
     Future<void> Function(int legId)? onSynced,
   }) async {
     for (final leg in legs) {
       if (leg.id != null) await onSynced?.call(leg.id!);
     }
-    return legs.length;
+    allowanceDaysSent
+      ..clear()
+      ..addAll(allowanceDays);
+    return legs.length + allowanceDays.length;
   }
 }
 
@@ -1394,6 +1402,55 @@ Future<void> expectCsvHasOnlyHeaderRow(WidgetTester tester) async {
       .where((l) => l.trim().isNotEmpty)
       .toList();
   expect(lines.length, 1, reason: 'Expected only header row, got:\n$content');
+}
+
+/// Assert the exported CSV pays out exactly what the allowance table says
+/// the trip earned, and that every travel day is named in it.
+///
+/// The regression this guards is silent and expensive: a travel day in the
+/// middle of a trip has no leg, so an export built from legs alone simply
+/// leaves it out — and the driver under-reports their päivärahat without any
+/// visible sign that a day is missing.
+Future<void> expectCsvPaysEveryTravelDay(WidgetTester tester) async {
+  final path = _fakeFileOpener.openedPath;
+  expect(path, isNotNull, reason: 'No exported file was opened');
+  final content = await File(path!).readAsString();
+  final rows = content
+      .split('\r\n')
+      .where((l) => l.trim().isNotEmpty)
+      .skip(1) // header
+      .map((l) => l.split(','))
+      .toList();
+
+  const dateColumn = 0;
+  const allowanceColumn = 13;
+
+  final allowances = await DatabaseService.getAllDailyAllowances();
+  expect(
+    allowances,
+    isNotEmpty,
+    reason: 'the trip earned no päiväraha, so this proves nothing',
+  );
+
+  final exported = rows.fold<double>(
+    0,
+    (sum, r) => sum + (double.tryParse(r[allowanceColumn]) ?? 0),
+  );
+  final earned = allowances.fold<double>(0, (sum, a) => sum + a.amount);
+  expect(
+    exported,
+    closeTo(earned, 0.001),
+    reason: 'CSV pays $exported € but the trip earned $earned €\n$content',
+  );
+
+  final datesInFile = rows.map((r) => r[dateColumn]).toSet();
+  for (final allowance in allowances) {
+    expect(
+      datesInFile,
+      contains(allowance.date),
+      reason: 'travel day ${allowance.date} is missing from the CSV\n$content',
+    );
+  }
 }
 
 // ─── Location dropdown (LocationAutocomplete) ─────────────────────────────

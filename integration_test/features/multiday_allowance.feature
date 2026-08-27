@@ -34,3 +34,13 @@ Feature: Daily allowance for trips that span more than one day
     When I start the {'Kotiin'} route at {1054} km
     And I arrive at {1108} km
     Then the trip pays {1} full and {0} half daily allowances
+
+  Scenario: A travel day with no driving is paid and exported
+    Given I left home {52} hours ago and drove to {'Työ'}
+    When I start the {'Kotiin'} route at {1054} km
+    And I arrive at {1108} km
+    Then the trip pays {2} full and {1} half daily allowances
+    When I open history
+    And I export the CSV
+    And I tap {'Avaa sovelluksessa'}
+    Then the exported CSV pays every travel day

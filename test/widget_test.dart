@@ -5,6 +5,8 @@ import 'package:kilometrikorvaus/models/route.dart';
 import 'package:kilometrikorvaus/models/trip_leg.dart';
 import 'package:kilometrikorvaus/models/km_rate.dart';
 import 'package:kilometrikorvaus/services/trip_calculator.dart';
+import 'package:kilometrikorvaus/models/daily_allowance.dart';
+import 'package:kilometrikorvaus/services/allowance_ledger.dart';
 import 'package:kilometrikorvaus/services/csv_export_service.dart';
 import 'package:kilometrikorvaus/models/expense.dart';
 import 'package:kilometrikorvaus/models/location_zone.dart';
@@ -761,7 +763,18 @@ void main() {
         ),
       ];
 
-      final content = CsvExportService.generateContent(legs);
+      final content = CsvExportService.generateContent(
+        legs,
+        ledger: AllowanceLedger([
+          DailyAllowance(
+            date: '2025-05-15',
+            periodStart: '2025-05-15T08:00:00.000',
+            type: 1,
+            amount: 25.0,
+            createdAt: '2025-05-15T20:00:00.000',
+          ),
+        ]),
+      );
       final lines = content.trim().split('\n');
 
       expect(lines.length, 2); // header + 1 data row
@@ -799,7 +812,10 @@ void main() {
         ),
       ];
 
-      final content = CsvExportService.generateContent(legs);
+      final content = CsvExportService.generateContent(
+        legs,
+        ledger: AllowanceLedger.empty,
+      );
       final lines = content.trim().split('\n');
 
       expect(lines[1], contains('Koti'));
@@ -822,7 +838,10 @@ void main() {
         ),
       ];
 
-      final content = CsvExportService.generateContent(legs);
+      final content = CsvExportService.generateContent(
+        legs,
+        ledger: AllowanceLedger.empty,
+      );
 
       expect(content, contains('"Koti, Helsinki"'));
       expect(content, contains('"Meeting ""important"""'));
@@ -857,6 +876,7 @@ void main() {
 
       final content = CsvExportService.generateContent(
         legs,
+        ledger: AllowanceLedger.empty,
         expensesByLegId: expenses,
       );
       final lines = content.trim().split('\n');
@@ -883,7 +903,10 @@ void main() {
           ),
         ];
 
-        final content = CsvExportService.generateContent(legs);
+        final content = CsvExportService.generateContent(
+          legs,
+          ledger: AllowanceLedger.empty,
+        );
 
         expect(content.codeUnitAt(0), 0xFEFF);
       },
@@ -902,7 +925,10 @@ void main() {
         ),
       ];
 
-      final content = CsvExportService.generateContent(legs);
+      final content = CsvExportService.generateContent(
+        legs,
+        ledger: AllowanceLedger.empty,
+      );
 
       expect(content, contains('\r\n'));
       expect(content.replaceAll('\r\n', '').contains('\n'), isFalse);
