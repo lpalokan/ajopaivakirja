@@ -399,6 +399,14 @@ class TripNotifier extends StateNotifier<TripState> {
 
     final visionService = _ref.read(odometerVisionServiceProvider);
 
+    // Free driving ends wherever the driver happens to be, and GPS has
+    // already worked out whether that is somewhere they know. Offering the
+    // name saves them typing it; it is only an offer, and what they type
+    // wins.
+    final arrivedAt = isAdHoc
+        ? _ref.read(currentPositionProvider).placeName
+        : null;
+
     final result = await showOdometerDialog(
       context: context,
       title: 'Olen perillä',
@@ -413,6 +421,7 @@ class TripNotifier extends StateNotifier<TripState> {
       initialTime: DateTime.now(),
       timeLabel: 'Päättymisaika',
       locationLabel: isAdHoc ? 'Määränpää' : null,
+      initialLocation: arrivedAt,
       locationSuggestions: suggestions,
       relatedField: isAdHoc ? 'Tarkoitus' : null,
       initialPurpose: isAdHoc ? active.purpose : null,
