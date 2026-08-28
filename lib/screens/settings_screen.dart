@@ -10,6 +10,7 @@ import '../providers/settings_provider.dart';
 import '../providers/update_check_provider.dart';
 import '../app_version.dart';
 import '../services/database_service.dart';
+import '../services/bluetooth_trigger_service.dart';
 import '../services/decimal_input.dart';
 import '../services/log_service.dart';
 import '../services/sheets_service.dart';
@@ -25,6 +26,10 @@ class SettingsScreen extends ConsumerStatefulWidget {
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
+/// Sentinel for the dropdown's "off" item: DropdownButtonFormField cannot
+/// carry a null value alongside non-null ones without losing the selection.
+const String _noTriggerValue = '';
+
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _formKey = GlobalKey<FormState>();
   final _homeController = TextEditingController();
@@ -34,19 +39,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _sheetTabController = TextEditingController();
   final _driverController = TextEditingController();
 
-  /// Auto-detection thresholds (issue #52). Held in local state so the
-  /// sliders move freely and are persisted with the rest of the form on
-  /// "Tallenna".
-  double _detectionSpeedMps = AppSettings.defaultDetectionSpeedMps;
-  double _detectionDrivingSeconds = AppSettings.defaultDetectionDrivingSeconds
-      .toDouble();
-  double _detectionArrivalSeconds = AppSettings.defaultDetectionArrivalSeconds
-      .toDouble();
-
-  /// Whether auto-detection runs at all. Gates the thresholds below it —
-  /// tuning a detector that is switched off is a choice with no effect, so
-  /// the sliders go with it.
-  bool _autoDetect = true;
+  /// The car-Bluetooth reminder. Held in local state and written straight
+  /// through on selection rather than on "Tallenna": it is stored natively,
+  /// where [CarBluetoothReceiver] can read it without a Flutter engine, so it
+  /// does not travel with the rest of the form.
+  List<PairedDevice> _pairedDevices = const [];
+  String? _triggerAddress;
+  bool _bluetoothSupported = false;
+  bool _bluetoothPermitted = false;
 
   bool _saving = false;
   bool _signingIn = false;
@@ -71,13 +71,49 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _allowance10hController.text = settings.allowance10h.toString();
     _sheetTabController.text = settings.sheetTab;
     _driverController.text = settings.driverName;
-    _detectionSpeedMps = settings.detectionSpeedMps;
-    _detectionDrivingSeconds = settings.detectionDrivingSeconds.toDouble();
-    _detectionArrivalSeconds = settings.detectionArrivalSeconds.toDouble();
-    _autoDetect = settings.autoDetect;
     _checkSignIn();
+    _loadBluetooth();
     _loadKmRates();
     _loadZones();
+  }
+
+  Future<void> _loadBluetooth() async {
+    final bt = ref.read(bluetoothTriggerServiceProvider);
+    final supported = await bt.isSupported();
+    final permitted = supported && await bt.hasPermission();
+    final devices = permitted
+        ? await bt.pairedDevices()
+        : const <PairedDevice>[];
+    final address = supported ? await bt.triggerAddress() : null;
+    if (!mounted) return;
+    setState(() {
+      _bluetoothSupported = supported;
+      _bluetoothPermitted = permitted;
+      _pairedDevices = devices;
+      _triggerAddress = address;
+    });
+  }
+
+  /// "Nearby devices" is only worth asking for at the moment the driver
+  /// reaches for this setting — it buys nothing anywhere else in the app.
+  Future<void> _grantBluetooth() async {
+    final granted = await ref
+        .read(bluetoothTriggerServiceProvider)
+        .requestPermission();
+    if (!mounted) return;
+    if (granted) {
+      await _loadBluetooth();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Lupa laitteiden hakuun evättiin')),
+      );
+    }
+  }
+
+  Future<void> _chooseTriggerDevice(String? address) async {
+    await ref.read(bluetoothTriggerServiceProvider).setTriggerAddress(address);
+    if (!mounted) return;
+    setState(() => _triggerAddress = address);
   }
 
   Future<void> _loadKmRates() async {
@@ -308,8 +344,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            // Ajontunnistus
-            _buildDetectionCard(context),
+            _buildBluetoothCard(context),
             const SizedBox(height: 16),
             // Vianmääritys
             Card(
@@ -391,14 +426,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  /// Settings → Ajontunnistus: how sensitive automatic trip detection is.
+  /// Settings → Muistutus Bluetoothista: which paired device's connect and
+  /// disconnect should prompt a trip to be logged.
   ///
-  /// Sliders rather than free text because every value here has a range
-  /// outside which the detector misbehaves — too low a speed threshold turns
-  /// a bus ride into a trip, too long a sustained duration misses short
-  /// errands entirely. The speed is shown in km/h (what a driver thinks in)
-  /// while the stored value stays m/s (what the position stream reports).
-  Widget _buildDetectionCard(BuildContext context) {
+  /// A car that pairs on ignition is the best start-of-drive signal available
+  /// to the app, and the best-timed one — the driver is looking straight at
+  /// the odometer when it fires. It costs nothing to watch for, which is why
+  /// this exists where GPS auto-detection did not (#51).
+  Widget _buildBluetoothCard(BuildContext context) {
+    final theme = Theme.of(context);
     return Card(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
@@ -406,57 +442,64 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Ajontunnistus',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: Theme.of(context).colorScheme.primary,
+              'Muistutus Bluetoothista',
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: theme.colorScheme.primary,
               ),
             ),
             const SizedBox(height: 4),
             Text(
-              'Milloin sovellus tunnistaa ajon alkaneeksi ja päättyneeksi',
-              style: Theme.of(context).textTheme.bodySmall,
+              'Muistuta kirjaamaan ajo, kun auton Bluetooth yhdistyy tai '
+              'yhteys katkeaa',
+              style: theme.textTheme.bodySmall,
             ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Tunnista ajo automaattisesti'),
-              subtitle: const Text('Kun pois päältä, ajo aloitetaan aina itse'),
-              value: _autoDetect,
-              onChanged: (v) => setState(() => _autoDetect = v),
-            ),
-            if (!_autoDetect) const SizedBox(height: 4),
-            if (_autoDetect) ...[
-              _buildDetectionSlider(
-                context,
-                sliderKey: 'detection_speed',
-                label: 'Nopeusraja',
-                valueLabel: '${(_detectionSpeedMps * 3.6).round()} km/h',
-                value: _detectionSpeedMps,
-                min: AppSettings.minDetectionSpeedMps,
-                max: AppSettings.maxDetectionSpeedMps,
-                divisions: 10,
-                onChanged: (v) => setState(() => _detectionSpeedMps = v),
+            const SizedBox(height: 8),
+            if (!_bluetoothSupported)
+              Text('Laite ei tue Bluetoothia', style: theme.textTheme.bodySmall)
+            else if (!_bluetoothPermitted)
+              // Nothing can be listed without "Nearby devices", so the button
+              // replaces the picker rather than sitting under an empty one.
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Symbols.bluetooth, size: 18),
+                  label: const Text('Salli laitteiden haku'),
+                  onPressed: _grantBluetooth,
+                ),
+              )
+            else
+              DropdownButtonFormField<String>(
+                key: const ValueKey('bluetooth_trigger_device'),
+                initialValue: _knownTriggerAddress,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Laite',
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  const DropdownMenuItem<String>(
+                    value: _noTriggerValue,
+                    child: Text('Ei käytössä'),
+                  ),
+                  for (final device in _pairedDevices)
+                    DropdownMenuItem<String>(
+                      value: device.address,
+                      child: Text(
+                        device.label,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (value) => _chooseTriggerDevice(
+                  value == _noTriggerValue ? null : value,
+                ),
               ),
-              _buildDetectionSlider(
-                context,
-                sliderKey: 'detection_driving',
-                label: 'Ajon kesto ennen tunnistusta',
-                valueLabel: '${_detectionDrivingSeconds.round()} s',
-                value: _detectionDrivingSeconds,
-                min: AppSettings.minDetectionDrivingSeconds.toDouble(),
-                max: AppSettings.maxDetectionDrivingSeconds.toDouble(),
-                divisions: 7,
-                onChanged: (v) => setState(() => _detectionDrivingSeconds = v),
-              ),
-              _buildDetectionSlider(
-                context,
-                sliderKey: 'detection_arrival',
-                label: 'Pysähdys ennen perilletuloa',
-                valueLabel: '${_detectionArrivalSeconds.round()} s',
-                value: _detectionArrivalSeconds,
-                min: AppSettings.minDetectionArrivalSeconds.toDouble(),
-                max: AppSettings.maxDetectionArrivalSeconds.toDouble(),
-                divisions: 10,
-                onChanged: (v) => setState(() => _detectionArrivalSeconds = v),
+            if (_bluetoothPermitted && _pairedDevices.isEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Ei laitepareja. Yhdistä auto ensin Androidin '
+                'Bluetooth-asetuksissa.',
+                style: theme.textTheme.bodySmall,
               ),
             ],
           ],
@@ -465,44 +508,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  Widget _buildDetectionSlider(
-    BuildContext context, {
-    required String sliderKey,
-    required String label,
-    required String valueLabel,
-    required double value,
-    required double min,
-    required double max,
-    required int divisions,
-    required ValueChanged<double> onChanged,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Expanded(child: Text(label)),
-            Text(
-              valueLabel,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: Theme.of(context).colorScheme.primary,
-              ),
-            ),
-          ],
-        ),
-        Slider(
-          key: ValueKey(sliderKey),
-          value: value.clamp(min, max),
-          min: min,
-          max: max,
-          divisions: divisions,
-          label: valueLabel,
-          semanticFormatterCallback: (_) => '$label $valueLabel',
-          onChanged: onChanged,
-        ),
-      ],
-    );
+  /// The dropdown's current value. A stored address whose device is no longer
+  /// paired is not among the items, and handing DropdownButton a value it has
+  /// no item for throws — so an unpaired car reads as "Ei käytössä" until the
+  /// driver picks again.
+  String get _knownTriggerAddress {
+    final address = _triggerAddress;
+    if (address == null) return _noTriggerValue;
+    return _pairedDevices.any((d) => d.address == address)
+        ? address
+        : _noTriggerValue;
   }
 
   Widget _buildSheetsAuthButton() {
@@ -965,14 +980,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         'allowance_10h': a10hStr,
         'sheet_tab': _sheetTabController.text.trim(),
         'driver_name': _driverController.text.trim(),
-        'auto_detect': _autoDetect ? '1' : '0',
-        'detection_speed_mps': _detectionSpeedMps.toString(),
-        'detection_driving_seconds': _detectionDrivingSeconds
-            .round()
-            .toString(),
-        'detection_arrival_seconds': _detectionArrivalSeconds
-            .round()
-            .toString(),
       });
       // Sync current year rate to km_rates table
       final currentYear = DateTime.now().year;

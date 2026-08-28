@@ -26,44 +26,6 @@ void main() {
       expect(restored.debugLogging, true);
     });
 
-    test('detection thresholds round-trip', () {
-      const settings = AppSettings(
-        detectionSpeedMps: 6.5,
-        detectionDrivingSeconds: 45,
-        detectionArrivalSeconds: 120,
-      );
-      final restored = AppSettings.fromMap(settings.toMap());
-
-      expect(restored.detectionSpeedMps, 6.5);
-      expect(restored.detectionDrivingSeconds, 45);
-      expect(restored.detectionArrivalSeconds, 120);
-    });
-
-    test('detection thresholds default when absent', () {
-      final settings = AppSettings.fromMap({});
-      expect(settings.detectionSpeedMps, 5.0);
-      expect(settings.detectionDrivingSeconds, 30);
-      expect(settings.detectionArrivalSeconds, 60);
-    });
-
-    test('out-of-range detection thresholds are clamped on read', () {
-      final settings = AppSettings.fromMap({
-        'detection_speed_mps': '99',
-        'detection_driving_seconds': '1',
-        'detection_arrival_seconds': '9999',
-      });
-
-      expect(settings.detectionSpeedMps, AppSettings.maxDetectionSpeedMps);
-      expect(
-        settings.detectionDrivingSeconds,
-        AppSettings.minDetectionDrivingSeconds,
-      );
-      expect(
-        settings.detectionArrivalSeconds,
-        AppSettings.maxDetectionArrivalSeconds,
-      );
-    });
-
     test('fromMap applies defaults for missing or invalid values', () {
       final settings = AppSettings.fromMap({'km_rate': 'not-a-number'});
       expect(settings.kmRate, 0.55);
@@ -75,10 +37,14 @@ void main() {
     });
 
     test('debug_logging encodes as 1/0', () {
-      expect(const AppSettings(debugLogging: true).toMap()['debug_logging'],
-          '1');
-      expect(const AppSettings(debugLogging: false).toMap()['debug_logging'],
-          '0');
+      expect(
+        const AppSettings(debugLogging: true).toMap()['debug_logging'],
+        '1',
+      );
+      expect(
+        const AppSettings(debugLogging: false).toMap()['debug_logging'],
+        '0',
+      );
     });
 
     test('fromJson coerces non-string values', () {

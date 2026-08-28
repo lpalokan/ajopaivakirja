@@ -24,9 +24,10 @@ import 'expense_dialog.dart';
 ///   shown while driving because, without a predefined estimate or a
 ///   reliable background-GPS counter, "0.0 km" would be misleading.
 ///
-/// Why not GPS-based live km? `flutter_background_service` is pulled in
-/// but never started, and Android suspends `whileInUse` location updates
-/// once the app backgrounds — users typically lock the screen and drive.
+/// Why not GPS-based live km? A trip's position stream is foreground-service
+/// backed (see [LocationService.tripLocationSettings]) and does keep
+/// delivering with the screen locked, but a km counter fed from GPS deltas
+/// drifts against the odometer the report is actually built from.
 /// A counter that ticks only when the app is in the foreground was both
 /// unreliable and, for route trips, wrong: the predefined route length
 /// was used as the baseline and live deltas were added on top, so the
@@ -96,8 +97,9 @@ class _ActiveTripCardState extends ConsumerState<ActiveTripCard> {
   // ignore: unused_element
   void _toggleFreeze() {
     setState(() {
-      _frozenDistanceKm =
-          _frozenDistanceKm == null ? widget.leg.kmDriven : null;
+      _frozenDistanceKm = _frozenDistanceKm == null
+          ? widget.leg.kmDriven
+          : null;
     });
   }
 
@@ -120,8 +122,9 @@ class _ActiveTripCardState extends ConsumerState<ActiveTripCard> {
 
     final isAdHoc = _isAdHoc;
     final displayedKm = _frozenDistanceKm ?? widget.leg.kmDriven;
-    final primaryStr =
-        isAdHoc ? durationStr : '${displayedKm.toStringAsFixed(1)} km';
+    final primaryStr = isAdHoc
+        ? durationStr
+        : '${displayedKm.toStringAsFixed(1)} km';
     final semanticsLabel = isAdHoc
         ? 'Ajo käynnissä, $durationStr'
         : 'Ajo käynnissä, ${displayedKm.toStringAsFixed(1)} kilometriä';
@@ -263,7 +266,9 @@ class _ActiveTripCardState extends ConsumerState<ActiveTripCard> {
             // the primary metric for ad-hoc, so don't repeat it).
             Center(
               child: Text(
-                isAdHoc ? 'Lähtö $startTime' : 'Lähtö $startTime · $durationStr',
+                isAdHoc
+                    ? 'Lähtö $startTime'
+                    : 'Lähtö $startTime · $durationStr',
                 style: TextStyle(color: semColors.onPrimaryMuted, fontSize: 13),
               ),
             ),

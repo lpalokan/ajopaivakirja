@@ -82,4 +82,9 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.2")
+    // NotificationCompat / ContextCompat / ActivityCompat, used by
+    // CarBluetoothReceiver and MainActivity. Available transitively through
+    // the Flutter embedding, but this app's own Kotlin depends on it
+    // directly, so it says so.
+    implementation("androidx.core:core:1.13.1")
 }

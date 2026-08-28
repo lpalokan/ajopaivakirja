@@ -61,14 +61,26 @@ codebase — they name the concepts behind good seams.
   touch). Uses upsert-by-ID so repeated syncs don't duplicate rows. If that
   spreadsheet becomes unreachable, the app creates a replacement and re-syncs
   the full history into it.
-- **Detection** — Background GPS monitoring that auto-detects when the user
-  starts driving (fast movement sustained for a while) and when they arrive
-  (a sustained stop after driving was detected). The thresholds are
-  user-configurable in Settings → Ajontunnistus; the defaults are >5 m/s for
-  30 s and <1 m/s for 60 s.
 - **Arrival monitoring** — GPS proximity checking against location zones.
-  When the destination is Home, a periodic check fires a "have you arrived?"
-  notification when within range.
+  A periodic check fires a "have you arrived?" notification once the driver
+  is within range of the trip's own destination.
+
+- **Bluetooth reminder** — The driver picks one paired device in Settings →
+  Muistutus Bluetoothista, usually the car. When it connects or disconnects,
+  a native `BroadcastReceiver` posts a reminder to log the trip. Costs
+  nothing to run: `ACL_CONNECTED` / `ACL_DISCONNECTED` are exempt from the
+  API 26+ implicit-broadcast restrictions, so Android starts the process to
+  deliver them with no service, wake lock or GPS involved — and the prompt
+  arrives while the driver is still sitting in front of the odometer. The
+  chosen address is stored natively (`BluetoothTriggerStore`) because the
+  receiver reads it with no Flutter engine running.
+
+  There is deliberately **no automatic trip detection**. It existed, and it
+  only ever worked while the app was open on screen: without a foreground
+  service Android stops delivering location to a `whileInUse` app the moment
+  it is backgrounded, which is every real drive. Making it work would have
+  meant a permanent notification and continuous GNSS between rides; the
+  feature was removed instead (#51). Trips are started by hand.
 - **Trip location tracking** — The position stream that runs for the duration
   of an active trip. On Android it runs under geolocator's **location
   foreground service**, because a `whileInUse` app stops receiving location

@@ -42,6 +42,22 @@
                 tools:replace="android:resource" />
         </provider>
 
+
+        <!-- Reminds the driver to log a trip when the car's Bluetooth
+             connects or disconnects. Declared here rather than registered at
+             runtime on purpose: ACL_CONNECTED / ACL_DISCONNECTED are exempt
+             from the API 26+ implicit-broadcast restrictions, so the system
+             starts the process to deliver them even when the app is not
+             running. exported=true because the sender is the system. -->
+        <receiver
+            android:name=".CarBluetoothReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED"/>
+                <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED"/>
+            </intent-filter>
+        </receiver>
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
@@ -66,6 +82,12 @@
         </intent>
     </queries>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Reading the paired-device list and matching the car in the ACL
+         broadcast. Runtime ("Nearby devices") from Android 12; install-time
+         BLUETOOTH before that. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    <uses-permission android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30"/>
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>

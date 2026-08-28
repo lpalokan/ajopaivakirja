@@ -121,13 +121,15 @@ feature). The suite is run via this aggregator. **When you add a new
 | `Given the in-vehicle recency window is long` | Stretches BackgroundService's in-vehicle recency window (test seam) so a confident `still` right after `in_vehicle` (red light) is asserted NOT to fire the reminder |
 | `When the app is backgrounded` | Drives `TripNotifier.onAppBackgrounded` (the `AppLifecycleState.paused` path) — the screen-lock state where trip tracking has to keep feeding the movement signal — and stops the home screen's idle position watch, mirroring `HomeScreen.didChangeAppLifecycleState` |
 | `When the app returns to the foreground` | The `AppLifecycleState.resumed` path: resumes the trip and re-resolves the position, since the driver has usually moved while the app was away |
-| `When I drag the {string} slider to its {string}` | Drags a Settings slider (by widget key) to its `minimum`/`maximum`, so the persisted value is a fixed number regardless of track width |
 | `Then an arrival reminder has been shown` / `no arrival reminder has been shown` / `exactly {int} arrival reminder has been shown` | Asserts how many times the "Oletko perillä?" reminder was posted |
 | `Then the reminder notification has been dismissed` | Asserts the "Ajan yhä" tap cancelled BOTH reminder ids (the visible prompt and the platform backstop) |
 | `Then I see {string}` | Asserts text is visible (scrolls if needed) |
 | `Then I do not see {string}` | Asserts text is absent |
 | `Then I see text containing {string}` | Substring assertion |
 | `Then I do not see text containing {string}` | Substring absence, after scrolling — "not on screen right now" and "not in the page at all" are different claims and only the second is worth asserting |
+| `Given the phone is paired with {string}` | Adds a device to the fake Bluetooth service's paired list — there is no Bluetooth on the emulator, so the scenario says what the phone is paired with |
+| `When I choose {string} as the reminder device` | Picks a device (or "Ei käytössä") in Settings → Muistutus Bluetoothista |
+| `Then the reminder device is {string}` / `Then no reminder device is set` | Asserts what was stored as the trigger, resolved from address back to name — a scenario should not have to know a MAC |
 | `Then the {string} setting is {string}` | Asserts a persisted value in the SQLite settings table (deterministic; avoids re-reading a rebuilt screen) |
 | `Given the first GPS fix takes {int} seconds` | Makes the fake location service take its time over the next one-shot fix, the way a cold start on a real phone does. Set it BEFORE `the app is running` to cover startup work that must not queue behind the GPS chip |
 | `When the location service reports arrival at the destination` | Invokes the callback BackgroundService registered with `startMonitoringDestination`, as the live 30-second proximity Timer would. Simulates the *decision* having been made, so the scenario is about BackgroundService's gate — not about whether we really are there |
@@ -200,10 +202,9 @@ which the headless runner (`tool/bdd_host_test.dart`) supplies:
 
 - **sqflite** → `sqflite_common_ffi` over the host's `libsqlite3`
   (Ubuntu ships it; otherwise `apt-get install -y libsqlite3-0`).
-- **geolocator** → its method/event channels are mocked, because
-  `TripDetectionService` calls `Geolocator` statically rather than through the
-  injected (faked) `LocationService`, so on the host its position stream would
-  otherwise throw `MissingPluginException`.
+- **geolocator** → its method/event channels are mocked, so any code path
+  that reaches the plugin directly rather than through the injected (faked)
+  `LocationService` does not throw `MissingPluginException` on the host.
 
 Caveats — **the on-emulator suite (`integration-report.sh`) is the source of
 truth**; the headless run is a no-emulator approximation. As of writing it

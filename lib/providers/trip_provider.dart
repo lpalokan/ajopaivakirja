@@ -270,11 +270,6 @@ class TripNotifier extends StateNotifier<TripState> {
     if (_callbacksWired) return;
     _callbacksWired = true;
     _wireCallbacks();
-
-    final detectionService = _ref.read(tripDetectionServiceProvider);
-    if (!isDriving) {
-      detectionService.start();
-    }
   }
 
   /// Registered by HomeScreen so the notification "Olen perillä" action can
@@ -301,8 +296,6 @@ class TripNotifier extends StateNotifier<TripState> {
     DateTime? startTime,
     bool startLocationConfirmed = false,
   }) async {
-    _ref.read(tripDetectionServiceProvider).stop();
-
     final backgroundService = _ref.read(backgroundServiceProvider);
 
     TripLeg leg;
@@ -473,9 +466,6 @@ class TripNotifier extends StateNotifier<TripState> {
   /// stop detection, restart detection.
   void _resetTripState() {
     _ref.read(backgroundServiceProvider).onDrivingStopped();
-    final detectionService = _ref.read(tripDetectionServiceProvider);
-    detectionService.stop();
-    detectionService.start();
   }
 
   /// Implements the arrival flow for the notification "Olen perillä" action.
@@ -526,7 +516,6 @@ class TripNotifier extends StateNotifier<TripState> {
 
   void _wireCallbacks() {
     final backgroundService = _ref.read(backgroundServiceProvider);
-    final detectionService = _ref.read(tripDetectionServiceProvider);
     final ns = _ref.read(notificationServiceProvider);
 
     backgroundService.onArrived = () {
@@ -540,38 +529,7 @@ class TripNotifier extends StateNotifier<TripState> {
       backgroundService.onStillDrivingPressed();
     };
 
-    detectionService.onStartTripRequested = () {
-      final routes = _ref.read(routeProvider);
-      if (routes.isNotEmpty) {
-        _autoStartWithRoute(routes.first);
-      }
-    };
-
-    ns.onStartTrip = () {
-      detectionService.onStartTripRequested?.call();
-    };
-
-    ns.onEndTrip = () {
-      if (state.activeLeg != null) {
-        backgroundService.onArrived?.call();
-      }
-    };
-
     ns.flushPendingLaunchAction();
-  }
-
-  Future<void> _autoStartWithRoute(model.Route route) async {
-    final lastLeg = await DatabaseService.getLastLeg();
-    final initialOdometer = lastLeg?.endOdometer;
-    if (initialOdometer == null) return;
-
-    await startTrip(
-      startOdometer: initialOdometer,
-      startLocation: route.startLocation,
-      route: route,
-      purpose: route.lastPurpose,
-      driver: _settings.driverName,
-    );
   }
 
   Future<void> _saveAdHocRoute(TripLeg leg) async {
@@ -673,14 +631,9 @@ class TripNotifier extends StateNotifier<TripState> {
   /// still open in the DB, which is why the blue active-trip card could go
   /// missing until a full cold restart. The database is the source of truth:
   /// an open leg dated today is still an active trip, so reloading restores
-  /// the card. If no trip is active, restart auto-detection.
+  /// the card.
   Future<void> onAppForegrounded() async {
     await load();
-    if (!mounted) return;
-
-    if (!isDriving) {
-      _ref.read(tripDetectionServiceProvider).start();
-    }
   }
 
   /// Get today's day summary for display.
