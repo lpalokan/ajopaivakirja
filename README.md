@@ -71,7 +71,7 @@ lib/
 │   ├── file_opener_service.dart    # Tiedoston avaus / jako / tallennus
 │   ├── odometer_vision_service.dart# Mittarilukeman tunnistus kuvasta
 │   ├── location_service.dart       # GPS ja geofencing
-│   ├── trip_detection_service.dart # Automaattinen ajon tunnistus
+│   ├── movement_signal.dart        # Liikkuuko auto juuri nyt (GPS-tuoreus)
 │   ├── background_service.dart     # Taustapalvelu + 5 min muistutuslogiikka
 │   ├── activity_recognition_service.dart # Liikkumistunnistus (in_vehicle…)
 │   ├── notification_service.dart   # Ilmoitukset

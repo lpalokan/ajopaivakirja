@@ -62,43 +62,8 @@ Feature: Settings
     And I toggle debug logging
     Then I see {'Jaa loki'}
 
-  Scenario: Auto-detection thresholds show their defaults
+  Scenario: Auto-detection is gone from settings
     When I open settings
-    Then I see text containing {'Ajontunnistus'}
-    And I see text containing {'18 km/h'}
-    And I see text containing {'30 s'}
-    And I see text containing {'60 s'}
-
-  Scenario: Detection speed threshold persists
-    When I open settings
-    And I drag the {'detection_speed'} slider to its {'maximum'}
-    And I save settings
-    Then the {'detection_speed_mps'} setting is {'8.0'}
-
-  Scenario: Sustained driving duration persists
-    When I open settings
-    And I drag the {'detection_driving'} slider to its {'minimum'}
-    And I save settings
-    Then the {'detection_driving_seconds'} setting is {'15'}
-
-  Scenario: Arrival stop duration persists
-    When I open settings
-    And I drag the {'detection_arrival'} slider to its {'maximum'}
-    And I save settings
-    Then the {'detection_arrival_seconds'} setting is {'180'}
-
-  Scenario: Auto-detection is on to begin with
-    When I open settings
-    Then I see {'Tunnista ajo automaattisesti'}
-    And I see text containing {'18 km/h'}
-
-  Scenario: Auto-detection can be switched off
-    When I open settings
-    And I toggle {'Tunnista ajo automaattisesti'}
-    And I save settings
-    Then the {'auto_detect'} setting is {'0'}
-
-  Scenario: Switching auto-detection off hides its thresholds
-    When I open settings
-    And I toggle {'Tunnista ajo automaattisesti'}
-    Then I do not see text containing {'18 km/h'}
+    Then I do not see text containing {'Ajontunnistus'}
+    And I do not see text containing {'Tunnista ajo automaattisesti'}
+    And I do not see text containing {'Nopeusraja'}

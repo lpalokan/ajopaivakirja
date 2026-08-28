@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import '../models/trip_leg.dart';
 import 'activity_recognition_service.dart';
-import 'driving_detector.dart';
+import 'movement_signal.dart';
 import 'location_service.dart';
 import 'log_service.dart';
 import 'notification_service.dart';

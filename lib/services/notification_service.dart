@@ -26,10 +26,8 @@ typedef NotificationCanceller = Future<void> Function(int id);
 
 /// Registers the far-out "Vieläkö ajat?" backstop. A typedef seam for the
 /// same reason as [NotificationCanceller].
-typedef BackstopScheduler = Future<void> Function(
-  String destination,
-  DateTime triggerTime,
-);
+typedef BackstopScheduler =
+    Future<void> Function(String destination, DateTime triggerTime);
 
 /// Everything the "Ajan yhä" (still-driving) tap must do, written as a pure
 /// top-level function so it can run in the background isolate (where the
@@ -148,9 +146,6 @@ class NotificationService {
   /// integration harness can drive the real response-routing path instead of
   /// poking [BackgroundService] directly.
   static const stillDrivingActionId = 'still_driving';
-  static const _startTripActionId = 'start_trip';
-  static const _dismissActionId = 'dismiss';
-  static const _endTripActionId = 'end_trip';
 
   /// Platform notification ids. Public so the same ids are shared by the
   /// background dismissal handler and tests rather than duplicated as magic
@@ -158,23 +153,19 @@ class NotificationService {
   static const drivingNotificationId = 1;
   static const arrivalReminderId = 2;
   static const scheduledReminderId = 3;
-  static const _tripDetectionId = 4;
-  static const _tripEndDetectionId = 5;
 
   final FlutterLocalNotificationsPlugin _plugin;
   void Function()? onArrived;
   void Function()? onStillDriving;
-  void Function()? onStartTrip;
-  void Function()? onEndTrip;
 
-  NotificationService()
-      : _plugin = FlutterLocalNotificationsPlugin();
+  NotificationService() : _plugin = FlutterLocalNotificationsPlugin();
 
   Future<void> initialize() async {
     tz.initializeTimeZones();
 
-    const androidSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
     const iosSettings = DarwinInitializationSettings();
     const settings = InitializationSettings(
       android: androidSettings,
@@ -210,8 +201,10 @@ class NotificationService {
   }
 
   Future<bool> requestPermission() async {
-    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final androidPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     if (androidPlugin != null) {
       return await androidPlugin.requestNotificationsPermission() ?? false;
     }
@@ -223,17 +216,15 @@ class NotificationService {
       onArrived?.call();
     } else if (response.actionId == stillDrivingActionId) {
       onStillDriving?.call();
-    } else if (response.actionId == _startTripActionId) {
-      onStartTrip?.call();
-    } else if (response.actionId == _endTripActionId) {
-      onEndTrip?.call();
     }
   }
 
   Future<void> showDrivingNotification(TripLeg leg) async {
     final destination = leg.endLocation ?? leg.routeDescription ?? 'määränpää';
-    final routeInfo = leg.routeDescription ?? '${leg.startLocation} → $destination';
-    final body = '$routeInfo · ${leg.kmDriven.toStringAsFixed(0)} km\n'
+    final routeInfo =
+        leg.routeDescription ?? '${leg.startLocation} → $destination';
+    final body =
+        '$routeInfo · ${leg.kmDriven.toStringAsFixed(0)} km\n'
         'Aloitettu: ${_formatTime(leg.startTime)} · Mittari: ${leg.startOdometer} km';
 
     final bigTextStyle = BigTextStyleInformation(
@@ -338,78 +329,6 @@ class NotificationService {
   /// platform fire its own copy at the original time.
   Future<void> cancelScheduledReminder() async {
     await _plugin.cancel(scheduledReminderId);
-  }
-
-  /// Show notification when potential driving is detected.
-  Future<void> showTripDetectionNotification() async {
-    const androidDetails = AndroidNotificationDetails(
-      'kilometrikorvaus_detection',
-      'Ajontunnistus',
-      channelDescription: 'Ilmoittaa mahdollisesta ajosta',
-      importance: Importance.high,
-      priority: Priority.high,
-      actions: [
-        AndroidNotificationAction(
-          _startTripActionId,
-          'Aloita ajo',
-          showsUserInterface: true,
-        ),
-        AndroidNotificationAction(
-          _dismissActionId,
-          'Ei nyt',
-          showsUserInterface: false,
-        ),
-      ],
-    );
-
-    await _plugin.show(
-      _tripDetectionId,
-      'Ajatko autoa?',
-      'GPS havaitsi liikettä. Aloitetaanko ajokirjanpito?',
-      const NotificationDetails(
-        android: androidDetails,
-        iOS: DarwinNotificationDetails(),
-      ),
-    );
-  }
-
-  /// Show notification when vehicle has stopped after driving.
-  Future<void> showTripEndDetectionNotification() async {
-    const androidDetails = AndroidNotificationDetails(
-      'kilometrikorvaus_detection',
-      'Ajontunnistus',
-      channelDescription: 'Ilmoittaa mahdollisesta saapumisesta',
-      importance: Importance.high,
-      priority: Priority.high,
-      actions: [
-        AndroidNotificationAction(
-          _endTripActionId,
-          'Lopeta ajo',
-          showsUserInterface: true,
-        ),
-        AndroidNotificationAction(
-          _dismissActionId,
-          'Ei nyt',
-          showsUserInterface: false,
-        ),
-      ],
-    );
-
-    await _plugin.show(
-      _tripEndDetectionId,
-      'Saavuitko perille?',
-      'GPS havaitsee, että olet pysähtynyt. Lopetetaanko ajo?',
-      const NotificationDetails(
-        android: androidDetails,
-        iOS: DarwinNotificationDetails(),
-      ),
-    );
-  }
-
-  /// Cancel detection notifications.
-  Future<void> cancelDetectionNotifications() async {
-    await _plugin.cancel(_tripDetectionId);
-    await _plugin.cancel(_tripEndDetectionId);
   }
 
   String _formatTime(DateTime dt) {

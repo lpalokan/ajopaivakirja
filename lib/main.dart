@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'models/app_settings.dart';
-import 'providers/settings_provider.dart';
 import 'screens/home_screen.dart';
 import 'services/activity_recognition_service.dart';
 import 'services/notification_service.dart';
@@ -10,7 +8,6 @@ import 'services/location_service.dart';
 import 'services/background_service.dart';
 import 'services/sheets_service.dart';
 import 'services/odometer_vision_service.dart';
-import 'services/trip_detection_service.dart';
 import 'services/file_opener_service.dart';
 import 'services/update_service.dart';
 
@@ -22,10 +19,11 @@ final locationServiceProvider = Provider<LocationService>((ref) {
   return LocationService();
 });
 
-final activityRecognitionServiceProvider =
-    Provider<ActivityRecognitionService>((ref) {
-  return ActivityRecognitionService();
-});
+final activityRecognitionServiceProvider = Provider<ActivityRecognitionService>(
+  (ref) {
+    return ActivityRecognitionService();
+  },
+);
 
 final backgroundServiceProvider = Provider<BackgroundService>((ref) {
   final ns = ref.watch(notificationServiceProvider);
@@ -48,25 +46,6 @@ final odometerVisionServiceProvider = Provider<OdometerVisionService>((ref) {
 
 final fileOpenerServiceProvider = Provider<FileOpenerService>((ref) {
   return FileOpenerService();
-});
-
-final tripDetectionServiceProvider = Provider<TripDetectionService>((ref) {
-  final ls = ref.watch(locationServiceProvider);
-  final ns = ref.watch(notificationServiceProvider);
-  final service = TripDetectionService(
-    locationService: ls,
-    notificationService: ns,
-  );
-  // The auto-detection thresholds are user-configurable (issue #52). Applied
-  // by listening rather than watching on purpose: `watch` would rebuild the
-  // provider on every settings change, handing callers a fresh service while
-  // the old one kept its position stream and timer running.
-  service.updateSettings(ref.read(settingsProvider));
-  ref.listen<AppSettings>(
-    settingsProvider,
-    (_, next) => service.updateSettings(next),
-  );
-  return service;
 });
 
 final updateServiceProvider = Provider<UpdateService>((ref) {
@@ -203,15 +182,16 @@ void main() {
 /// Light app theme. Top-level so accessibility tests can inspect it directly
 /// without pumping the whole app (issue #46 A2/A7).
 ThemeData buildLightTheme() {
-  final scheme = ColorScheme.fromSeed(
-    seedColor: const Color(0xFF1565C0),
-    brightness: Brightness.light,
-  ).copyWith(
-    // A7: darkened from #B7793A (3.62:1) → ≈ 4.7:1 as text on white.
-    tertiary: const Color(0xFF8E5618),
-    tertiaryContainer: const Color(0xFFFFDCBE),
-    onTertiary: Colors.white,
-  );
+  final scheme =
+      ColorScheme.fromSeed(
+        seedColor: const Color(0xFF1565C0),
+        brightness: Brightness.light,
+      ).copyWith(
+        // A7: darkened from #B7793A (3.62:1) → ≈ 4.7:1 as text on white.
+        tertiary: const Color(0xFF8E5618),
+        tertiaryContainer: const Color(0xFFFFDCBE),
+        onTertiary: Colors.white,
+      );
   final base = ThemeData(colorScheme: scheme, useMaterial3: true);
   return base.copyWith(
     iconTheme: const IconThemeData(weight: 400, fill: 0, opticalSize: 24),
@@ -235,14 +215,15 @@ ThemeData buildLightTheme() {
 }
 
 ThemeData buildDarkTheme() {
-  final scheme = ColorScheme.fromSeed(
-    seedColor: const Color(0xFF1565C0),
-    brightness: Brightness.dark,
-  ).copyWith(
-    tertiary: const Color(0xFFE0B17E),
-    tertiaryContainer: const Color(0xFFFFDCBE),
-    onTertiary: Colors.white,
-  );
+  final scheme =
+      ColorScheme.fromSeed(
+        seedColor: const Color(0xFF1565C0),
+        brightness: Brightness.dark,
+      ).copyWith(
+        tertiary: const Color(0xFFE0B17E),
+        tertiaryContainer: const Color(0xFFFFDCBE),
+        onTertiary: Colors.white,
+      );
   final base = ThemeData(colorScheme: scheme, useMaterial3: true);
   return base.copyWith(
     iconButtonTheme: IconButtonThemeData(

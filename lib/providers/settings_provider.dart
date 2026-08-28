@@ -67,36 +67,6 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
         fields['debug_logging'] != null) {
       s = s.copyWith(debugLogging: fields['debug_logging'] == '1');
     }
-    if (fields.containsKey('auto_detect') && fields['auto_detect'] != null) {
-      s = s.copyWith(autoDetect: fields['auto_detect'] == '1');
-    }
-    // Auto-detection thresholds are clamped here as well as in AppSettings.
-    // fromMap, so a value that never round-trips through the DB (the Settings
-    // sliders write straight into state) can't put the detector out of range.
-    if (fields['detection_speed_mps'] != null) {
-      s = s.copyWith(
-        detectionSpeedMps: AppSettings.clampDetectionSpeed(
-          double.tryParse(fields['detection_speed_mps']!) ??
-              s.detectionSpeedMps,
-        ),
-      );
-    }
-    if (fields['detection_driving_seconds'] != null) {
-      s = s.copyWith(
-        detectionDrivingSeconds: AppSettings.clampDetectionDrivingSeconds(
-          int.tryParse(fields['detection_driving_seconds']!) ??
-              s.detectionDrivingSeconds,
-        ),
-      );
-    }
-    if (fields['detection_arrival_seconds'] != null) {
-      s = s.copyWith(
-        detectionArrivalSeconds: AppSettings.clampDetectionArrivalSeconds(
-          int.tryParse(fields['detection_arrival_seconds']!) ??
-              s.detectionArrivalSeconds,
-        ),
-      );
-    }
     await save(s);
   }
 }
