@@ -127,8 +127,15 @@ feature). The suite is run via this aggregator. **When you add a new
 | `Then I see {string}` | Asserts text is visible (scrolls if needed) |
 | `Then I do not see {string}` | Asserts text is absent |
 | `Then I see text containing {string}` | Substring assertion |
+| `Then I do not see text containing {string}` | Substring absence, after scrolling — "not on screen right now" and "not in the page at all" are different claims and only the second is worth asserting |
 | `Then the {string} setting is {string}` | Asserts a persisted value in the SQLite settings table (deterministic; avoids re-reading a rebuilt screen) |
 | `Given the first GPS fix takes {int} seconds` | Makes the fake location service take its time over the next one-shot fix, the way a cold start on a real phone does. Set it BEFORE `the app is running` to cover startup work that must not queue behind the GPS chip |
+| `When the location service reports arrival at the destination` | Invokes the callback BackgroundService registered with `startMonitoringDestination`, as the live 30-second proximity Timer would. Simulates the *decision* having been made, so the scenario is about BackgroundService's gate — not about whether we really are there |
+| `When I toggle {string}` | Flips a SwitchListTile by its title, the way a driver does |
+| `When I open the {string} location dropdown` | Taps the trailing arrow on a location field, which must offer every known location whatever the field already holds |
+| `When I pick {string} from the location dropdown` | Taps an option in the open menu (scoped to the menu, so it cannot match the same text in a field behind it) |
+| `Then the {string} field shows {string}` | Asserts what a location field labelled {string} currently holds |
+| `Then the exported CSV pays every travel day` | Asserts the exported file pays out exactly what the allowance table says the trip earned, and names every travel day. Guards the silent case: a travel day with no legs used to be left out of the export entirely |
 | `Given the update download is held open` | Arms the fake update service so `downloadAndInstall` reports progress then parks, leaving the "Ladataan…" indicator on screen |
 | `When the held download is released` | Completes a held download so the install flow clears the in-app progress state |
 

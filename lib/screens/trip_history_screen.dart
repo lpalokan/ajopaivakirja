@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import '../main.dart';
 import '../models/trip_leg.dart';
 import '../providers/settings_provider.dart';
+import '../services/allowance_ledger.dart';
 import '../services/database_service.dart';
 import '../services/trip_calculator.dart';
 import '../services/pdf_report_service.dart';
@@ -29,6 +30,11 @@ class TripHistoryScreen extends ConsumerStatefulWidget {
 class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
   List<String> _dates = [];
   Map<String, List<TripLeg>> _legsByDate = {};
+
+  /// What each date was paid in päivärahaa. The record the reports read;
+  /// `TripLeg.dailyAllowance` is only a copy of it, and a copy that cannot
+  /// exist for a travel day with no driving.
+  AllowanceLedger _ledger = AllowanceLedger.empty;
   Map<int, List<Expense>> _expensesByLegId = {};
   bool _loading = true;
   bool _syncing = false;
@@ -62,6 +68,15 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
         .toList();
     _expensesByLegId = await DatabaseService.getExpensesForLegs(allLegIds);
     final draftCount = await DatabaseService.getDraftCount();
+    final ledger = AllowanceLedger(
+      await DatabaseService.getAllDailyAllowances(),
+    );
+
+    // A travel day in the middle of a long trip has no legs, so
+    // getDistinctDates never mentions it. It is still a day the driver was
+    // away and was paid for, and it belongs in the list.
+    final allDates = <String>{...dates, ...ledger.orphanDates(dates)}.toList()
+      ..sort((a, b) => b.compareTo(a));
 
     // Find the most recent month where all legs are completed and synced.
     final completeMonth = TripHistoryView.completeMonthName(
@@ -72,8 +87,9 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
 
     if (mounted) {
       setState(() {
-        _dates = dates;
+        _dates = allDates;
         _legsByDate = legsByDate;
+        _ledger = ledger;
         _draftCount = draftCount;
         _completeMonthName = completeMonth;
         _loading = false;
@@ -132,7 +148,12 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
         persistSheetId: (id) =>
             ref.read(settingsProvider.notifier).update({'sheet_id': id}),
       );
-      if (plan.legs.isEmpty && plan.deletedLegIds.isEmpty) {
+      // Travel days with no legs are keyed by date, not by a leg's synced
+      // flag, so "nothing unsynced" is not the same as "nothing to write".
+      final allowanceDays = await DatabaseService.getAllowanceDaysWithoutLegs();
+      if (plan.legs.isEmpty &&
+          plan.deletedLegIds.isEmpty &&
+          allowanceDays.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Kaikki rivit on jo synkronoitu')),
@@ -145,6 +166,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
         sheetId: plan.target.id,
         sheetTab: settings.sheetTab,
         deletedLegIds: plan.deletedLegIds,
+        allowanceDays: allowanceDays,
         onSynced: (legId) => DatabaseService.markLegSynced(legId),
       );
       if (plan.deletedLegIds.isNotEmpty) {
@@ -298,7 +320,9 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                       suffixIcon: Icon(Symbols.access_time),
                     ),
                     child: Text(
-                      pickedEndTime != null ? timeFmt.format(pickedEndTime!) : '—',
+                      pickedEndTime != null
+                          ? timeFmt.format(pickedEndTime!)
+                          : '—',
                     ),
                   ),
                 ),
@@ -525,8 +549,8 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                     // Scroll to first draft
                     var draftIdx = 0;
                     for (final date in _dates) {
-                      final legs = _legsByDate[date]!;
-                      for (final leg in legs) {
+                      for (final leg
+                          in _legsByDate[date] ?? const <TripLeg>[]) {
                         if (leg.isDraft) {
                           _scrollController.animateTo(
                             draftIdx * 200.0,
@@ -548,7 +572,10 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                     itemCount: _dates.length,
                     itemBuilder: (context, index) {
                       final date = _dates[index];
-                      final legs = _legsByDate[date]!;
+                      final legs = _legsByDate[date];
+                      if (legs == null || legs.isEmpty) {
+                        return _buildAllowanceOnlyGroup(date);
+                      }
                       return _buildDateGroup(date, legs);
                     },
                   ),
@@ -560,14 +587,16 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
 
   Future<void> _exportCsv() async {
     try {
-      // Collect all legs
+      // Collect all legs. _dates also holds travel days that have none —
+      // those reach the file through the ledger, not through this list.
       final allLegs = <TripLeg>[];
       for (final date in _dates) {
-        allLegs.addAll(_legsByDate[date]!);
+        allLegs.addAll(_legsByDate[date] ?? const []);
       }
 
       final file = await CsvExportService.generate(
         legs: allLegs,
+        ledger: _ledger,
         expensesByLegId: _expensesByLegId,
       );
 
@@ -724,6 +753,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
         startDate: range.start,
         endDate: range.end,
         legsByDate: _legsByDate,
+        ledger: _ledger,
       );
 
       if (mounted) {
@@ -740,12 +770,34 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
     }
   }
 
+  /// A travel day that earned a päiväraha without any driving. It has no
+  /// legs to list, so the card says why it is here.
+  Widget _buildAllowanceOnlyGroup(String date) {
+    final theme = Theme.of(context);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: ListTile(
+        leading: const Icon(Symbols.hotel),
+        title: Text(_formatDisplayDate(date)),
+        subtitle: Text(
+          '${_ledger.describe(date) ?? ''} · ei ajoja',
+          style: theme.textTheme.bodySmall,
+        ),
+        trailing: Text(
+          '€${_ledger.totalFor(date).toStringAsFixed(2)}',
+          style: theme.extension<NumeralTypography>()!.inline_.copyWith(
+            color: theme.colorScheme.tertiary,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildDateGroup(String date, List<TripLeg> legs) {
     final totalKm = legs.fold<double>(0, (s, l) => s + l.kmDriven);
-    final totalAllowance = legs.fold<double>(
-      0,
-      (s, l) => s + l.kmAllowance + l.dailyAllowance,
-    );
+    final totalAllowance =
+        legs.fold<double>(0, (s, l) => s + l.kmAllowance) +
+        _ledger.totalFor(date);
     final hasDrafts = legs.any((l) => l.isDraft);
     final displayDate = _formatDisplayDate(date);
 
@@ -810,7 +862,7 @@ class _TripHistoryScreenState extends ConsumerState<TripHistoryScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        '€${leg.totalAllowance.toStringAsFixed(2)}',
+                        '€${(leg.kmAllowance + _ledger.forLeg(leg, legs)).toStringAsFixed(2)}',
                         style: Theme.of(context)
                             .extension<NumeralTypography>()!
                             .inline_

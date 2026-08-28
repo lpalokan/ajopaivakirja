@@ -5,6 +5,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:intl/intl.dart';
 import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
+import 'allowance_ledger.dart';
 import 'trip_calculator.dart';
 
 class PdfReportService {
@@ -17,6 +18,7 @@ class PdfReportService {
     required DateTime startDate,
     required DateTime endDate,
     required Map<String, List<TripLeg>> legsByDate,
+    required AllowanceLedger ledger,
   }) async {
     // Embed a Unicode TTF so Finnish characters (ä ö å), the euro sign and
     // the en-dash render instead of the built-in font's missing-glyph box.
@@ -39,14 +41,29 @@ class PdfReportService {
     final timeFmt = DateFormat('HH:mm', 'fi');
     final calculator = TripCalculator(settings);
 
-    // Group and sort dates
-    final sortedDates = legsByDate.keys.toList()..sort();
-
-    // Filter by date range
-    final filteredDates = sortedDates.where((d) {
-      final dt = DateTime.parse(d);
+    bool inRange(String date) {
+      final dt = DateTime.parse(date);
       return !dt.isBefore(startDate) && !dt.isAfter(endDate);
-    }).toList();
+    }
+
+    // Only days with something to show. A day whose every leg is a draft is
+    // not reported, so it must not pull its date into the report either.
+    final legsForDate = <String, List<TripLeg>>{
+      for (final entry in legsByDate.entries)
+        if (inRange(entry.key))
+          entry.key: entry.value.where((l) => l.isCompleted).toList(),
+    }..removeWhere((_, legs) => legs.isEmpty);
+
+    // A travel day in the middle of a long trip earns a päiväraha without any
+    // driving. It has no legs, so nothing in legsByDate would ever mention
+    // it — and it belongs in the report just as much as the days around it.
+    final orphanDates = ledger
+        .orphanDates(legsForDate.keys)
+        .where(inRange)
+        .toSet();
+
+    final filteredDates = {...legsForDate.keys, ...orphanDates}.toList()
+      ..sort();
 
     double grandTotalKm = 0;
     double grandTotalKmAllowance = 0;
@@ -59,16 +76,27 @@ class PdfReportService {
 
     // Trip details
     for (final date in filteredDates) {
-      var legs = legsByDate[date]!;
-      legs = legs.where((l) => l.isCompleted).toList();
-      if (legs.isEmpty) continue;
-      final summary = calculator.summarizeDay(legs);
+      final dailyAllowance = ledger.totalFor(date);
+
+      if (orphanDates.contains(date)) {
+        grandTotalDailyAllowance += dailyAllowance;
+        pages.add(_buildAllowanceOnlySection(date, ledger, dateFmt));
+        continue;
+      }
+
+      final legs = legsForDate[date]!;
+      final summary = calculator.summarizeDay(
+        legs,
+        dailyAllowance: dailyAllowance,
+      );
 
       grandTotalKm += summary.totalKm;
       grandTotalKmAllowance += summary.totalKmAllowance;
       grandTotalDailyAllowance += summary.totalDailyAllowance;
 
-      pages.add(_buildDaySection(date, legs, summary, dateFmt, timeFmt));
+      pages.add(
+        _buildDaySection(date, legs, summary, ledger, dateFmt, timeFmt),
+      );
     }
 
     // Grand totals page
@@ -142,15 +170,12 @@ class PdfReportService {
       bool estimated,
     })
     summary,
+    AllowanceLedger ledger,
     DateFormat dateFmt,
     DateFormat timeFmt,
   ) {
     final displayDate = _formatDisplayDate(date, dateFmt);
-    final hasDailyAllowance = legs.any((l) => l.dailyAllowance > 0);
-    final dailyAllowanceLeg = legs.cast<TripLeg?>().lastWhere(
-      (l) => l!.dailyAllowance > 0,
-      orElse: () => null,
-    );
+    final hasDailyAllowance = summary.totalDailyAllowance > 0;
 
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -204,11 +229,7 @@ class PdfReportService {
                   _tableCell(leg.kmDriven.toStringAsFixed(1)),
                   _tableCell(leg.purpose ?? ''),
                   _tableCell(leg.kmAllowance.toStringAsFixed(2)),
-                  _tableCell(
-                    leg.dailyAllowance > 0
-                        ? leg.dailyAllowance.toStringAsFixed(2)
-                        : '',
-                  ),
+                  _tableCell(_allowanceCell(ledger.forLeg(leg, legs))),
                 ],
               ),
             ),
@@ -237,9 +258,9 @@ class PdfReportService {
               ),
           ],
         ),
-        if (dailyAllowanceLeg != null)
+        if (hasDailyAllowance)
           pw.Text(
-            _dailyAllowanceText(dailyAllowanceLeg),
+            _dailyAllowanceText(date, legs, ledger),
             style: pw.TextStyle(fontSize: 9, fontStyle: pw.FontStyle.italic),
           ),
         pw.SizedBox(height: 12),
@@ -249,24 +270,57 @@ class PdfReportService {
     );
   }
 
-  String _dailyAllowanceText(TripLeg leg) {
-    if (leg.dailyAllowanceType == 0) {
-      return 'Päiväraha: Ei päivärahaa (manuaalinen)';
-    }
-    if (leg.dailyAllowanceType == 1) {
-      return 'Päiväraha: Puolipäivä (>6h, manuaalinen)';
-    }
-    if (leg.dailyAllowanceType == 2) {
-      return 'Päiväraha: Kokopäivä (>10h, manuaalinen)';
-    }
-    if (leg.dailyAllowance > 0) {
-      final hours = leg.legDurationHours;
-      if (hours > 10) {
-        return 'Päiväraha: Kokopäivä (>10h, ${hours.toStringAsFixed(1)}h)';
-      }
-      return 'Päiväraha: Puolipäivä (>6h, ${hours.toStringAsFixed(1)}h)';
-    }
-    return 'Päiväraha: Ei oikeutta (alle 6h)';
+  static String _allowanceCell(double amount) =>
+      amount > 0 ? amount.toStringAsFixed(2) : '';
+
+  /// The line under a day's table explaining what it was paid, and — when the
+  /// driver overrode it — that a person decided so rather than the clock.
+  String _dailyAllowanceText(
+    String date,
+    List<TripLeg> legs,
+    AllowanceLedger ledger,
+  ) {
+    final described = ledger.describe(date);
+    if (described == null) return 'Päiväraha: Ei oikeutta (alle 6h)';
+    final manual = legs.any(
+      (l) => l.date == date && l.dailyAllowanceType != null,
+    );
+    return manual
+        ? 'Päiväraha: $described (manuaalinen)'
+        : 'Päiväraha: $described';
+  }
+
+  /// A travel day with no driving at all. It is still a day away from home,
+  /// so it is still paid — and a report that skipped it would under-report
+  /// the trip.
+  pw.Widget _buildAllowanceOnlySection(
+    String date,
+    AllowanceLedger ledger,
+    DateFormat dateFmt,
+  ) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          _formatDisplayDate(date, dateFmt),
+          style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.SizedBox(height: 4),
+        pw.Text(
+          'Ei ajoja — matkapäivä työmatkan keskellä',
+          style: pw.TextStyle(fontSize: 10, fontStyle: pw.FontStyle.italic),
+        ),
+        pw.SizedBox(height: 4),
+        pw.Text(
+          'Päiväraha: ${ledger.totalFor(date).toStringAsFixed(2)} € '
+          '(${ledger.describe(date)})',
+          style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold),
+        ),
+        pw.SizedBox(height: 12),
+        pw.Divider(),
+        pw.SizedBox(height: 8),
+      ],
+    );
   }
 
   pw.Widget _buildGrandTotals({

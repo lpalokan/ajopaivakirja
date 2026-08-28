@@ -204,14 +204,14 @@ Feature: Driving flow
     Given location permission is granted
     And activity recognition reports {'still'}
     When I start the {'Töihin'} route at {1000} km
-    And the location service detects proximity to home
+    And the location service reports arrival at the destination
     Then an arrival reminder has been shown
 
   Scenario: Proximity-based reminder is suppressed while activity is in_vehicle
     Given location permission is granted
     And activity recognition reports {'in_vehicle'}
     When I start the {'Töihin'} route at {1000} km
-    And the location service detects proximity to home
+    And the location service reports arrival at the destination
     Then no arrival reminder has been shown
 
   Scenario: Proximity-based reminder is suppressed while GPS shows driving speed
@@ -219,7 +219,7 @@ Feature: Driving flow
     And activity recognition reports {'still'}
     And GPS reports driving speed
     When I start the {'Töihin'} route at {1000} km
-    And the location service detects proximity to home
+    And the location service reports arrival at the destination
     Then no arrival reminder has been shown
 
   Scenario: Proximity-based reminder is suppressed shortly after the vehicle signal
@@ -228,24 +228,24 @@ Feature: Driving flow
     And the in-vehicle recency window is long
     When I start the {'Töihin'} route at {1000} km
     And activity recognition reports {'still'}
-    And the location service detects proximity to home
+    And the location service reports arrival at the destination
     Then no arrival reminder has been shown
 
   Scenario: Proximity-based reminder is shown only once per stop
     Given location permission is granted
     And activity recognition reports {'still'}
     When I start the {'Töihin'} route at {1000} km
-    And the location service detects proximity to home
-    And the location service detects proximity to home
+    And the location service reports arrival at the destination
+    And the location service reports arrival at the destination
     Then exactly {1} arrival reminder has been shown
 
   Scenario: Proximity-based reminder respects the still-driving snooze
     Given location permission is granted
     And activity recognition reports {'still'}
     When I start the {'Töihin'} route at {1000} km
-    And the location service detects proximity to home
+    And the location service reports arrival at the destination
     And the still driving notification action is tapped with a long snooze
-    And the location service detects proximity to home
+    And the location service reports arrival at the destination
     Then exactly {1} arrival reminder has been shown
 
   Scenario: Proximity-based reminder is suppressed after arrival is confirmed
@@ -254,7 +254,7 @@ Feature: Driving flow
     When I start the {'Töihin'} route at {1000} km
     And the arrival notification action is tapped
     And I fill in the arrival mileage {1054} km
-    And the location service detects proximity to home
+    And the location service reports arrival at the destination
     Then no arrival reminder has been shown
 
   Scenario: Locking the phone mid-drive keeps the reminder suppressed

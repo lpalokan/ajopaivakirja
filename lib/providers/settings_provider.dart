@@ -35,23 +35,24 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
 
   Future<void> update(Map<String, String?> fields) async {
     var s = state;
-    if (fields.containsKey('home_location') && fields['home_location'] != null) {
+    if (fields.containsKey('home_location') &&
+        fields['home_location'] != null) {
       s = s.copyWith(homeLocation: fields['home_location']!);
     }
     if (fields.containsKey('km_rate') && fields['km_rate'] != null) {
-      s = s.copyWith(
-          kmRate: double.tryParse(fields['km_rate']!) ?? s.kmRate);
+      s = s.copyWith(kmRate: double.tryParse(fields['km_rate']!) ?? s.kmRate);
     }
     if (fields.containsKey('allowance_6h') && fields['allowance_6h'] != null) {
       s = s.copyWith(
-          allowance6h:
-              double.tryParse(fields['allowance_6h']!) ?? s.allowance6h);
+        allowance6h: double.tryParse(fields['allowance_6h']!) ?? s.allowance6h,
+      );
     }
     if (fields.containsKey('allowance_10h') &&
         fields['allowance_10h'] != null) {
       s = s.copyWith(
-          allowance10h:
-              double.tryParse(fields['allowance_10h']!) ?? s.allowance10h);
+        allowance10h:
+            double.tryParse(fields['allowance_10h']!) ?? s.allowance10h,
+      );
     }
     if (fields.containsKey('sheet_id') && fields['sheet_id'] != null) {
       s = s.copyWith(sheetId: fields['sheet_id']!);
@@ -62,8 +63,12 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     if (fields.containsKey('driver_name') && fields['driver_name'] != null) {
       s = s.copyWith(driverName: fields['driver_name']!);
     }
-    if (fields.containsKey('debug_logging') && fields['debug_logging'] != null) {
+    if (fields.containsKey('debug_logging') &&
+        fields['debug_logging'] != null) {
       s = s.copyWith(debugLogging: fields['debug_logging'] == '1');
+    }
+    if (fields.containsKey('auto_detect') && fields['auto_detect'] != null) {
+      s = s.copyWith(autoDetect: fields['auto_detect'] == '1');
     }
     // Auto-detection thresholds are clamped here as well as in AppSettings.
     // fromMap, so a value that never round-trips through the DB (the Settings
@@ -96,7 +101,8 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   }
 }
 
-final settingsProvider =
-    StateNotifierProvider<SettingsNotifier, AppSettings>((ref) {
+final settingsProvider = StateNotifierProvider<SettingsNotifier, AppSettings>((
+  ref,
+) {
   return SettingsNotifier();
 });

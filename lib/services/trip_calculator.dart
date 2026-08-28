@@ -304,6 +304,12 @@ class TripCalculator {
 
   /// Put each date's päiväraha total on that date's last leg, and clear it
   /// from the others, so nothing is counted twice.
+  ///
+  /// This is a denormalised copy of the allowance table, kept because a leg
+  /// row in Google Sheets has a päiväraha column and the sync sends legs one
+  /// at a time. It is written here and nowhere else; the reports read
+  /// [AllowanceLedger], which is the record, and which — unlike a column on a
+  /// leg — can also speak for a travel day that has no legs at all.
   List<TripLeg> _mirrorAllowancesOntoLegs(
     List<TripLeg> legs,
     Map<String, double> totalByDate,
@@ -367,16 +373,18 @@ class TripCalculator {
     double grandTotal,
     bool estimated,
   })
-  summarizeDay(List<TripLeg> legs) {
+  summarizeDay(List<TripLeg> legs, {double? dailyAllowance}) {
     final totalKm = legs.fold<double>(0, (sum, l) => sum + l.kmDriven);
     final totalKmAllowance = legs.fold<double>(
       0,
       (sum, l) => sum + l.kmAllowance,
     );
-    final totalDailyAllowance = legs.fold<double>(
-      0,
-      (sum, l) => sum + l.dailyAllowance,
-    );
+    // Callers holding an [AllowanceLedger] pass the day's päiväraha in: it is
+    // the record of what the travel days actually paid, where the figure
+    // mirrored onto the legs is only a copy of it.
+    final totalDailyAllowance =
+        dailyAllowance ??
+        legs.fold<double>(0, (sum, l) => sum + l.dailyAllowance);
     final hasDraft = legs.any((l) => l.isDraft);
 
     return (

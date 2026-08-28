@@ -34,7 +34,7 @@ class DatabaseService {
 
     return openDatabase(
       path,
-      version: 8,
+      version: 9,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -213,10 +213,93 @@ class DatabaseService {
     if (oldVersion < 8) {
       await _migrateToDailyAllowances(db);
     }
+    if (oldVersion < 9) {
+      await backfillDailyAllowancesFromLegs(db);
+    }
   }
 
   static Future<void> _migrateToDailyAllowances(Database db) async {
     await db.execute(_createDailyAllowances);
+  }
+
+  /// Give every historical päiväraha a row in `daily_allowances`.
+  ///
+  /// Before v8 an allowance existed only as a number mirrored onto a leg, so
+  /// the table starts life covering nothing but trips finalized since. Now
+  /// that the reports read the table, that history has to be in it or years
+  /// of päivärahat would silently drop out of a tax export.
+  ///
+  /// Purely additive, and it cannot change any total: every amount is the sum
+  /// the legs already carry for that date, and dates that already have a row
+  /// are left alone — the trips finalized since v8 own their own rows,
+  /// including the travel days that have no legs at all.
+  ///
+  /// Public so the migration can be tested directly against a database built
+  /// at the old schema; nothing else should call it.
+  static Future<int> backfillDailyAllowancesFromLegs(Database db) async {
+    await db.execute(_createDailyAllowances);
+
+    // The amounts the user has configured, so a legacy figure can be read
+    // back as "full" or "half". These only decide the label — the euros come
+    // from the leg. Defaults match AppSettings.
+    var halfDay = 25.0;
+    var fullDay = 54.0;
+    for (final row in await db.query('settings')) {
+      final value = double.tryParse(row['value']?.toString() ?? '');
+      if (value == null) continue;
+      if (row['key'] == 'allowance_6h') halfDay = value;
+      if (row['key'] == 'allowance_10h') fullDay = value;
+    }
+
+    final covered = (await db.query(
+      'daily_allowances',
+      columns: ['date'],
+    )).map((r) => r['date'] as String).toSet();
+
+    // period_start is the day's first departure: the closest thing legacy
+    // data has to the travel day's start, and unique per date.
+    final rows = await db.rawQuery('''
+      SELECT paid.date AS date,
+             SUM(paid.daily_allowance) AS amount,
+             MAX(paid.daily_allowance_type) AS type,
+             (SELECT MIN(any_leg.start_time) FROM trip_legs any_leg
+               WHERE any_leg.date = paid.date) AS period_start
+      FROM trip_legs paid
+      WHERE paid.daily_allowance > 0
+      GROUP BY paid.date
+    ''');
+
+    final now = DateTime.now().toIso8601String();
+    var inserted = 0;
+    for (final row in rows) {
+      final date = row['date'] as String?;
+      final periodStart = row['period_start'] as String?;
+      final amount = (row['amount'] as num?)?.toDouble() ?? 0;
+      if (date == null || periodStart == null || amount <= 0) continue;
+      if (covered.contains(date)) continue;
+
+      final stored = (row['type'] as num?)?.toInt();
+      final type = (stored == 1 || stored == 2)
+          ? stored!
+          : ((amount - fullDay).abs() <= (amount - halfDay).abs() ? 2 : 1);
+
+      // `ignore` returns 0 rather than a row id when the period_start is
+      // already taken, so a surprise collision skips one date instead of
+      // aborting the whole upgrade.
+      final rowId = await db.insert('daily_allowances', {
+        'date': date,
+        'period_start': periodStart,
+        'type': type,
+        'amount': amount,
+        'created_at': now,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+      if (rowId != 0) inserted++;
+    }
+
+    LogService().info(
+      'DB: backfilled $inserted historical päiväraha row(s) from legs',
+    );
+    return inserted;
   }
 
   static Future<void> _seedKmRates(Database db) async {
@@ -457,7 +540,9 @@ class DatabaseService {
   static Future<void> markAllLegsUnsynced() async {
     final db = await database;
     final rows = await db.update('trip_legs', {'synced': 0});
-    LogService().info('DB: $rows legs marked unsynced (spreadsheet re-created)');
+    LogService().info(
+      'DB: $rows legs marked unsynced (spreadsheet re-created)',
+    );
   }
 
   static Future<int> getNextLegOrder(String date) async {
@@ -692,6 +777,37 @@ class DatabaseService {
     final db = await database;
     final maps = await db.query(
       'daily_allowances',
+      orderBy: 'period_start ASC',
+    );
+    return maps.map((m) => DailyAllowance.fromMap(m)).toList();
+  }
+
+  /// Travel days that earned a päiväraha on a date with no legs at all — the
+  /// middle days of a trip that stayed away overnight. Nothing keyed on legs
+  /// can see them, so every export has to ask for them explicitly.
+  static Future<List<DailyAllowance>> getAllowanceDaysWithoutLegs() async {
+    final db = await database;
+    final maps = await db.rawQuery('''
+      SELECT a.* FROM daily_allowances a
+      WHERE NOT EXISTS (
+        SELECT 1 FROM trip_legs l WHERE l.date = a.date
+      )
+      ORDER BY a.period_start ASC
+    ''');
+    return maps.map((m) => DailyAllowance.fromMap(m)).toList();
+  }
+
+  /// The allowances earned between two `yyyy-MM-dd` dates, inclusive. What a
+  /// date-ranged report (the PDF) pays out.
+  static Future<List<DailyAllowance>> getDailyAllowancesBetween(
+    String fromDate,
+    String toDate,
+  ) async {
+    final db = await database;
+    final maps = await db.query(
+      'daily_allowances',
+      where: 'date >= ? AND date <= ?',
+      whereArgs: [fromDate, toDate],
       orderBy: 'period_start ASC',
     );
     return maps.map((m) => DailyAllowance.fromMap(m)).toList();

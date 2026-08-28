@@ -38,6 +38,7 @@ import 'package:kilometrikorvaus/services/notification_service.dart';
 import 'package:kilometrikorvaus/services/odometer_vision_service.dart';
 import 'package:kilometrikorvaus/services/reminder_store.dart';
 import 'package:kilometrikorvaus/services/sheets_service.dart';
+import 'package:kilometrikorvaus/widgets/location_autocomplete.dart';
 import 'package:kilometrikorvaus/services/update_service.dart';
 
 // ─── Fakes ─────────────────────────────────────────────────────────────────
@@ -186,6 +187,9 @@ class _FakeLocationService extends LocationService {
   // callback fires late.
   Future<void> Function(String destination)? _onNearHome;
   String? _currentTarget;
+
+  /// Where the running trip is heading, as the app told the location service.
+  String? get currentTarget => _currentTarget;
   bool permissionGranted = false;
 
   // Whether the trip position stream is open. Unlike `_onNearHome` this IS
@@ -213,6 +217,7 @@ class _FakeLocationService extends LocationService {
   Future<bool> hasPermission() async => permissionGranted;
   @override
   Future<bool> hasPermissionGranted() async => permissionGranted;
+
   /// How long the next one-shot fix takes to come back. Real GPS can sit
   /// here for many seconds on a cold start, and the fake returning instantly
   /// is what hid a startup sequence that waited on it.
@@ -226,6 +231,7 @@ class _FakeLocationService extends LocationService {
     if (fixDelay > Duration.zero) await Future<void>.delayed(fixDelay);
     return permissionGranted ? currentPosition : null;
   }
+
   @override
   Future<Position?> getLastKnownPosition() async =>
       permissionGranted ? currentPosition : null;
@@ -251,10 +257,9 @@ class _FakeLocationService extends LocationService {
   @override
   Future<void> startMonitoringDestination(
     String destinationName,
-    settings,
-    Future<void> Function(String destination) onNearHome,
+    Future<void> Function(String destination) onArrived,
   ) async {
-    _onNearHome = onNearHome;
+    _onNearHome = onArrived;
     _currentTarget = destinationName;
     _tripStreamOpen = true;
   }
@@ -438,18 +443,26 @@ class _FakeSheetsService extends SheetsService {
     return _target(sheetId, created: false);
   }
 
+  /// Travel days written as their own rows in the last sync, so a scenario
+  /// can assert that a day with no driving still reaches the spreadsheet.
+  final List<DailyAllowance> allowanceDaysSent = [];
+
   @override
   Future<int> appendLegs(
     List<TripLeg> legs, {
     required String sheetId,
     required String sheetTab,
     List<int>? deletedLegIds,
+    List<DailyAllowance> allowanceDays = const [],
     Future<void> Function(int legId)? onSynced,
   }) async {
     for (final leg in legs) {
       if (leg.id != null) await onSynced?.call(leg.id!);
     }
-    return legs.length;
+    allowanceDaysSent
+      ..clear()
+      ..addAll(allowanceDays);
+    return legs.length + allowanceDays.length;
   }
 }
 
@@ -744,6 +757,15 @@ Future<void> expectContains(WidgetTester tester, String text) async {
   expect(f, findsWidgets);
 }
 
+/// The substring twin of [expectAbsent]. Scrolls first, because "not on the
+/// screen right now" and "not in the page at all" are different claims and
+/// only the second one is worth asserting.
+Future<void> expectNotContains(WidgetTester tester, String text) async {
+  final f = find.textContaining(text);
+  if (f.evaluate().isNotEmpty) await scrollIntoView(tester, f);
+  expect(f, findsNothing);
+}
+
 Future<void> tapText(WidgetTester tester, String text) async {
   final f = find.text(text);
   if (f.evaluate().isEmpty) await scrollIntoView(tester, f);
@@ -763,6 +785,17 @@ Future<void> tapText(WidgetTester tester, String text) async {
   if (!_isOnScreen(tester, target)) {
     await scrollIntoView(tester, target, force: true);
   }
+  // A scroll still in flight leaves the finder's rect stale, and the tap then
+  // lands on whatever has since moved into that spot — which is how adding
+  // one row to Settings made three unrelated update-check scenarios tap a
+  // text field instead of "Tarkista päivitykset". Finish the scroll, then let
+  // it stop moving, before deriving the tap point.
+  try {
+    await tester.ensureVisible(target);
+  } catch (_) {
+    // Not inside a viewport (a dialog, a fixed header): nothing to scroll.
+  }
+  await settle(tester);
   await tester.tap(target);
   await settle(tester);
 }
@@ -1275,6 +1308,17 @@ Future<void> expectFileOpened(WidgetTester tester) async {
   expect(_fakeFileOpener.openedPath, endsWith('.csv'));
 }
 
+/// Flip the SwitchListTile whose title is [label]. Tapping the title works
+/// on a SwitchListTile and needs no knowledge of where the switch itself
+/// sits, so this stays honest about what a driver actually does.
+Future<void> toggleSwitch(WidgetTester tester, String label) async {
+  final title = find.text(label);
+  await scrollIntoView(tester, title);
+  await waitFor(tester, title);
+  await tester.tap(title);
+  await settle(tester);
+}
+
 Future<void> toggleDebugLogging(WidgetTester tester) async {
   await scrollIntoView(tester, find.text('Virheloki'));
   await tester.tap(find.text('Virheloki'));
@@ -1394,6 +1438,107 @@ Future<void> expectCsvHasOnlyHeaderRow(WidgetTester tester) async {
   expect(lines.length, 1, reason: 'Expected only header row, got:\n$content');
 }
 
+/// Assert the exported CSV pays out exactly what the allowance table says
+/// the trip earned, and that every travel day is named in it.
+///
+/// The regression this guards is silent and expensive: a travel day in the
+/// middle of a trip has no leg, so an export built from legs alone simply
+/// leaves it out — and the driver under-reports their päivärahat without any
+/// visible sign that a day is missing.
+Future<void> expectCsvPaysEveryTravelDay(WidgetTester tester) async {
+  final path = _fakeFileOpener.openedPath;
+  expect(path, isNotNull, reason: 'No exported file was opened');
+  final content = await File(path!).readAsString();
+  final rows = content
+      .split('\r\n')
+      .where((l) => l.trim().isNotEmpty)
+      .skip(1) // header
+      .map((l) => l.split(','))
+      .toList();
+
+  const dateColumn = 0;
+  const allowanceColumn = 13;
+
+  final allowances = await DatabaseService.getAllDailyAllowances();
+  expect(
+    allowances,
+    isNotEmpty,
+    reason: 'the trip earned no päiväraha, so this proves nothing',
+  );
+
+  final exported = rows.fold<double>(
+    0,
+    (sum, r) => sum + (double.tryParse(r[allowanceColumn]) ?? 0),
+  );
+  final earned = allowances.fold<double>(0, (sum, a) => sum + a.amount);
+  expect(
+    exported,
+    closeTo(earned, 0.001),
+    reason: 'CSV pays $exported € but the trip earned $earned €\n$content',
+  );
+
+  final datesInFile = rows.map((r) => r[dateColumn]).toSet();
+  for (final allowance in allowances) {
+    expect(
+      datesInFile,
+      contains(allowance.date),
+      reason: 'travel day ${allowance.date} is missing from the CSV\n$content',
+    );
+  }
+}
+
+// ─── Location dropdown (LocationAutocomplete) ─────────────────────────────
+
+/// The [LocationAutocomplete] labelled [label]. Matched on the widget rather
+/// than on its rendered label text: the field's own contents are rendered as
+/// text too, so a plain text finder happily matches the wrong thing.
+Finder _locationField(String label) => find.byWidgetPredicate(
+  (w) => w is LocationAutocomplete && w.label == label,
+  description: 'location field labelled "$label"',
+);
+
+/// Tap the dropdown's trailing arrow to open the option list.
+///
+/// The arrow is the whole point of the scenario: it used to be a bare icon
+/// that only requested focus, so on a pre-filled field it did nothing
+/// visible. It is now the DropdownMenu trailing button — the only
+/// IconButton the field renders.
+Future<void> openLocationDropdown(WidgetTester tester, String label) async {
+  final field = _locationField(label);
+  await waitFor(tester, field);
+  final arrow = find.descendant(of: field, matching: find.byType(IconButton));
+  expect(
+    arrow,
+    findsOneWidget,
+    reason:
+        'the "$label" dropdown has no trailing button to tap — '
+        'LocationAutocomplete changed and the harness needs updating',
+  );
+  await tester.tap(arrow);
+  await settle(tester);
+}
+
+/// Pick [value] from the open option list. Scoped to the menu entry so it
+/// cannot match the same text sitting in a field behind the menu.
+Future<void> pickLocationOption(WidgetTester tester, String value) async {
+  final option = find.widgetWithText(MenuItemButton, value);
+  await waitFor(tester, option);
+  await tester.tap(option.first);
+  await settle(tester);
+}
+
+/// Assert the location field labelled [label] now holds [value].
+Future<void> expectLocationFieldValue(
+  WidgetTester tester,
+  String label,
+  String value,
+) async {
+  final field = _locationField(label);
+  await waitFor(tester, field);
+  final input = find.descendant(of: field, matching: find.byType(TextField));
+  expect(tester.widget<TextField>(input.first).controller?.text, value);
+}
+
 // ─── Bottom "Olen perillä" button ─────────────────────────────────────────
 
 /// Taps the bottom-anchored "Olen perillä" FilledButton (the second one in
@@ -1473,11 +1618,12 @@ void deferFirstReminderFarOut() {
   );
 }
 
-/// Simulate the live [LocationService]'s 30-second proximity Timer firing
-/// "you're near the home zone". Invokes whatever callback BackgroundService
-/// registered with `startMonitoringDestination`, exercising the trip-active
-/// gate that prevents post-arrival reminders.
-Future<void> simulateNearHomeProximity(WidgetTester tester) async {
+/// Simulate the live [LocationService]'s 30-second proximity Timer deciding
+/// "we have arrived". Invokes whatever callback BackgroundService registered
+/// with `startMonitoringDestination`, exercising the trip-active gate that
+/// prevents post-arrival reminders — and only that gate: the decision itself
+/// is what [driverReachesDestination] covers.
+Future<void> simulateArrivalReported(WidgetTester tester) async {
   await _fakeLocation.triggerNearHome();
   await tester.pump(const Duration(milliseconds: 50));
 }

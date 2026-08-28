@@ -3,7 +3,6 @@ import 'dart:io' show Platform;
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
-import '../models/app_settings.dart';
 import '../models/location_zone.dart';
 import 'database_service.dart';
 import 'log_service.dart';
@@ -177,6 +176,49 @@ class LocationService {
     }
     matches.sort((a, b) => a.distanceMeters.compareTo(b.distanceMeters));
     return matches;
+  }
+
+  /// Metres of grace beyond a zone's own radius before a fix counts as
+  /// having arrived. A zone is a point with a radius, not a car park.
+  static const double arrivalGraceMeters = 200;
+
+  /// The known place called [destination], or null when the trip is heading
+  /// somewhere the app has never learned.
+  static LocationZone? destinationZone(
+    List<LocationZone> zones,
+    String destination,
+  ) {
+    final target = destination.trim().toLowerCase();
+    if (target.isEmpty) return null;
+    for (final zone in zones) {
+      if (zone.name.trim().toLowerCase() == target) return zone;
+    }
+    return null;
+  }
+
+  /// Whether a fix at [latitude]/[longitude] counts as arriving at
+  /// [destination].
+  ///
+  /// Matched against the destination the trip is actually heading for — not
+  /// against home, and not against every place the driver has ever been. The
+  /// first would mean a trip to work never gets a proximity reminder at all;
+  /// the second would end that trip at the shop on the way, now that places
+  /// are learned automatically rather than curated by hand.
+  static bool hasArrivedAt(
+    List<LocationZone> zones,
+    String destination,
+    double latitude,
+    double longitude,
+  ) {
+    final zone = destinationZone(zones, destination);
+    if (zone == null) return false;
+    final distance = haversineDistance(
+      latitude,
+      longitude,
+      zone.latitude,
+      zone.longitude,
+    );
+    return distance <= zone.radiusMeters + arrivalGraceMeters;
   }
 
   /// The known locations the driver is at right now, nearest first.
@@ -362,17 +404,15 @@ class LocationService {
     );
   }
 
-  /// Start watching GPS for arrival at [destinationName]. When the
-  /// proximity check sees us inside the home zone, [onNearHome] is invoked
-  /// with the target destination. The decision to actually show a
-  /// notification lives with the caller (typically [BackgroundService]),
-  /// which gates on whether a trip is still active — without that gate
-  /// the timer would re-post "Oletko perillä?" every 30 s long after the
-  /// trip ended.
+  /// Start watching GPS for arrival at [destinationName]. When the proximity
+  /// check sees us inside that destination's zone, [onArrived] is invoked
+  /// with it. The decision to actually show a notification lives with the
+  /// caller (typically [BackgroundService]), which gates on whether a trip is
+  /// still active — without that gate the timer would re-post "Oletko
+  /// perillä?" every 30 s long after the trip ended.
   Future<void> startMonitoringDestination(
     String destinationName,
-    AppSettings settings,
-    Future<void> Function(String destination) onNearHome,
+    Future<void> Function(String destination) onArrived,
   ) async {
     if (_isMonitoring) await stopMonitoring();
 
@@ -413,32 +453,9 @@ class LocationService {
       final pos = _currentPosition;
       if (pos == null) return;
 
-      final homeLocation = settings.homeLocation.trim().toLowerCase();
-      final target = _targetLocation!.trim().toLowerCase();
-
-      if (target != homeLocation) return;
-
-      // Check if we're near the home zone
       final zones = await DatabaseService.getAllLocationZones();
-      bool nearHome = false;
-      for (final zone in zones) {
-        if (zone.name.trim().toLowerCase() == homeLocation) {
-          final dist = haversineDistance(
-            pos.latitude,
-            pos.longitude,
-            zone.latitude,
-            zone.longitude,
-          );
-          if (dist <= zone.radiusMeters + 200) {
-            // a bit of grace
-            nearHome = true;
-            break;
-          }
-        }
-      }
-
-      if (nearHome) {
-        await onNearHome(_targetLocation!);
+      if (hasArrivedAt(zones, _targetLocation!, pos.latitude, pos.longitude)) {
+        await onArrived(_targetLocation!);
       }
     });
   }

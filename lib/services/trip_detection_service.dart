@@ -22,6 +22,11 @@ class TripDetectionService {
   StreamSubscription<Position>? _positionStream;
   Timer? _speedCheckTimer;
 
+  /// Whether the driver wants the app watching for the start of a drive at
+  /// all (Settings → Ajontunnistus). Held here rather than checked at each
+  /// call site so "switched off" cannot be forgotten by one of them.
+  bool _enabled = true;
+
   DetectionState get state => _detector.state;
 
   void Function()? onStartTripRequested;
@@ -31,16 +36,28 @@ class TripDetectionService {
     required LocationService locationService,
     required NotificationService notificationService,
     DetectionConfig config = const DetectionConfig(),
-  })  : _locationService = locationService,
-        _notificationService = notificationService,
-        _detector = DrivingDetector(config: config);
+  }) : _locationService = locationService,
+       _notificationService = notificationService,
+       _detector = DrivingDetector(config: config);
 
-  /// Apply the user's auto-detection thresholds (Settings → Ajontunnistus).
+  /// Apply the user's auto-detection preferences (Settings → Ajontunnistus):
+  /// whether to detect at all, and how sensitively.
   ///
   /// Safe to call at any time, including mid-monitoring: the detector keeps
   /// its counters in seconds, so the new thresholds are simply what the next
   /// check cycle measures against.
   void updateSettings(AppSettings settings) {
+    if (settings.autoDetect != _enabled) {
+      _enabled = settings.autoDetect;
+      LogService().info(
+        'TripDetection: auto-detection '
+        '${_enabled ? 'enabled' : 'disabled'} by settings',
+      );
+      // Switching it off has to take effect now, not at the next trip: the
+      // whole point is to stop holding a position stream open.
+      if (!_enabled) stop();
+    }
+
     final next = detectionConfigFrom(settings);
     if (next.highSpeed == _detector.config.highSpeed &&
         next.drivingAfterSeconds == _detector.config.drivingAfterSeconds &&
@@ -70,6 +87,7 @@ class TripDetectionService {
       );
 
   Future<void> start() async {
+    if (!_enabled) return;
     if (_detector.state != DetectionState.idle) return;
 
     final hasPerm = await _locationService.hasPermissionGranted();
@@ -84,19 +102,20 @@ class TripDetectionService {
     // timeLimit makes the stream throw TimeoutException every time that
     // happens. onError tears monitoring down cleanly instead of leaking
     // an unhandled async error.
-    _positionStream = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 50,
-      ),
-    ).listen(
-      (p) => _detector.onSample(p.speed),
-      onError: (Object e) {
-        LogService().info('TripDetection: position stream error: $e');
-        stop();
-      },
-      cancelOnError: true,
-    );
+    _positionStream =
+        Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 50,
+          ),
+        ).listen(
+          (p) => _detector.onSample(p.speed),
+          onError: (Object e) {
+            LogService().info('TripDetection: position stream error: $e');
+            stop();
+          },
+          cancelOnError: true,
+        );
 
     _speedCheckTimer = Timer.periodic(
       Duration(seconds: _detector.config.sampleIntervalSeconds),

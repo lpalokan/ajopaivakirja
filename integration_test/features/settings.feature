@@ -86,3 +86,19 @@ Feature: Settings
     And I drag the {'detection_arrival'} slider to its {'maximum'}
     And I save settings
     Then the {'detection_arrival_seconds'} setting is {'180'}
+
+  Scenario: Auto-detection is on to begin with
+    When I open settings
+    Then I see {'Tunnista ajo automaattisesti'}
+    And I see text containing {'18 km/h'}
+
+  Scenario: Auto-detection can be switched off
+    When I open settings
+    And I toggle {'Tunnista ajo automaattisesti'}
+    And I save settings
+    Then the {'auto_detect'} setting is {'0'}
+
+  Scenario: Switching auto-detection off hides its thresholds
+    When I open settings
+    And I toggle {'Tunnista ajo automaattisesti'}
+    Then I do not see text containing {'18 km/h'}

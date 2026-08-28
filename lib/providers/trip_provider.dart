@@ -304,7 +304,6 @@ class TripNotifier extends StateNotifier<TripState> {
     _ref.read(tripDetectionServiceProvider).stop();
 
     final backgroundService = _ref.read(backgroundServiceProvider);
-    backgroundService.updateSettings(_settings);
 
     TripLeg leg;
     if (route != null) {
@@ -399,6 +398,14 @@ class TripNotifier extends StateNotifier<TripState> {
 
     final visionService = _ref.read(odometerVisionServiceProvider);
 
+    // Free driving ends wherever the driver happens to be, and GPS has
+    // already worked out whether that is somewhere they know. Offering the
+    // name saves them typing it; it is only an offer, and what they type
+    // wins.
+    final arrivedAt = isAdHoc
+        ? _ref.read(currentPositionProvider).placeName
+        : null;
+
     final result = await showOdometerDialog(
       context: context,
       title: 'Olen perillä',
@@ -413,6 +420,7 @@ class TripNotifier extends StateNotifier<TripState> {
       initialTime: DateTime.now(),
       timeLabel: 'Päättymisaika',
       locationLabel: isAdHoc ? 'Määränpää' : null,
+      initialLocation: arrivedAt,
       locationSuggestions: suggestions,
       relatedField: isAdHoc ? 'Tarkoitus' : null,
       initialPurpose: isAdHoc ? active.purpose : null,
@@ -628,6 +636,7 @@ class TripNotifier extends StateNotifier<TripState> {
         sheetId: plan.target.id,
         sheetTab: settings.sheetTab,
         deletedLegIds: plan.deletedLegIds,
+        allowanceDays: await DatabaseService.getAllowanceDaysWithoutLegs(),
         onSynced: (legId) => DatabaseService.markLegSynced(legId),
       );
       if (plan.deletedLegIds.isNotEmpty) {

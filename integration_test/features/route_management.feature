@@ -45,3 +45,10 @@ Feature: Route management
     When I add route {'Varikko'} from {'Koti'} to {'Varikko'} of {12} km
     And I go back
     Then I see {'Varikko'}
+
+  Scenario: The dropdown arrow lists known locations even when the field is filled
+    When I open routes
+    And I swipe {'Töihin'} right
+    And I open the {'Lähtöpaikka'} location dropdown
+    And I pick {'Työ'} from the location dropdown
+    Then the {'Lähtöpaikka'} field shows {'Työ'}

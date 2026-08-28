@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:kilometrikorvaus/models/app_settings.dart';
 import 'package:kilometrikorvaus/services/location_service.dart';
 
 /// [LocationService] with the two platform touch points replaced: the
@@ -184,11 +183,7 @@ void main() {
     test(
       'opens the trip stream with the foreground-service settings',
       () async {
-        await service.startMonitoringDestination(
-          'Koti',
-          const AppSettings(),
-          (_) async {},
-        );
+        await service.startMonitoringDestination('Koti', (_) async {});
 
         expect(service.openCount, 1);
         expect(service.settingsUsed, isNotNull);
@@ -206,11 +201,7 @@ void main() {
       final seen = <Position>[];
       final sub = service.positionStream.listen(seen.add);
 
-      await service.startMonitoringDestination(
-        'Koti',
-        const AppSettings(),
-        (_) async {},
-      );
+      await service.startMonitoringDestination('Koti', (_) async {});
       feed.add(_fix(speed: 25.0));
       feed.add(_fix(speed: 24.0));
       await Future<void>.delayed(Duration.zero);
@@ -223,11 +214,7 @@ void main() {
       final seen = <Position>[];
       final sub = service.positionStream.listen(seen.add);
 
-      await service.startMonitoringDestination(
-        'Koti',
-        const AppSettings(),
-        (_) async {},
-      );
+      await service.startMonitoringDestination('Koti', (_) async {});
       await service.stopMonitoring();
       feed.add(_fix());
       await Future<void>.delayed(Duration.zero);
@@ -242,16 +229,8 @@ void main() {
     });
 
     test('restarting monitoring does not leak the previous stream', () async {
-      await service.startMonitoringDestination(
-        'Koti',
-        const AppSettings(),
-        (_) async {},
-      );
-      await service.startMonitoringDestination(
-        'Työ',
-        const AppSettings(),
-        (_) async {},
-      );
+      await service.startMonitoringDestination('Koti', (_) async {});
+      await service.startMonitoringDestination('Työ', (_) async {});
 
       expect(service.openCount, 2);
       expect(service.isMonitoring, isTrue);
