@@ -9,6 +9,7 @@ import 'services/background_service.dart';
 import 'services/sheets_service.dart';
 import 'services/odometer_vision_service.dart';
 import 'services/file_opener_service.dart';
+import 'services/bluetooth_trigger_service.dart';
 import 'services/update_service.dart';
 
 final notificationServiceProvider = Provider<NotificationService>((ref) {
@@ -46,6 +47,14 @@ final odometerVisionServiceProvider = Provider<OdometerVisionService>((ref) {
 
 final fileOpenerServiceProvider = Provider<FileOpenerService>((ref) {
   return FileOpenerService();
+});
+
+/// The car-Bluetooth reminder settings. Overridden in the integration suite
+/// so a scenario can present a paired car without one.
+final bluetoothTriggerServiceProvider = Provider<BluetoothTriggerService>((
+  ref,
+) {
+  return BluetoothTriggerService();
 });
 
 final updateServiceProvider = Provider<UpdateService>((ref) {

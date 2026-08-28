@@ -10,6 +10,7 @@ import '../providers/settings_provider.dart';
 import '../providers/update_check_provider.dart';
 import '../app_version.dart';
 import '../services/database_service.dart';
+import '../services/bluetooth_trigger_service.dart';
 import '../services/decimal_input.dart';
 import '../services/log_service.dart';
 import '../services/sheets_service.dart';
@@ -25,6 +26,10 @@ class SettingsScreen extends ConsumerStatefulWidget {
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
+/// Sentinel for the dropdown's "off" item: DropdownButtonFormField cannot
+/// carry a null value alongside non-null ones without losing the selection.
+const String _noTriggerValue = '';
+
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _formKey = GlobalKey<FormState>();
   final _homeController = TextEditingController();
@@ -33,6 +38,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _allowance10hController = TextEditingController();
   final _sheetTabController = TextEditingController();
   final _driverController = TextEditingController();
+
+  /// The car-Bluetooth reminder. Held in local state and written straight
+  /// through on selection rather than on "Tallenna": it is stored natively,
+  /// where [CarBluetoothReceiver] can read it without a Flutter engine, so it
+  /// does not travel with the rest of the form.
+  List<PairedDevice> _pairedDevices = const [];
+  String? _triggerAddress;
+  bool _bluetoothSupported = false;
+  bool _bluetoothPermitted = false;
 
   bool _saving = false;
   bool _signingIn = false;
@@ -58,8 +72,48 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _sheetTabController.text = settings.sheetTab;
     _driverController.text = settings.driverName;
     _checkSignIn();
+    _loadBluetooth();
     _loadKmRates();
     _loadZones();
+  }
+
+  Future<void> _loadBluetooth() async {
+    final bt = ref.read(bluetoothTriggerServiceProvider);
+    final supported = await bt.isSupported();
+    final permitted = supported && await bt.hasPermission();
+    final devices = permitted
+        ? await bt.pairedDevices()
+        : const <PairedDevice>[];
+    final address = supported ? await bt.triggerAddress() : null;
+    if (!mounted) return;
+    setState(() {
+      _bluetoothSupported = supported;
+      _bluetoothPermitted = permitted;
+      _pairedDevices = devices;
+      _triggerAddress = address;
+    });
+  }
+
+  /// "Nearby devices" is only worth asking for at the moment the driver
+  /// reaches for this setting — it buys nothing anywhere else in the app.
+  Future<void> _grantBluetooth() async {
+    final granted = await ref
+        .read(bluetoothTriggerServiceProvider)
+        .requestPermission();
+    if (!mounted) return;
+    if (granted) {
+      await _loadBluetooth();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Lupa laitteiden hakuun evättiin')),
+      );
+    }
+  }
+
+  Future<void> _chooseTriggerDevice(String? address) async {
+    await ref.read(bluetoothTriggerServiceProvider).setTriggerAddress(address);
+    if (!mounted) return;
+    setState(() => _triggerAddress = address);
   }
 
   Future<void> _loadKmRates() async {
@@ -290,6 +344,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 16),
+            _buildBluetoothCard(context),
+            const SizedBox(height: 16),
             // Vianmääritys
             Card(
               child: Column(
@@ -368,6 +424,100 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
       ),
     );
+  }
+
+  /// Settings → Muistutus Bluetoothista: which paired device's connect and
+  /// disconnect should prompt a trip to be logged.
+  ///
+  /// A car that pairs on ignition is the best start-of-drive signal available
+  /// to the app, and the best-timed one — the driver is looking straight at
+  /// the odometer when it fires. It costs nothing to watch for, which is why
+  /// this exists where GPS auto-detection did not (#51).
+  Widget _buildBluetoothCard(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Muistutus Bluetoothista',
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: theme.colorScheme.primary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Muistuta kirjaamaan ajo, kun auton Bluetooth yhdistyy tai '
+              'yhteys katkeaa',
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            if (!_bluetoothSupported)
+              Text('Laite ei tue Bluetoothia', style: theme.textTheme.bodySmall)
+            else if (!_bluetoothPermitted)
+              // Nothing can be listed without "Nearby devices", so the button
+              // replaces the picker rather than sitting under an empty one.
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Symbols.bluetooth, size: 18),
+                  label: const Text('Salli laitteiden haku'),
+                  onPressed: _grantBluetooth,
+                ),
+              )
+            else
+              DropdownButtonFormField<String>(
+                key: const ValueKey('bluetooth_trigger_device'),
+                initialValue: _knownTriggerAddress,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Laite',
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  const DropdownMenuItem<String>(
+                    value: _noTriggerValue,
+                    child: Text('Ei käytössä'),
+                  ),
+                  for (final device in _pairedDevices)
+                    DropdownMenuItem<String>(
+                      value: device.address,
+                      child: Text(
+                        device.label,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (value) => _chooseTriggerDevice(
+                  value == _noTriggerValue ? null : value,
+                ),
+              ),
+            if (_bluetoothPermitted && _pairedDevices.isEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Ei laitepareja. Yhdistä auto ensin Androidin '
+                'Bluetooth-asetuksissa.',
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The dropdown's current value. A stored address whose device is no longer
+  /// paired is not among the items, and handing DropdownButton a value it has
+  /// no item for throws — so an unpaired car reads as "Ei käytössä" until the
+  /// driver picks again.
+  String get _knownTriggerAddress {
+    final address = _triggerAddress;
+    if (address == null) return _noTriggerValue;
+    return _pairedDevices.any((d) => d.address == address)
+        ? address
+        : _noTriggerValue;
   }
 
   Widget _buildSheetsAuthButton() {

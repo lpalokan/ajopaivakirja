@@ -67,3 +67,21 @@ Feature: Settings
     Then I do not see text containing {'Ajontunnistus'}
     And I do not see text containing {'Tunnista ajo automaattisesti'}
     And I do not see text containing {'Nopeusraja'}
+
+  Scenario: No driving reminder device is chosen to begin with
+    When I open settings
+    Then I see {'Muistutus Bluetoothista'}
+    And I see {'Ei käytössä'}
+
+  Scenario: Choosing the car that triggers driving reminders
+    Given the phone is paired with {'Auton handsfree'}
+    When I open settings
+    And I choose {'Auton handsfree'} as the reminder device
+    Then the reminder device is {'Auton handsfree'}
+
+  Scenario: The Bluetooth reminder can be switched back off
+    Given the phone is paired with {'Auton handsfree'}
+    When I open settings
+    And I choose {'Auton handsfree'} as the reminder device
+    And I choose {'Ei käytössä'} as the reminder device
+    Then no reminder device is set

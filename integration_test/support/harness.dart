@@ -31,6 +31,7 @@ import 'package:kilometrikorvaus/providers/trip_provider.dart';
 import 'package:kilometrikorvaus/providers/update_check_provider.dart';
 import 'package:kilometrikorvaus/services/activity_recognition_service.dart';
 import 'package:kilometrikorvaus/services/background_service.dart';
+import 'package:kilometrikorvaus/services/bluetooth_trigger_service.dart';
 import 'package:kilometrikorvaus/services/database_service.dart';
 import 'package:kilometrikorvaus/services/file_opener_service.dart';
 import 'package:kilometrikorvaus/services/location_service.dart';
@@ -114,6 +115,34 @@ class _FakeActivityRecognitionService extends ActivityRecognitionService {
   }
 }
 
+/// Stands in for the platform channel behind the car-Bluetooth reminder.
+/// There is no Bluetooth on the emulator, so a scenario says which devices
+/// the phone is "paired" with and this answers accordingly.
+class _FakeBluetoothTriggerService extends BluetoothTriggerService {
+  final List<PairedDevice> paired = [];
+  String? address;
+
+  @override
+  Future<bool> isSupported() async => true;
+
+  @override
+  Future<bool> hasPermission() async => true;
+
+  @override
+  Future<bool> requestPermission() async => true;
+
+  @override
+  Future<List<PairedDevice>> pairedDevices() async => List.of(paired);
+
+  @override
+  Future<String?> triggerAddress() async => address;
+
+  @override
+  Future<void> setTriggerAddress(String? value) async {
+    address = value;
+  }
+}
+
 class _FakeUpdateService extends UpdateService {
   /// `null` → checkForUpdate returns null (i.e. "up to date").
   /// non-null → returned verbatim from checkForUpdate.
@@ -159,6 +188,7 @@ _FakeNotificationService _fakeNotification = _FakeNotificationService();
 _FakeActivityRecognitionService _fakeActivity =
     _FakeActivityRecognitionService();
 _FakeUpdateService _fakeUpdate = _FakeUpdateService();
+_FakeBluetoothTriggerService _fakeBluetooth = _FakeBluetoothTriggerService();
 
 // Fake configuration a scenario sets BEFORE `the app is running`.
 //
@@ -654,6 +684,7 @@ Future<void> launchApp(WidgetTester tester) async {
   _fakeNotification = _FakeNotificationService();
   _fakeActivity = _FakeActivityRecognitionService();
   _fakeUpdate = _FakeUpdateService();
+  _fakeBluetooth = _FakeBluetoothTriggerService();
   _fakeSheets = _FakeSheetsService();
   // Carry over anything a Given set before the app was launched.
   if (_pendingUpdateMode != null) _applyUpdateServiceMode(_pendingUpdateMode!);
@@ -673,6 +704,7 @@ Future<void> launchApp(WidgetTester tester) async {
         ),
         fileOpenerServiceProvider.overrideWithValue(_fakeFileOpener),
         updateServiceProvider.overrideWithValue(_fakeUpdate),
+        bluetoothTriggerServiceProvider.overrideWithValue(_fakeBluetooth),
       ],
       child: const KilometrikorvausApp(),
     ),
@@ -1485,6 +1517,59 @@ Future<void> expectCsvPaysEveryTravelDay(WidgetTester tester) async {
       reason: 'travel day ${allowance.date} is missing from the CSV\n$content',
     );
   }
+}
+
+// ─── Car-Bluetooth reminder ───────────────────────────────────────────────
+
+/// Pretend the phone is already paired with [name]. Pairing happens in
+/// Android's own settings in real life; the app only reads the list back.
+void addPairedDevice(String name) {
+  _fakeBluetooth.paired.add(
+    PairedDevice(
+      address: '00:11:22:33:44:${(_fakeBluetooth.paired.length + 10)}',
+      name: name,
+    ),
+  );
+}
+
+Finder get _bluetoothDeviceDropdown =>
+    find.byKey(const ValueKey('bluetooth_trigger_device'));
+
+/// Pick [label] in Settings → Muistutus Bluetoothista. "Ei käytössä" is the
+/// off item, so the same step covers switching the reminders back off.
+Future<void> chooseReminderDevice(WidgetTester tester, String label) async {
+  await scrollIntoView(tester, _bluetoothDeviceDropdown);
+  await waitFor(tester, _bluetoothDeviceDropdown);
+  await tester.tap(_bluetoothDeviceDropdown);
+  await settle(tester);
+  // The menu renders a second copy of the selected item's text over the
+  // field, so take the last match: the one inside the open menu.
+  final option = find.text(label);
+  await waitFor(tester, option);
+  await tester.tap(option.last);
+  await settle(tester);
+}
+
+/// Assert which device is stored as the trigger, by name. The stored value is
+/// an address, so this resolves it through the paired list — an address is
+/// not something a scenario should have to know.
+void expectReminderDevice(String? label) {
+  final address = _fakeBluetooth.address;
+  if (label == null) {
+    expect(
+      address,
+      isNull,
+      reason: 'expected no reminder device, but $address is stored',
+    );
+    return;
+  }
+  final device = _fakeBluetooth.paired.firstWhere(
+    (d) => d.address == address,
+    orElse: () => throw TestFailure(
+      'stored trigger address $address matches no paired device',
+    ),
+  );
+  expect(device.label, label);
 }
 
 // ─── Location dropdown (LocationAutocomplete) ─────────────────────────────

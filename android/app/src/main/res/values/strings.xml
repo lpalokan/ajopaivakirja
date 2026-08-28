@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Strings for the Bluetooth driving reminders. These live in Android
+  resources rather than in the Dart layer because CarBluetoothReceiver posts
+  its notification with no Flutter engine running: when the car connects,
+  there is usually no Dart to ask.
+-->
+<resources>
+    <string name="bt_channel_name">Ajomuistutukset</string>
+    <string name="bt_channel_description">Muistuttaa kirjaamaan ajon, kun auton Bluetooth yhdistyy tai katkeaa</string>
+
+    <string name="bt_start_title">Aloititko ajon?</string>
+    <string name="bt_start_text">Auto yhdistyi. Kirjaa lähtömittari nyt, kun se on edessäsi.</string>
+
+    <string name="bt_stop_title">Päättyikö ajo?</string>
+    <string name="bt_stop_text">Auton yhteys katkesi. Kirjaa mittarilukema perillä.</string>
+</resources>

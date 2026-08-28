@@ -65,6 +65,16 @@ codebase — they name the concepts behind good seams.
   A periodic check fires a "have you arrived?" notification once the driver
   is within range of the trip's own destination.
 
+- **Bluetooth reminder** — The driver picks one paired device in Settings →
+  Muistutus Bluetoothista, usually the car. When it connects or disconnects,
+  a native `BroadcastReceiver` posts a reminder to log the trip. Costs
+  nothing to run: `ACL_CONNECTED` / `ACL_DISCONNECTED` are exempt from the
+  API 26+ implicit-broadcast restrictions, so Android starts the process to
+  deliver them with no service, wake lock or GPS involved — and the prompt
+  arrives while the driver is still sitting in front of the odometer. The
+  chosen address is stored natively (`BluetoothTriggerStore`) because the
+  receiver reads it with no Flutter engine running.
+
   There is deliberately **no automatic trip detection**. It existed, and it
   only ever worked while the app was open on screen: without a foreground
   service Android stops delivering location to a `whileInUse` app the moment
