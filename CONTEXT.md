@@ -75,6 +75,18 @@ codebase — they name the concepts behind good seams.
   chosen address is stored natively (`BluetoothTriggerStore`) because the
   receiver reads it with no Flutter engine running.
 
+  A prompt only appears when it still asks for something: no "Aloititko
+  ajon?" if a trip is already open, no "Päättyikö ajo?" if none is, and
+  nothing at all on Saturday or Sunday — this is a work-mileage log, and a
+  weekend errand prompt only teaches the driver to swipe reminders away.
+  Whether a trip is open is knowledge only Dart has, so `TripNotifier`
+  mirrors it into the same native store on every start, arrival, cancel and
+  load; the judgement itself lives in `CarReminderPolicy`, kept free of
+  Android types because an emulator has no Bluetooth and the receiver around
+  it cannot be exercised by the test suite. Acting in the app also clears the
+  reminder it makes moot, so a prompt never sits in the shade asking for
+  something already done.
+
   There is deliberately **no automatic trip detection**. It existed, and it
   only ever worked while the app was open on screen: without a foreground
   service Android stops delivering location to a `whileInUse` app the moment

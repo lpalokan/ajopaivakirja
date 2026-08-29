@@ -433,6 +433,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// to the app, and the best-timed one — the driver is looking straight at
   /// the odometer when it fires. It costs nothing to watch for, which is why
   /// this exists where GPS auto-detection did not (#51).
+  ///
+  /// The conditions are stated in the card because they are invisible
+  /// otherwise: a driver who runs an errand on Saturday and gets no prompt
+  /// should be able to see that this is the rule and not a fault.
   Widget _buildBluetoothCard(BuildContext context) {
     final theme = Theme.of(context);
     return Card(
@@ -449,8 +453,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              'Muistuta kirjaamaan ajo, kun auton Bluetooth yhdistyy tai '
-              'yhteys katkeaa',
+              'Muistuta arkisin kirjaamaan ajo, kun auton Bluetooth '
+              'yhdistyy tai yhteys katkeaa. Muistutus jää väliin, jos ajo on '
+              'jo aloitettu tai päätetty sovelluksessa.',
               style: theme.textTheme.bodySmall,
             ),
             const SizedBox(height: 8),

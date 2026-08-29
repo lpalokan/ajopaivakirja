@@ -13,6 +13,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import java.util.Calendar
 
 /**
  * Reminds the driver to start or stop the trip log when the car's Bluetooth
@@ -34,6 +35,11 @@ import androidx.core.content.ContextCompat
  * flutter_local_notifications because when the car connects there may be no
  * Flutter engine at all. Tapping it opens the app, where "Aloita ajo" and
  * "Olen perillä" already live.
+ *
+ * Whether a prompt is worth showing is [CarReminderPolicy]'s call — it holds
+ * the whole of the judgement (already started, already finished, weekend) in
+ * one Android-free place, because none of this file can be exercised from the
+ * test suite: an emulator has no Bluetooth to connect.
  */
 class CarBluetoothReceiver : BroadcastReceiver() {
 
@@ -45,14 +51,26 @@ class CarBluetoothReceiver : BroadcastReceiver() {
         val address = device?.address ?: return
         if (!address.equals(watched, ignoreCase = true)) return
 
-        when (action) {
-            BluetoothDevice.ACTION_ACL_CONNECTED -> notify(
+        val connected = when (action) {
+            BluetoothDevice.ACTION_ACL_CONNECTED -> true
+            BluetoothDevice.ACTION_ACL_DISCONNECTED -> false
+            else -> return
+        }
+
+        val reminder = CarReminderPolicy.reminderFor(
+            connected = connected,
+            tripActive = BluetoothTriggerStore.isTripActive(context),
+            dayOfWeek = Calendar.getInstance().get(Calendar.DAY_OF_WEEK),
+        ) ?: return
+
+        when (reminder) {
+            CarReminder.START -> notify(
                 context,
                 CONNECTED_NOTIFICATION_ID,
                 context.getString(R.string.bt_start_title),
                 context.getString(R.string.bt_start_text),
             )
-            BluetoothDevice.ACTION_ACL_DISCONNECTED -> notify(
+            CarReminder.STOP -> notify(
                 context,
                 DISCONNECTED_NOTIFICATION_ID,
                 context.getString(R.string.bt_stop_title),

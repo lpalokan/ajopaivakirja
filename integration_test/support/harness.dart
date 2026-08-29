@@ -141,6 +141,16 @@ class _FakeBluetoothTriggerService extends BluetoothTriggerService {
   Future<void> setTriggerAddress(String? value) async {
     address = value;
   }
+
+  /// What the app last told the native receiver about an open trip. Null
+  /// means it has never been told — which is also what a receiver reading a
+  /// store the app has not written yet would see.
+  bool? tripActive;
+
+  @override
+  Future<void> setTripActive(bool active) async {
+    tripActive = active;
+  }
 }
 
 class _FakeUpdateService extends UpdateService {
@@ -1548,6 +1558,29 @@ Future<void> chooseReminderDevice(WidgetTester tester, String label) async {
   await waitFor(tester, option);
   await tester.tap(option.last);
   await settle(tester);
+}
+
+/// Forget what the app last told the native side about an open trip, so a
+/// scenario can check that the next load re-asserts it. Stands in for the
+/// app being killed mid-trip and the stored flag going stale.
+void forgetMirroredTripState() {
+  _fakeBluetooth.tripActive = null;
+}
+
+/// Assert what the native car-Bluetooth receiver would read when the car
+/// connects or disconnects. It runs with no Flutter engine and no database,
+/// so this flag is the only thing telling it whether a trip is already open.
+void expectMirroredTripActive(bool expected) {
+  expect(
+    _fakeBluetooth.tripActive,
+    expected,
+    reason: expected
+        ? 'the car reminder was not told a trip is in progress, so '
+              'connecting the car would prompt "Aloititko ajon?" again'
+        : 'the car reminder still thinks a trip is in progress, so '
+              'disconnecting the car would prompt "Päättyikö ajo?" for a '
+              'trip that is already closed',
+  );
 }
 
 /// Assert which device is stored as the trigger, by name. The stored value is
