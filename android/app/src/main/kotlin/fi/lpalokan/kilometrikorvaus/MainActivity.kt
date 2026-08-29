@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.annotation.NonNull
 import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -54,8 +55,30 @@ class MainActivity : FlutterActivity() {
                 result.success(null)
             }
 
+            "setTripActive" -> {
+                val active = call.argument<Boolean>("active") ?: false
+                BluetoothTriggerStore.setTripActive(this, active)
+                clearMootReminder(active)
+                result.success(null)
+            }
+
             else -> result.notImplemented()
         }
+    }
+
+    /**
+     * Take down the reminder the driver has just acted on.
+     *
+     * The prompts are `setAutoCancel(true)`, so an untapped one sits in the
+     * shade until it is swiped: start the trip from the app rather than from
+     * the notification and "Aloititko ajon?" would still be asking. Cancelling
+     * an id that was never posted is a no-op, so this needs no bookkeeping.
+     */
+    private fun clearMootReminder(tripActive: Boolean) {
+        NotificationManagerCompat.from(this).cancel(
+            if (tripActive) CarBluetoothReceiver.CONNECTED_NOTIFICATION_ID
+            else CarBluetoothReceiver.DISCONNECTED_NOTIFICATION_ID
+        )
     }
 
     /**

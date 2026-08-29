@@ -71,11 +71,44 @@ class TripNotifier extends StateNotifier<TripState> {
 
   bool get isDriving => state.activeLeg != null;
 
+  /// What the native car-Bluetooth receiver was last told. Null until the
+  /// first [load], so the launch mirror always goes out.
+  bool? _mirroredTripActive;
+
+  /// Every path that opens or closes a leg — start, ad-hoc start, arrival,
+  /// cancel, the cold-launch hydration in [_promptArrival] — ends in an
+  /// assignment here, so mirroring from the setter is the one place that
+  /// cannot be forgotten when a new path is added.
+  @override
+  set state(TripState value) {
+    super.state = value;
+    _mirrorTripState(value.activeLeg != null);
+  }
+
+  /// Push "a trip is / is not open" to [BluetoothTriggerService], which is
+  /// what the native receiver reads when the car's Bluetooth connects or
+  /// disconnects. Without it the car would prompt "Aloititko ajon?" at a
+  /// driver who has already started, and "Päättyikö ajo?" when there is
+  /// nothing to end.
+  ///
+  /// Best-effort and never awaited: a trip must not fail, or wait, because a
+  /// reminder flag could not be written. Unchanged values are skipped, so the
+  /// steady stream of [TripState] updates costs nothing.
+  void _mirrorTripState(bool active) {
+    if (!mounted || _mirroredTripActive == active) return;
+    _mirroredTripActive = active;
+    unawaited(_ref.read(bluetoothTriggerServiceProvider).setTripActive(active));
+  }
+
   Future<void> load() async {
     final legs = await DatabaseService.getLegsForDate(_today);
     final activeLeg = await DatabaseService.getActiveLeg();
     if (!mounted) return;
 
+    // Forget what the native side was last told so the assignment below
+    // re-asserts it: the app can be killed mid-trip, and the stored flag is
+    // then whatever it was when the process died.
+    _mirroredTripActive = null;
     state = TripState(activeLeg: activeLeg, todayLegs: legs);
   }
 

@@ -275,3 +275,30 @@ Feature: Driving flow
     And GPS reports the vehicle has stopped
     And the reminder backstop elapses
     Then an arrival reminder has been shown
+
+  # The car-Bluetooth reminder decides in native code, with no Flutter engine
+  # and no database, whether to prompt "Aloititko ajon?" or "Päättyikö ajo?".
+  # Whether a trip is open is knowledge only the app has, so it has to be
+  # pushed across as it changes — and re-asserted on every load, because the
+  # app can be killed mid-trip.
+  Scenario: Before any trip the car reminder knows nothing is in progress
+    Then the car reminder knows no trip is in progress
+
+  Scenario: Starting a trip tells the car reminder that driving has begun
+    When I start the {'Töihin'} route at {1000} km
+    Then the car reminder knows a trip is in progress
+
+  Scenario: Arriving tells the car reminder that driving has ended
+    When I start the {'Töihin'} route at {1000} km
+    And I arrive at {1054} km
+    Then the car reminder knows no trip is in progress
+
+  Scenario: A free trip tells the car reminder that driving has begun
+    When I start a free trip at {1000} km
+    Then the car reminder knows a trip is in progress
+
+  Scenario: Reloading re-asserts an open trip to the car reminder
+    When I start the {'Töihin'} route at {1000} km
+    And the car reminder has lost track of the trip
+    And the app returns to the foreground
+    Then the car reminder knows a trip is in progress

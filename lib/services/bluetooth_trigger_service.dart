@@ -84,6 +84,21 @@ class BluetoothTriggerService {
   Future<void> setTriggerAddress(String? address) =>
       _call<void>('setTriggerAddress', {'address': address});
 
+  /// Tell the native side whether a trip is open right now.
+  ///
+  /// The receiver has to decide, with no Flutter engine and no database, which
+  /// of the two prompts is worth showing: "Aloititko ajon?" is noise if the
+  /// driver already tapped Aloita ajo, and "Päättyikö ajo?" is noise if there
+  /// is nothing to end. That is knowledge only the app has, so it is mirrored
+  /// across as it changes — and re-asserted on every load, since the app can
+  /// be killed mid-trip and the flag left stale.
+  ///
+  /// Also clears whichever reminder this makes moot: a "Aloititko ajon?"
+  /// sitting in the shade after the trip has been started is exactly the
+  /// nagging this is meant to remove.
+  Future<void> setTripActive(bool active) =>
+      _call<void>('setTripActive', {'active': active});
+
   /// Every channel call is best-effort: a missing plugin (host tests, iOS, an
   /// older build) must degrade to "not available", never take Settings down.
   Future<T?> _call<T>(String method, [Map<String, Object?>? args]) async {

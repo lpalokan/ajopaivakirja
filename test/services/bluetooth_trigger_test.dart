@@ -131,4 +131,42 @@ void main() {
       expect(await BluetoothTriggerService().triggerAddress(), '00:11:22');
     });
   });
+
+  group('mirroring the trip state', () {
+    // The receiver runs with no Flutter engine and no database, so this flag
+    // is the only way it can tell "the driver already started" from "the
+    // driver still needs reminding".
+    test('a started trip is pushed across as active', () async {
+      final calls = <MethodCall>[];
+      answer((call) {
+        calls.add(call);
+        return null;
+      });
+
+      await BluetoothTriggerService().setTripActive(true);
+
+      expect(calls.single.method, 'setTripActive');
+      expect(calls.single.arguments, {'active': true});
+    });
+
+    test('a finished trip is pushed across as inactive', () async {
+      final calls = <MethodCall>[];
+      answer((call) {
+        calls.add(call);
+        return null;
+      });
+
+      await BluetoothTriggerService().setTripActive(false);
+
+      expect(calls.single.arguments, {'active': false});
+    });
+
+    test('a missing platform does not take the trip down with it', () async {
+      // Mirroring happens on the start/stop path. It failing must never be
+      // able to fail a trip.
+      answer(null);
+
+      await BluetoothTriggerService().setTripActive(true);
+    });
+  });
 }
