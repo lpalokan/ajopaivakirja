@@ -30,10 +30,16 @@ final backgroundServiceProvider = Provider<BackgroundService>((ref) {
   final ns = ref.watch(notificationServiceProvider);
   final ls = ref.watch(locationServiceProvider);
   final ars = ref.watch(activityRecognitionServiceProvider);
+  // The car reminder is a consumer of the trip's GPS, not just a settings
+  // screen: the native receiver has no location of its own, so it learns
+  // that the vehicle is still moving from the same movement signal that
+  // gates "Oletko perillä?".
+  final bt = ref.watch(bluetoothTriggerServiceProvider);
   return BackgroundService(
     notificationService: ns,
     locationService: ls,
     activityService: ars,
+    carReminder: bt,
   );
 });
 

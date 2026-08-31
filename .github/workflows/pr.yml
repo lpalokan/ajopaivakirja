@@ -90,3 +90,12 @@ jobs:
 
       - run: flutter pub get
       - run: ./scripts/build.sh apk --debug
+
+      # CarReminderPolicy's JVM tests. They run here, after the build, because
+      # that is what writes android/local.properties for the Flutter Gradle
+      # plugin. This is the only coverage the car reminder's judgement can
+      # have: an emulator has no Bluetooth, so the receiver around it never
+      # runs in the Gherkin suite.
+      - name: Android unit tests
+        working-directory: android
+        run: ./gradlew :app:testDebugUnitTest

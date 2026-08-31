@@ -154,6 +154,14 @@ class NotificationService {
   static const arrivalReminderId = 2;
   static const scheduledReminderId = 3;
 
+  /// Ids posted by the native `CarBluetoothReceiver`, named here for two
+  /// reasons: they are the ids the ones above must never collide with, and
+  /// they are cancellable from this side — two notifications of one app, so
+  /// either half can take the other down (see [cancelCarStopPrompt]). Kept in
+  /// step with that class's own constants.
+  static const carStartPromptId = 11;
+  static const carStopPromptId = 12;
+
   final FlutterLocalNotificationsPlugin _plugin;
   void Function()? onArrived;
   void Function()? onStillDriving;
@@ -315,6 +323,18 @@ class NotificationService {
 
   Future<void> cancelDrivingNotification() async {
     await _plugin.cancel(drivingNotificationId);
+  }
+
+  /// Take down the car's "Päättyikö ajo?" prompt.
+  ///
+  /// That prompt and "Oletko perillä?" ask the same question by different
+  /// routes — the car's Bluetooth dropping, and the app's own movement gate
+  /// — and they can land within minutes of each other at a genuine arrival.
+  /// Two notifications for one question is the nagging the driver learns to
+  /// swipe away, so whichever speaks last takes the other down. Cancelling
+  /// an id that was never posted is a no-op, so this needs no bookkeeping.
+  Future<void> cancelCarStopPrompt() async {
+    await _plugin.cancel(carStopPromptId);
   }
 
   Future<void> cancelReminders() async {

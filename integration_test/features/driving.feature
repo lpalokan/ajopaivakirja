@@ -302,3 +302,64 @@ Feature: Driving flow
     And the car reminder has lost track of the trip
     And the app returns to the foreground
     Then the car reminder knows a trip is in progress
+
+  # A car's Bluetooth link drops for reasons that are not the ignition going
+  # off, and a dropout mid-drive used to prompt "Päättyikö ajo?" at 100 km/h:
+  # the receiver's only gates were "is a trip open" and "is it a weekday". It
+  # has no GPS of its own and no engine to ask, so the app mirrors when the
+  # vehicle was last measurably moving into the same store it already mirrors
+  # the open trip into.
+  Scenario: Driving speed tells the car reminder the vehicle is moving
+    Given location permission is granted
+    And GPS reports driving speed
+    When I start the {'Töihin'} route at {1000} km
+    Then the car reminder knows the vehicle was recently moving
+
+  Scenario: A trip that never sees driving speed leaves no movement evidence
+    Given location permission is granted
+    When I start the {'Töihin'} route at {1000} km
+    Then the car reminder has no movement evidence
+
+  Scenario: Ending a trip clears the car reminder movement evidence
+    Given location permission is granted
+    And GPS reports driving speed
+    When I start the {'Töihin'} route at {1000} km
+    And I arrive at {1054} km
+    Then the car reminder has no movement evidence
+
+  # One "have you arrived?" at a time. The app's own reminder and the car's
+  # disconnect prompt ask the same question by different routes, and two
+  # notifications for one question is the nagging the driver learns to swipe.
+  Scenario: The app arrival reminder takes down the car stop prompt
+    Given activity recognition reports {'still'}
+    When I start the {'Töihin'} route at {1000} km
+    And the reminder backstop elapses
+    Then the car stop prompt has been dismissed
+
+  # Both car prompts carry a mileage button: the odometer is in front of the
+  # driver at exactly the moment the car connects or disconnects, which is
+  # the whole reason this trigger beats anything the app can infer.
+  Scenario: The car end-mileage button opens the arrival dialog
+    When I start the {'Töihin'} route at {1000} km
+    And the car end-mileage button is tapped
+    Then I see {'Matkamittari perillä (km)'}
+    And I see {'Ajo käynnissä'}
+
+  Scenario: The car end-mileage button does nothing when no trip is open
+    When the car end-mileage button is tapped
+    Then I do not see {'Matkamittari perillä (km)'}
+
+  Scenario: The car start-mileage button opens the start dialog
+    When the car start-mileage button is tapped
+    Then I see {'Matkamittari lähdössä (km)'}
+
+  Scenario: Confirming the car start-mileage dialog begins a trip
+    When the car start-mileage button is tapped
+    And I fill in the start mileage {1000} km
+    Then I see {'Ajo käynnissä'}
+    And the car reminder knows a trip is in progress
+
+  Scenario: The car start-mileage button does nothing while a trip is open
+    When I start the {'Töihin'} route at {1000} km
+    And the car start-mileage button is tapped
+    Then I do not see {'Matkamittari lähdössä (km)'}

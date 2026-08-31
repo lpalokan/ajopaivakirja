@@ -72,6 +72,11 @@ class _FakeNotificationService extends NotificationService {
   Future<void> cancelReminders() async {}
   @override
   Future<void> cancelScheduledReminder() async {}
+
+  @override
+  Future<void> cancelCarStopPrompt() async {
+    cancelledIds.add(NotificationService.carStopPromptId);
+  }
 }
 
 class _FakeActivityRecognitionService extends ActivityRecognitionService {
@@ -150,6 +155,27 @@ class _FakeBluetoothTriggerService extends BluetoothTriggerService {
   @override
   Future<void> setTripActive(bool active) async {
     tripActive = active;
+  }
+
+  /// When the app last told the receiver the vehicle was at driving speed.
+  /// Null is what a receiver reads when the app has nothing to offer, which
+  /// the policy treats as "no evidence" and prompts on.
+  DateTime? drivingEvidenceAt;
+
+  @override
+  Future<void> setDrivingEvidenceAt(DateTime? at) async {
+    drivingEvidenceAt = at;
+  }
+
+  /// A mileage button waiting to be collected, exactly as MainActivity holds
+  /// one between the intent arriving and Dart asking for it.
+  String? pendingAction;
+
+  @override
+  Future<String?> consumePendingAction() async {
+    final action = pendingAction;
+    pendingAction = null;
+    return action;
   }
 }
 
@@ -425,6 +451,7 @@ BackgroundService _buildTestBackgroundService() {
     notificationService: _fakeNotification,
     locationService: _fakeLocation,
     activityService: _fakeActivity,
+    carReminder: _fakeBluetooth,
     reminderStore: _testReminderStore,
     reminderDuration: _testReminderDuration,
     firstReminderDuration: _testFirstReminderDuration,
@@ -1581,6 +1608,82 @@ void expectMirroredTripActive(bool expected) {
               'disconnecting the car would prompt "Päättyikö ajo?" for a '
               'trip that is already closed',
   );
+}
+
+/// Assert that the car reminder has been told the vehicle is moving.
+///
+/// This is what stops a Bluetooth dropout mid-drive being read as an
+/// arrival: the native receiver has no GPS of its own, so without this
+/// mirror every disconnect during an open trip prompts "Päättyikö ajo?".
+void expectCarMovementEvidence(bool expected) {
+  final at = _fakeBluetooth.drivingEvidenceAt;
+  if (expected) {
+    expect(
+      at,
+      isNotNull,
+      reason:
+          'the car reminder was never told the vehicle was moving, so a '
+          'Bluetooth dropout mid-drive would prompt "Päättyikö ajo?"',
+    );
+    return;
+  }
+  expect(
+    at,
+    isNull,
+    reason:
+        'the car reminder is still holding movement evidence ($at); stale '
+        'evidence would silence the disconnect prompt on the next drive',
+  );
+}
+
+/// Assert the app's own arrival reminder took the car's disconnect prompt
+/// down. Both ask whether the driver has arrived, and two notifications for
+/// one question is the nagging the reminder is meant to remove.
+void expectCarStopPromptDismissed() {
+  expect(
+    _fakeNotification.cancelledIds,
+    contains(NotificationService.carStopPromptId),
+    reason:
+        'showing "Oletko perillä?" left the car\'s "Päättyikö ajo?" in the '
+        'shade, so the driver is asked the same question twice',
+  );
+}
+
+/// Simulate the driver tapping a mileage button on a car reminder.
+///
+/// The tap arrives as an Activity intent extra rather than a notification
+/// response — the prompt is posted by native code with no Flutter engine —
+/// so the production path is: MainActivity holds it, TripNotifier collects
+/// it on the next launch or resume. That collection is what this drives.
+Future<void> tapCarMileageButton(WidgetTester tester, String action) async {
+  _fakeBluetooth.pendingAction = action;
+  final scopeContext = tester.element(find.byType(KilometrikorvausApp));
+  final container = ProviderScope.containerOf(scopeContext, listen: false);
+  // Deliberately NOT awaited, exactly as HomeScreen invokes it: the presenter
+  // it dispatches to opens a modal dialog and does not return until the
+  // driver answers it, so awaiting here would deadlock the scenario against
+  // the dialog it is about to interact with.
+  unawaited(container.read(tripProvider.notifier).consumeCarReminderAction());
+  await settle(tester);
+}
+
+/// Fill in and confirm the start dialog the car's connect prompt opens.
+/// The StartCard behind it carries an "Aloita ajo" button of its own, so the
+/// tap is scoped to the dialog.
+Future<void> fillStartDialog(WidgetTester tester, int odometer) async {
+  final field = find.ancestor(
+    of: find.text('Matkamittari lähdössä (km)'),
+    matching: find.byType(TextField),
+  );
+  await waitFor(tester, field);
+  await tester.enterText(field, '$odometer');
+  final confirm = find.descendant(
+    of: find.byType(AlertDialog),
+    matching: find.widgetWithText(FilledButton, 'Aloita ajo'),
+  );
+  await waitFor(tester, confirm);
+  await tester.tap(confirm.first);
+  await settle(tester);
 }
 
 /// Assert which device is stored as the trigger, by name. The stored value is

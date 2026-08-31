@@ -87,6 +87,36 @@ codebase — they name the concepts behind good seams.
   reminder it makes moot, so a prompt never sits in the shade asking for
   something already done.
 
+  A disconnect is only an arrival if the car has actually stopped. Head units
+  drop the link for their own reasons, and gating on "is a trip open" alone
+  put "Päättyikö ajo?" on screen at road speed — the same false prompt the
+  app's own movement gate exists to prevent, arriving by a route that gate
+  could not see. So the same evidence gates both: `BackgroundService` mirrors
+  the moment of the last GPS fix at driving speed into `BluetoothTriggerStore`
+  (throttled, since the receiver only compares it against a tens-of-seconds
+  window), and `CarReminderPolicy` holds the stop prompt while it is fresh.
+  No evidence at all — GPS unavailable, permission denied — prompts as before:
+  a missing signal must not cost the driver a reminder. A link that drops and
+  comes straight back cancels any prompt that did get out, since the
+  reconnection is the proof it was wrong.
+
+  Only one "have you arrived?" is ever in the shade. The car's stop prompt and
+  the app's own "Oletko perillä?" ask the same question from opposite sides of
+  the same evidence and can land minutes apart at a real arrival, so whichever
+  speaks last takes the other down.
+
+  Both prompts carry a mileage button — "Kirjaa lähtömittari" on connect,
+  "Kirjaa loppumittari" on disconnect — because the timing is the whole point
+  of this trigger and landing the driver on the home screen to hunt for the
+  field spends it. The tap arrives as an Activity intent extra rather than a
+  notification response (there is usually no Flutter engine to receive one);
+  `MainActivity` holds it and `TripNotifier.consumeCarReminderAction` collects
+  it on the next launch or resume, dispatching to the arrival dialog or to a
+  start dialog HomeScreen registers the same way it registers the arrival one.
+  The start button begins a free leg: at ignition-on the odometer is known and
+  the destination usually is not, and the arrival dialog already asks for both.
+  A driver who wants a named route taps the notification body instead.
+
   There is deliberately **no automatic trip detection**. It existed, and it
   only ever worked while the app was open on screen: without a foreground
   service Android stops delivering location to a `whileInUse` app the moment

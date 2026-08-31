@@ -16,6 +16,7 @@ object BluetoothTriggerStore {
     private const val FILE = "car_bluetooth_trigger"
     private const val KEY_ADDRESS = "trigger_address"
     private const val KEY_TRIP_ACTIVE = "trip_active"
+    private const val KEY_DRIVING_EVIDENCE_AT = "driving_evidence_at"
 
     /** The MAC address whose connect/disconnect prompts, or null when off. */
     fun triggerAddress(context: Context): String? =
@@ -41,6 +42,28 @@ object BluetoothTriggerStore {
 
     fun setTripActive(context: Context, active: Boolean) {
         prefs(context).edit().putBoolean(KEY_TRIP_ACTIVE, active).apply()
+    }
+
+    /**
+     * Epoch millis of the last GPS fix at driving speed, or 0 when the app
+     * has nothing to say — no trip, no location permission, or no fix yet.
+     *
+     * Mirrored here by the app's own movement signal (Dart-side
+     * BackgroundService), throttled to a write every few seconds. It lets the
+     * receiver tell a Bluetooth link dropping mid-drive from an ignition
+     * switched off at the destination; without it every dropout during an
+     * open trip looked like an arrival, which is a "Päättyikö ajo?" at road
+     * speed.
+     */
+    fun drivingEvidenceAt(context: Context): Long =
+        prefs(context).getLong(KEY_DRIVING_EVIDENCE_AT, 0L)
+
+    /** Pass null when there is no evidence to offer. */
+    fun setDrivingEvidenceAt(context: Context, millis: Long?) {
+        val edit = prefs(context).edit()
+        if (millis == null) edit.remove(KEY_DRIVING_EVIDENCE_AT)
+        else edit.putLong(KEY_DRIVING_EVIDENCE_AT, millis)
+        edit.apply()
     }
 
     private fun prefs(context: Context): SharedPreferences =

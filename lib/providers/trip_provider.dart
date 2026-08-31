@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 import '../models/route.dart' as model;
 import '../models/trip_leg.dart';
 import '../models/app_settings.dart';
+import '../services/bluetooth_trigger_service.dart';
 import '../services/database_service.dart';
 import '../services/sheets_sync.dart';
 import '../services/trip_calculator.dart';
@@ -55,6 +56,10 @@ class TripNotifier extends StateNotifier<TripState> {
   /// in which case arrival falls back to recording the estimated odometer so
   /// the leg is never left open.
   Future<void> Function()? _arrivalPresenter;
+
+  /// Its start-of-drive counterpart, for the car reminder's
+  /// "Kirjaa lähtömittari" button. See [setStartPresenter].
+  Future<void> Function()? _startPresenter;
 
   TripNotifier(this._ref) : super(const TripState());
 
@@ -311,6 +316,46 @@ class TripNotifier extends StateNotifier<TripState> {
   /// context.
   void setArrivalPresenter(Future<void> Function()? presenter) {
     _arrivalPresenter = presenter;
+  }
+
+  /// Registered by HomeScreen so the car reminder's "Kirjaa lähtömittari"
+  /// can present the start dialog (mileage) on the live screen. Pass null to
+  /// drop a torn-down screen's context.
+  void setStartPresenter(Future<void> Function()? presenter) {
+    _startPresenter = presenter;
+  }
+
+  /// Act on a mileage button tapped on one of the car's Bluetooth reminders.
+  ///
+  /// Those prompts fire when the car connects or disconnects — the one
+  /// moment the odometer is actually in front of the driver — so the button
+  /// goes straight to the number instead of dropping them on the home screen
+  /// to find it. The tap reaches the app as an Activity intent extra rather
+  /// than a notification response: the reminder is posted by native code
+  /// with, usually, no Flutter engine in existence, so there is nothing on
+  /// the Dart side to receive a response. Consumed rather than read, so a
+  /// tap that cold-launched the app fires once and not again on every later
+  /// resume.
+  ///
+  /// Each action is dropped when it asks for something already done — the
+  /// driver may well have acted in the app between the ignition and picking
+  /// the phone up, and a dialog for a trip that is already closed is worse
+  /// than no dialog at all.
+  Future<void> consumeCarReminderAction() async {
+    final action = await _ref
+        .read(bluetoothTriggerServiceProvider)
+        .consumePendingAction();
+    if (action == null || !mounted) return;
+    LogService().info('Bluetooth: car reminder action $action');
+
+    switch (action) {
+      case BluetoothTriggerService.logEndAction:
+        if (state.activeLeg == null) return;
+        await _arrivalPresenter?.call();
+      case BluetoothTriggerService.logStartAction:
+        if (state.activeLeg != null) return;
+        await _startPresenter?.call();
+    }
   }
 
   /// Start a trip (route-based or ad-hoc). Stops auto-detection, creates
