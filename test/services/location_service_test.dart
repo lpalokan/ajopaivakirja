@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
@@ -88,6 +89,42 @@ void main() {
       expect(
         LocationService.tripLocationSettings(android: false).distanceFilter,
         LocationService.tripDistanceFilterMeters,
+      );
+    });
+  });
+
+  group('AndroidManifest', () {
+    /// The manifest is the other half of [tripLocationSettings]: geolocator's
+    /// location foreground service calls `PowerManager.newWakeLock(..).acquire()`
+    /// whenever `enableWakeLock` is set, and without the permission that call
+    /// throws SecurityException from inside the geolocator EventChannel's
+    /// `onListen`. Flutter clears the active event sink when `onListen`
+    /// throws, so the trip position stream then goes permanently silent —
+    /// while the foreground service and its notification carry on looking
+    /// healthy — and "Oletko perillä?" loses the GPS evidence that is the
+    /// only thing keeping it from firing mid-drive.
+    ///
+    /// The permission used to arrive transitively through
+    /// flutter_background_service; dropping that unused dependency (#87) took
+    /// it out of the merged manifest and nothing failed, because no test tied
+    /// the setting to the permission. This is that test.
+    test('declares WAKE_LOCK while the trip settings ask for one', () {
+      final config = (LocationService.tripLocationSettings(android: true)
+              as AndroidSettings)
+          .foregroundNotificationConfig!;
+      if (!config.enableWakeLock) return;
+
+      final manifest = File(
+        'android/app/src/main/AndroidManifest.xml',
+      ).readAsStringSync();
+
+      expect(
+        manifest,
+        contains('android.permission.WAKE_LOCK'),
+        reason:
+            'tripLocationSettings() sets enableWakeLock, so the app manifest '
+            'must declare WAKE_LOCK itself — a plugin that happens to declare '
+            'it can be removed, and the failure is silent (issue #77).',
       );
     });
   });

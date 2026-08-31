@@ -94,6 +94,23 @@
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <!-- Held by geolocator's location foreground service for the duration
+         of a trip (ForegroundNotificationConfig.enableWakeLock in
+         LocationService.tripLocationSettings): without it the system sleeps
+         and delivers a burst of stale fixes on wake, which the reminder's
+         recency check cannot use.
+
+         Declared HERE and not left to a plugin. It used to arrive
+         transitively through flutter_background_service, and dropping that
+         unused dependency (#87) took it out of the merged manifest — after
+         which GeolocatorLocationService.obtainWakeLocks() threw
+         SecurityException inside the geolocator EventChannel's onListen.
+         Flutter clears the active event sink when onListen throws, so the
+         trip position stream went permanently silent while the foreground
+         service and its notification carried on looking healthy, and
+         "Oletko perillä?" lost the GPS evidence that keeps it from firing
+         mid-drive. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <!-- Activity recognition: used to suppress the 5-min "Oletko perillä?"
          reminder while the device reports the user is still in_vehicle. -->
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION"/>
