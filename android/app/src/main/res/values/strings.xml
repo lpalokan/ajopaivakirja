@@ -10,8 +10,10 @@
     <string name="bt_channel_description">Muistuttaa kirjaamaan ajon, kun auton Bluetooth yhdistyy tai katkeaa</string>
 
     <string name="bt_start_title">Aloititko ajon?</string>
+    <string name="bt_start_action">Kirjaa lähtömittari</string>
     <string name="bt_start_text">Auto yhdistyi. Kirjaa lähtömittari nyt, kun se on edessäsi.</string>
 
     <string name="bt_stop_title">Päättyikö ajo?</string>
+    <string name="bt_stop_action">Kirjaa loppumittari</string>
     <string name="bt_stop_text">Auton yhteys katkesi. Kirjaa mittarilukema perillä.</string>
 </resources>

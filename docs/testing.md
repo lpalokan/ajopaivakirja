@@ -11,6 +11,7 @@ document explains how the suite is laid out and how to maintain it.
 | Unit / widget | `test/` | Host Dart VM | `flutter test` |
 | End-to-end (Gherkin) | `integration_test/features/` | Android emulator | `./scripts/integration-report.sh` |
 | Boot smoke | `integration_test/app_smoke_test.dart` | Android emulator | `flutter test integration_test/app_smoke_test.dart` |
+| Native unit | `android/app/src/test/` | Host JVM | `cd android && ./gradlew :app:testDebugUnitTest` |
 
 The Gherkin layer is the **test-case database**: the `.feature` files are
 the authoritative, human-readable catalogue of what the app does.
@@ -20,6 +21,13 @@ Platform *wiring* that the emulator harness fakes away — which
 is pinned by unit tests instead (`test/services/location_service_test.dart`).
 The scenario says what the driver experiences; the unit test says which
 platform call delivers it.
+
+The native layer exists for one reason: an emulator has no Bluetooth, so
+`CarBluetoothReceiver` never runs in the Gherkin suite and the whole of the
+car reminder's judgement — already open? weekend? still moving? — would
+otherwise be untested. `CarReminderPolicy` is deliberately free of Android
+types so it can be exercised on the plain JVM. Run it after a build, which is
+what writes `android/local.properties` for the Flutter Gradle plugin.
 
 ## Directory layout
 
@@ -132,6 +140,10 @@ feature). The suite is run via this aggregator. **When you add a new
 | `Then the reminder device is {string}` / `Then no reminder device is set` | Asserts what was stored as the trigger, resolved from address back to name — a scenario should not have to know a MAC |
 | `Then the car reminder knows a trip is in progress` / `... knows no trip is in progress` | Asserts what the native receiver would read when the car connects. It runs with no Flutter engine and no database, so this mirrored flag is the only thing that can tell it "already started" from "still needs reminding" |
 | `Given the car reminder has lost track of the trip` | Forgets the mirrored flag, standing in for the app being killed mid-trip — so a scenario can check the next load re-asserts it rather than trusting change detection |
+| `Then the car reminder knows the vehicle was recently moving` / `Then the car reminder has no movement evidence` | Asserts the mirrored driving-speed timestamp. It is the only thing that lets the native receiver tell a Bluetooth dropout mid-drive from an ignition switched off at the destination |
+| `Then the car stop prompt has been dismissed` | Asserts the app's own "Oletko perillä?" took the car's "Päättyikö ajo?" down, so one question never produces two notifications |
+| `When the car start-mileage button is tapped` / `When the car end-mileage button is tapped` | Drives the mileage buttons on the car prompts. The real tap arrives as an Activity intent extra, so this feeds the pending action and runs the collection `TripNotifier` does on launch and resume |
+| `And I fill in the start mileage {int} km` | Completes the start dialog the connect prompt opens (the StartCard behind it has an "Aloita ajo" button of its own, so the step is scoped to the dialog) |
 | `Then the {string} setting is {string}` | Asserts a persisted value in the SQLite settings table (deterministic; avoids re-reading a rebuilt screen) |
 | `Given the first GPS fix takes {int} seconds` | Makes the fake location service take its time over the next one-shot fix, the way a cold start on a real phone does. Set it BEFORE `the app is running` to cover startup work that must not queue behind the GPS chip |
 | `When the location service reports arrival at the destination` | Invokes the callback BackgroundService registered with `startMonitoringDestination`, as the live 30-second proximity Timer would. Simulates the *decision* having been made, so the scenario is about BackgroundService's gate — not about whether we really are there |
@@ -172,6 +184,9 @@ flutter test
 
 # Full Gherkin suite headless, when no emulator is available (see below)
 scripts/host-bdd.sh
+
+# Native (Kotlin) unit tests — needs a build first, for local.properties
+flutter build apk --debug && (cd android && ./gradlew :app:testDebugUnitTest)
 ```
 
 The emulator suite also runs in CI via `.github/workflows/integration.yml`

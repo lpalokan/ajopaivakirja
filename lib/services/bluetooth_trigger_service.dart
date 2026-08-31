@@ -99,6 +99,38 @@ class BluetoothTriggerService {
   Future<void> setTripActive(bool active) =>
       _call<void>('setTripActive', {'active': active});
 
+  /// Tell the native side when the vehicle was last measurably moving.
+  ///
+  /// A car's Bluetooth link drops for reasons that are not the ignition
+  /// going off — interference, a profile switch, the head unit sulking — and
+  /// the receiver used to treat every disconnect during an open trip as an
+  /// arrival, which is a "Päättyikö ajo?" at 100 km/h. It has no GPS of its
+  /// own and no engine to ask, so the one thing that can tell a dropout from
+  /// a parked car is mirrored across: the moment of the last fix at driving
+  /// speed. Pass null to clear it (no trip, or no evidence yet), which the
+  /// policy reads as "nothing known" and prompts as before.
+  Future<void> setDrivingEvidenceAt(DateTime? at) =>
+      _call<void>('setDrivingEvidenceAt', {
+        'millis': at?.millisecondsSinceEpoch,
+      });
+
+  /// The mileage button the driver tapped on a car reminder, if any —
+  /// [logStartAction], [logEndAction], or null when the app was opened any
+  /// other way.
+  ///
+  /// Consumed rather than read: the tap has to survive a cold start (the
+  /// reminder fires with no Flutter engine, so the intent lands before Dart
+  /// exists) and must then fire exactly once, not again on every resume.
+  Future<String?> consumePendingAction() =>
+      _call<String>('consumePendingAction');
+
+  /// "Kirjaa lähtömittari" on the connect prompt — the driver is sitting in
+  /// front of the odometer with the engine running.
+  static const logStartAction = 'log_start';
+
+  /// "Kirjaa loppumittari" on the disconnect prompt.
+  static const logEndAction = 'log_end';
+
   /// Every channel call is best-effort: a missing plugin (host tests, iOS, an
   /// older build) must degrade to "not available", never take Settings down.
   Future<T?> _call<T>(String method, [Map<String, Object?>? args]) async {

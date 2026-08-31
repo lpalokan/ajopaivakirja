@@ -57,10 +57,23 @@ class CarBluetoothReceiver : BroadcastReceiver() {
             else -> return
         }
 
+        // A link that drops and comes straight back was interference, not the
+        // ignition. The movement gate below should have stopped the prompt
+        // going out at all, but it only has the evidence the app managed to
+        // mirror — so if one did get posted, the reconnection is the proof it
+        // was wrong, and it goes now rather than sitting in the shade.
+        if (connected) {
+            NotificationManagerCompat.from(context)
+                .cancel(DISCONNECTED_NOTIFICATION_ID)
+        }
+
+        val evidenceAt = BluetoothTriggerStore.drivingEvidenceAt(context)
         val reminder = CarReminderPolicy.reminderFor(
             connected = connected,
             tripActive = BluetoothTriggerStore.isTripActive(context),
             dayOfWeek = Calendar.getInstance().get(Calendar.DAY_OF_WEEK),
+            millisSinceDrivingEvidence =
+                if (evidenceAt <= 0L) null else System.currentTimeMillis() - evidenceAt,
         ) ?: return
 
         when (reminder) {
@@ -69,13 +82,30 @@ class CarBluetoothReceiver : BroadcastReceiver() {
                 CONNECTED_NOTIFICATION_ID,
                 context.getString(R.string.bt_start_title),
                 context.getString(R.string.bt_start_text),
+                context.getString(R.string.bt_start_action),
+                ACTION_LOG_START,
             )
-            CarReminder.STOP -> notify(
-                context,
-                DISCONNECTED_NOTIFICATION_ID,
-                context.getString(R.string.bt_stop_title),
-                context.getString(R.string.bt_stop_text),
-            )
+            CarReminder.STOP -> {
+                // One "have you arrived?" at a time. The app's own
+                // "Oletko perillä?" asks the same question from the other
+                // side of the same evidence, and two notifications for one
+                // question is the nagging the driver learns to swipe away.
+                // Its scheduled backstop goes too: that only ever fires when
+                // the process died mid-trip, which is exactly the case where
+                // this receiver is the one still standing.
+                NotificationManagerCompat.from(context).apply {
+                    cancel(APP_ARRIVAL_REMINDER_ID)
+                    cancel(APP_SCHEDULED_REMINDER_ID)
+                }
+                notify(
+                    context,
+                    DISCONNECTED_NOTIFICATION_ID,
+                    context.getString(R.string.bt_stop_title),
+                    context.getString(R.string.bt_stop_text),
+                    context.getString(R.string.bt_stop_action),
+                    ACTION_LOG_END,
+                )
+            }
         }
     }
 
@@ -87,7 +117,14 @@ class CarBluetoothReceiver : BroadcastReceiver() {
             intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
         }
 
-    private fun notify(context: Context, id: Int, title: String, text: String) {
+    private fun notify(
+        context: Context,
+        id: Int,
+        title: String,
+        text: String,
+        actionLabel: String,
+        action: String,
+    ) {
         // POST_NOTIFICATIONS is asked for by the app itself on first run; if
         // the driver has since revoked it there is nothing to do but skip —
         // notify() would throw.
@@ -102,16 +139,6 @@ class CarBluetoothReceiver : BroadcastReceiver() {
 
         ensureChannel(context)
 
-        val open = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val pending = PendingIntent.getActivity(
-            context,
-            id,
-            open,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_directions)
             .setContentTitle(title)
@@ -119,10 +146,45 @@ class CarBluetoothReceiver : BroadcastReceiver() {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setAutoCancel(true)
-            .setContentIntent(pending)
+            // Body tap: just open the app, where the StartCard and the
+            // active-trip card already are.
+            .setContentIntent(openApp(context, id, null))
+            // Button: go straight to the odometer. The whole reason this
+            // trigger beats anything the app can infer is its timing — the
+            // driver is sitting in front of the dash at the moment the car
+            // connects or disconnects — and landing them on the home screen
+            // to hunt for the field spends that advantage.
+            .addAction(
+                android.R.drawable.ic_menu_edit,
+                actionLabel,
+                openApp(context, id, action),
+            )
             .build()
 
         NotificationManagerCompat.from(context).notify(id, notification)
+    }
+
+    /**
+     * A PendingIntent that opens the app, optionally carrying the mileage
+     * action [MainActivity] hands to Dart.
+     *
+     * The request code has to differ per (notification, action) pair:
+     * FLAG_UPDATE_CURRENT rewrites the extras of any PendingIntent that
+     * matches an existing one, and Intent equality ignores extras — so a
+     * shared request code would leave the body tap and the button pointing at
+     * whichever was built last.
+     */
+    private fun openApp(context: Context, id: Int, action: String?): PendingIntent {
+        val open = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            if (action != null) putExtra(EXTRA_CAR_ACTION, action)
+        }
+        return PendingIntent.getActivity(
+            context,
+            if (action == null) id else id + ACTION_REQUEST_CODE_OFFSET,
+            open,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
     }
 
     private fun ensureChannel(context: Context) {
@@ -145,5 +207,32 @@ class CarBluetoothReceiver : BroadcastReceiver() {
         // reminder and an arrival reminder never overwrite each other.
         const val CONNECTED_NOTIFICATION_ID = 11
         const val DISCONNECTED_NOTIFICATION_ID = 12
+
+        /**
+         * NotificationService.arrivalReminderId — the app's own
+         * "Oletko perillä?". Named here so the stop prompt can take it down;
+         * both are notifications of one app, so either side may cancel the
+         * other's. Kept in step with the Dart constant of the same value.
+         */
+        const val APP_ARRIVAL_REMINDER_ID = 2
+
+        /**
+         * NotificationService.scheduledReminderId — the platform-scheduled
+         * "Vieläkö ajat?" backstop, which is only ever on screen when the app
+         * process died mid-trip.
+         */
+        const val APP_SCHEDULED_REMINDER_ID = 3
+
+        /** Keeps the button's PendingIntent distinct from the body tap's. */
+        private const val ACTION_REQUEST_CODE_OFFSET = 100
+
+        /** Intent extra carrying the tapped button to [MainActivity]. */
+        const val EXTRA_CAR_ACTION = "car_reminder_action"
+
+        /** Matches BluetoothTriggerService.logStartAction on the Dart side. */
+        const val ACTION_LOG_START = "log_start"
+
+        /** Matches BluetoothTriggerService.logEndAction on the Dart side. */
+        const val ACTION_LOG_END = "log_end"
     }
 }

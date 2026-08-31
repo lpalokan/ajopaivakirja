@@ -16,6 +16,7 @@ import '../providers/settings_provider.dart';
 import '../providers/update_check_provider.dart';
 import '../services/database_service.dart';
 import '../services/log_service.dart';
+import '../widgets/odometer_dialog.dart';
 import '../widgets/start_card.dart';
 import '../widgets/active_trip_card.dart';
 import '../widgets/route_chip_row.dart';
@@ -134,9 +135,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         await tripNotif2.stopTrip(context);
       });
 
+      // Its start-of-drive counterpart, for the car reminder's
+      // "Kirjaa lähtömittari". Same reason it lives here rather than in the
+      // notifier: presenting a dialog needs a live screen's context.
+      tripNotif2.setStartPresenter(() async {
+        if (!mounted) return;
+        await _startTripFromCarReminder();
+      });
+
       // Delegate all callback wiring and detection lifecycle to
       // TripNotifier — the orchestration seam for trip state.
       tripNotif2.initialize();
+
+      // A car reminder's mileage button may have cold-launched us. Last,
+      // because the dialog it opens needs the trip state above hydrated and
+      // both presenters registered.
+      unawaited(tripNotif2.consumeCarReminderAction());
     });
   }
 
@@ -161,7 +175,48 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       // screen; re-resolve before they read the position off the chip.
       position.refresh();
       if (ref.read(tripProvider).activeLeg == null) position.startIdleWatch();
+      // The app was already running when the car reminder's button was
+      // tapped, so the intent arrived as a resume rather than a launch.
+      unawaited(tripNotifier.consumeCarReminderAction());
     }
+  }
+
+  /// The start-of-drive counterpart of the arrival dialog: one number, taken
+  /// while the driver is still looking at the dash.
+  ///
+  /// Starts a free trip — no route — on purpose. At ignition-on the odometer
+  /// is known and the destination usually is not, and the arrival dialog
+  /// already collects destination and purpose for a free leg. A driver who
+  /// wants a named route taps the notification body instead and gets the
+  /// StartCard with its route chips.
+  Future<void> _startTripFromCarReminder() async {
+    final lastLeg = await DatabaseService.getLastLeg();
+    if (!mounted) return;
+
+    final result = await showOdometerDialog(
+      context: context,
+      title: 'Aloita ajo',
+      subtitle: 'Auto yhdistyi',
+      label: 'Matkamittari lähdössä (km)',
+      actionLabel: 'Aloita ajo',
+      initialValue: lastLeg?.endOdometer,
+      expectedHint: lastLeg?.endOdometer,
+      visionService: ref.read(odometerVisionServiceProvider),
+    );
+    if (result == null || !mounted) return;
+
+    final settings = ref.read(settingsProvider);
+    await ref
+        .read(tripProvider.notifier)
+        .startTrip(
+          startOdometer: result.odometer,
+          // The car cannot tell us where it is standing, so this is the
+          // app's own guess and must not be learned as a place — hence
+          // startLocationConfirmed stays false.
+          startLocation: settings.homeLocation,
+          purpose: '',
+          driver: settings.driverName,
+        );
   }
 
   @override

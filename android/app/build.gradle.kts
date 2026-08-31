@@ -87,4 +87,9 @@ dependencies {
     // the Flutter embedding, but this app's own Kotlin depends on it
     // directly, so it says so.
     implementation("androidx.core:core:1.13.1")
+    // CarReminderPolicy carries the whole of the car reminder's judgement and
+    // is deliberately free of Android types, because the receiver around it
+    // cannot be exercised at all — an emulator has no Bluetooth to connect.
+    // These JVM tests are the only ones that can reach that decision.
+    testImplementation("junit:junit:4.13.2")
 }

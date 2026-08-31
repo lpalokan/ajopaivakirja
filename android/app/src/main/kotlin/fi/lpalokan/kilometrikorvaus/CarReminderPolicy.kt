@@ -28,22 +28,67 @@ enum class CarReminder {
  *  - it is the weekend. This is a work-mileage log, and a Saturday errand is
  *    not a työmatka. Prompting for one trains the driver to swipe the reminder
  *    away, which is how it comes to be ignored on the Monday that matters.
+ *  - the car is still moving. A head unit drops the link for reasons that
+ *    have nothing to do with the ignition, and "Päättyikö ajo?" at 100 km/h
+ *    is the same false prompt the app's own movement gate exists to prevent
+ *    — so the same evidence gates this, mirrored across by the app.
  */
 object CarReminderPolicy {
 
     /**
+     * How recently the vehicle must have been measured at driving speed for
+     * a disconnect to be read as interference rather than an arrival.
+     *
+     * Deliberately far shorter than the app's own five-minute movement
+     * window. That window answers "has this trip been moving lately?" for a
+     * poll that runs blind every five minutes; this answers "is the car
+     * rolling *right now*?" at the instant the link dropped, and the two
+     * cases it has to separate are seconds apart in evidence: a dropout
+     * mid-drive leaves a fix from moments ago, while parking, stopping and
+     * killing the ignition puts a good deal more than this between the last
+     * fast fix and the disconnect.
+     */
+    const val MOVING_RECENCY_MS = 45_000L
+
+    /**
      * [connected] is true for ACTION_ACL_CONNECTED and false for
      * ACTION_ACL_DISCONNECTED; [dayOfWeek] is a [Calendar.DAY_OF_WEEK] value
-     * in the device's own time zone. Null means "say nothing".
+     * in the device's own time zone. [millisSinceDrivingEvidence] is how long
+     * ago the app last saw the vehicle at driving speed, or null when it has
+     * nothing to offer — no location permission, no fix yet, or a build with
+     * GPS unavailable. Null keeps the old behaviour rather than silencing the
+     * reminder: a missing signal must not cost the driver a prompt.
+     *
+     * Null means "say nothing".
      */
-    fun reminderFor(connected: Boolean, tripActive: Boolean, dayOfWeek: Int): CarReminder? {
+    fun reminderFor(
+        connected: Boolean,
+        tripActive: Boolean,
+        dayOfWeek: Int,
+        millisSinceDrivingEvidence: Long? = null,
+    ): CarReminder? {
         if (!isWorkday(dayOfWeek)) return null
         return when {
             connected && !tripActive -> CarReminder.START
-            !connected && tripActive -> CarReminder.STOP
+            !connected && tripActive ->
+                if (isStillMoving(millisSinceDrivingEvidence)) null else CarReminder.STOP
             else -> null
         }
     }
+
+    /**
+     * Whether the vehicle was moving too recently for this disconnect to be
+     * an arrival.
+     *
+     * A negative age — a mirrored timestamp in the future, which means the
+     * clock moved, not the car — is not treated as evidence of movement: the
+     * standing rule here is that a prompt the driver does not need beats a
+     * missing one they do.
+     */
+    fun isStillMoving(millisSinceDrivingEvidence: Long?): Boolean =
+        millisSinceDrivingEvidence != null &&
+            millisSinceDrivingEvidence >= 0L &&
+            millisSinceDrivingEvidence < MOVING_RECENCY_MS
 
     /** Mon–Fri in the device's local time, which is the driver's own week. */
     fun isWorkday(dayOfWeek: Int): Boolean =

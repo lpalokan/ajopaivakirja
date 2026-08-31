@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import '../models/trip_leg.dart';
 import 'activity_recognition_service.dart';
+import 'bluetooth_trigger_service.dart';
 import 'movement_signal.dart';
 import 'location_service.dart';
 import 'log_service.dart';
@@ -66,9 +67,17 @@ class BackgroundService {
   /// that a genuine arrival still prompts within a poll or two.
   static const Duration defaultMovementRecencyWindow = Duration(minutes: 5);
 
+  /// How often the "the vehicle is moving" timestamp is pushed to the
+  /// native car-reminder store. At road speed the trip stream delivers a fix
+  /// every couple of seconds, and the receiver only ever compares this
+  /// against a tens-of-seconds window, so writing on every fix would be pure
+  /// churn for no extra resolution.
+  static const Duration defaultCarEvidenceWriteInterval = Duration(seconds: 10);
+
   final NotificationService _notificationService;
   final LocationService _locationService;
   final ActivityRecognitionService _activityService;
+  final BluetoothTriggerService? _carReminder;
   final ReminderStore _reminderStore;
   final Duration _reminderDuration;
   Duration _firstReminderDuration;
@@ -102,6 +111,10 @@ class BackgroundService {
   MovementSignal _movement = MovementSignal();
   StreamSubscription<Position>? _positionSub;
 
+  /// When the driving-speed timestamp was last mirrored to the native car
+  /// reminder, for the [defaultCarEvidenceWriteInterval] throttle.
+  DateTime? _lastCarEvidenceWriteAt;
+
   /// The snooze deadline this isolate has already reacted to. "Ajan yhä" is
   /// handled entirely in the background isolate (see
   /// [handleStillDrivingBackgroundAction]); the main isolate discovers the
@@ -134,6 +147,7 @@ class BackgroundService {
     required NotificationService notificationService,
     required LocationService locationService,
     required ActivityRecognitionService activityService,
+    BluetoothTriggerService? carReminder,
     ReminderStore? reminderStore,
     Duration reminderDuration = defaultReminderDuration,
     Duration firstReminderDuration = defaultFirstReminderDuration,
@@ -143,6 +157,7 @@ class BackgroundService {
   }) : _notificationService = notificationService,
        _locationService = locationService,
        _activityService = activityService,
+       _carReminder = carReminder,
        _reminderStore = reminderStore ?? ReminderStore(),
        _reminderDuration = reminderDuration,
        _firstReminderDuration = firstReminderDuration,
@@ -189,6 +204,11 @@ class BackgroundService {
     _activityReceived = false;
     _lastInVehicleAt = null;
     _lastSeenSnooze = null;
+    _lastCarEvidenceWriteAt = null;
+    // Last trip's evidence would otherwise vouch for this one: the car could
+    // disconnect a minute into a fresh drive and be told the vehicle was
+    // moving, using a timestamp from yesterday's commute.
+    _clearDrivingEvidence();
 
     final destination = leg.endLocation ?? leg.routeDescription ?? 'määränpää';
 
@@ -212,12 +232,14 @@ class BackgroundService {
     _movement = MovementSignal(recency: _movementRecencyWindow);
     _positionSub?.cancel();
     _positionSub = _locationService.positionStream.listen((p) {
+      final now = DateTime.now();
       _movement.onSample(
         speedMps: p.speed,
-        at: DateTime.now(),
+        at: now,
         latitude: p.latitude,
         longitude: p.longitude,
       );
+      _mirrorDrivingEvidence(now);
     });
 
     final hasLocation = await _locationService.hasPermissionGranted();
@@ -317,7 +339,7 @@ class BackgroundService {
     if (!await _shouldPrompt()) return;
     _reminderShown = true;
     LogService().info('Reminder: proximity prompt for $destination');
-    await _notificationService.showArrivalReminder(destination);
+    await _showArrivalPrompt(destination);
   }
 
   /// Why the driver should be considered still on the road, or null if no
@@ -352,6 +374,44 @@ class BackgroundService {
     }
 
     return null;
+  }
+
+  /// Push the moment of the last fix at driving speed to the native
+  /// car-reminder store.
+  ///
+  /// `CarBluetoothReceiver` runs with no Flutter engine and no database, so
+  /// this is the only way it can tell a Bluetooth dropout mid-drive from an
+  /// ignition switched off at the destination. Best-effort and never
+  /// awaited, like every other mirror to that store: a trip must not stall
+  /// because a reminder flag could not be written.
+  void _mirrorDrivingEvidence(DateTime now) {
+    final lastFast = _movement.lastFastSampleAt;
+    if (lastFast == null) return;
+    final lastWrite = _lastCarEvidenceWriteAt;
+    if (lastWrite != null &&
+        now.difference(lastWrite) < defaultCarEvidenceWriteInterval) {
+      return;
+    }
+    _lastCarEvidenceWriteAt = now;
+    unawaited(_carReminder?.setDrivingEvidenceAt(lastFast) ?? Future.value());
+  }
+
+  /// Forget the mirrored driving evidence — no trip, nothing to vouch for.
+  void _clearDrivingEvidence() {
+    unawaited(_carReminder?.setDrivingEvidenceAt(null) ?? Future.value());
+  }
+
+  /// Post "Oletko perillä?", taking the car's own disconnect prompt down.
+  ///
+  /// Both ask the driver whether they have arrived, and at a real arrival
+  /// they can land within minutes of each other — the car's when the
+  /// ignition goes off, this one when the movement gate agrees. One question
+  /// deserves one notification, so the later of the two replaces the
+  /// earlier. Every path that shows the reminder goes through here, so the
+  /// poll and the proximity check cannot drift apart on it.
+  Future<void> _showArrivalPrompt(String destination) async {
+    await _notificationService.cancelCarStopPrompt();
+    await _notificationService.showArrivalReminder(destination);
   }
 
   /// "tick #3 (0s late)" — the prefix every tick log line carries.
@@ -419,7 +479,7 @@ class BackgroundService {
       LogService().info(
         'Reminder: showing "Oletko perillä?" (activity: ${_lastActivity.name})',
       );
-      await _notificationService.showArrivalReminder(
+      await _showArrivalPrompt(
         leg.endLocation ?? leg.routeDescription ?? 'määränpää',
       );
     }
@@ -467,6 +527,8 @@ class BackgroundService {
     _activityReceived = false;
     _lastInVehicleAt = null;
     _lastSeenSnooze = null;
+    _lastCarEvidenceWriteAt = null;
+    _clearDrivingEvidence();
     try {
       await _activityService.stop();
     } catch (_) {}

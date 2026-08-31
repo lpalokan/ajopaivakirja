@@ -3,8 +3,10 @@ package fi.lpalokan.kilometrikorvaus
 import android.Manifest
 import android.bluetooth.BluetoothManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Bundle
 import androidx.annotation.NonNull
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationManagerCompat
@@ -17,6 +19,43 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
 
     private var pendingPermissionResult: MethodChannel.Result? = null
+
+    /**
+     * The mileage button the driver tapped on a car reminder, waiting to be
+     * collected by Dart.
+     *
+     * Held here rather than delivered as a notification response: the
+     * reminder is posted by [CarBluetoothReceiver] from native code, often
+     * with no Flutter engine in existence, so its buttons are Activity
+     * PendingIntents and the tap arrives as an intent extra. On a cold start
+     * that extra lands well before Dart is ready to be asked.
+     */
+    private var pendingCarAction: String? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        captureCarAction(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        captureCarAction(intent)
+    }
+
+    /**
+     * Take the action off the intent that delivered it.
+     *
+     * Removed rather than merely read: the launch Intent outlives the tap,
+     * so leaving it in place would re-open the odometer dialog on every
+     * later resume of the same task.
+     */
+    private fun captureCarAction(intent: Intent?) {
+        if (intent == null) return
+        val action =
+            intent.getStringExtra(CarBluetoothReceiver.EXTRA_CAR_ACTION) ?: return
+        pendingCarAction = action
+        intent.removeExtra(CarBluetoothReceiver.EXTRA_CAR_ACTION)
+    }
 
     /**
      * Serves the Bluetooth reminder settings: which devices the phone is
@@ -51,6 +90,20 @@ class MainActivity : FlutterActivity() {
                 BluetoothTriggerStore.setTriggerAddress(
                     this,
                     call.argument<String>("address"),
+                )
+                result.success(null)
+            }
+
+            "consumePendingAction" -> {
+                val action = pendingCarAction
+                pendingCarAction = null
+                result.success(action)
+            }
+
+            "setDrivingEvidenceAt" -> {
+                BluetoothTriggerStore.setDrivingEvidenceAt(
+                    this,
+                    call.argument<Number>("millis")?.toLong(),
                 )
                 result.success(null)
             }
