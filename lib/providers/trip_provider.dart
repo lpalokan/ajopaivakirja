@@ -540,10 +540,24 @@ class TripNotifier extends StateNotifier<TripState> {
     _resetTripState();
   }
 
-  /// Clean up after a trip ends or is cancelled: stop background service,
-  /// stop detection, restart detection.
+  /// Clean up after a trip ends or is cancelled: tear the background
+  /// service's sensors down, then hand the home screen back its cheap
+  /// position watch.
+  ///
+  /// The order is the whole point. By the time this runs the leg is already
+  /// closed, so HomeScreen's trip-state listener has already tried to start
+  /// the idle watch and been refused — the trip's position stream is still
+  /// open, and `geolocator` would have handed that watch the trip's own
+  /// platform request (foreground service, wake lock, high accuracy) instead
+  /// of a cheap one, then kept it alive for as long as the process lived
+  /// (issue #91). Starting the watch here, after `onDrivingStopped` has
+  /// actually closed the trip stream, is what makes it cheap again.
   void _resetTripState() {
-    _ref.read(backgroundServiceProvider).onDrivingStopped();
+    unawaited(() async {
+      await _ref.read(backgroundServiceProvider).onDrivingStopped();
+      if (!mounted) return;
+      _ref.read(currentPositionProvider.notifier).startIdleWatch();
+    }());
   }
 
   /// Implements the arrival flow for the notification "Olen perillä" action.

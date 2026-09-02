@@ -68,10 +68,27 @@ void main() {
       );
       expect(config!.notificationTitle, isNotEmpty);
       expect(config.notificationText, isNotEmpty);
-      // The system may otherwise sleep and deliver a burst of stale positions
-      // on wake, which a recency check cannot use.
-      expect(config.enableWakeLock, isTrue);
       expect(LocationService.isForegroundBacked(settings), isTrue);
+    });
+
+    test('does not hold a wake lock for the length of the trip', () {
+      final config =
+          (LocationService.tripLocationSettings(android: true)
+                  as AndroidSettings)
+              .foregroundNotificationConfig!;
+
+      expect(
+        config.enableWakeLock,
+        isFalse,
+        reason:
+            'geolocator takes a PARTIAL_WAKE_LOCK AND a WifiLock for the '
+            'whole life of its foreground service when this is set, so the '
+            'phone cannot doze for as long as a trip is open. A day with 40 '
+            'minutes of driving in it reported 6 h 54 m of wake locks and '
+            '4 h 11 m of CPU (issue #91). The foreground service on its own '
+            'already keeps fixes arriving with the screen locked, which is '
+            'what the reminder actually needs.',
+      );
     });
 
     test('falls back to plain settings off Android', () {
@@ -180,6 +197,30 @@ void main() {
       );
       expect(seen, hasLength(1));
       await sub.cancel();
+    });
+
+    test('refuses to open a second stream while a trip is tracked', () async {
+      await service.startMonitoringDestination('Koti', (_) async {});
+      final before = service.idleOpenCount;
+
+      final seen = <Position>[];
+      final sub = service.watchIdlePosition().listen(seen.add);
+      feed.add(_fix(speed: 0));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        service.idleOpenCount,
+        before,
+        reason:
+            'geolocator caches one position stream per process and drops the '
+            'platform request only when its LAST listener cancels, so a '
+            'second stream opened mid-trip is really a second listener on '
+            "the trip's foreground-service, high-accuracy one — which then "
+            'outlives the trip (issue #91).',
+      );
+      expect(seen, isEmpty);
+      await sub.cancel();
+      await service.stopMonitoring();
     });
 
     test(

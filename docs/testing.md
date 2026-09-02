@@ -127,7 +127,7 @@ feature). The suite is run via this aggregator. **When you add a new
 | `When the still driving notification action is tapped` | Invokes the "Ajan yhä" BACKGROUND-isolate handler — the only path Android delivers the action to — with a short snooze, so re-ask behaviour is observable within one pump |
 | `When the still driving notification action is tapped with a long snooze` | Same handler with a far-out snooze, to assert reminders stay silent for the whole snooze window |
 | `Given the in-vehicle recency window is long` | Stretches BackgroundService's in-vehicle recency window (test seam) so a confident `still` right after `in_vehicle` (red light) is asserted NOT to fire the reminder |
-| `When the app is backgrounded` | Drives `TripNotifier.onAppBackgrounded` (the `AppLifecycleState.paused` path) — the screen-lock state where trip tracking has to keep feeding the movement signal — and stops the home screen's idle position watch, mirroring `HomeScreen.didChangeAppLifecycleState` |
+| `When the app is backgrounded` | Drives `TripNotifier.onAppBackgrounded` (the `AppLifecycleState.paused` path) — the screen-lock state where trip tracking has to keep feeding the movement signal — and puts the home screen's position watch into its "nobody is looking" state, mirroring `HomeScreen.didChangeAppLifecycleState` |
 | `When the app returns to the foreground` | The `AppLifecycleState.resumed` path: resumes the trip and re-resolves the position, since the driver has usually moved while the app was away |
 | `Then an arrival reminder has been shown` / `no arrival reminder has been shown` / `exactly {int} arrival reminder has been shown` | Asserts how many times the "Oletko perillä?" reminder was posted |
 | `Then the reminder notification has been dismissed` | Asserts the "Ajan yhä" tap cancelled BOTH reminder ids (the visible prompt and the platform backstop) |
@@ -152,6 +152,12 @@ feature). The suite is run via this aggregator. **When you add a new
 | `When I pick {string} from the location dropdown` | Taps an option in the open menu (scoped to the menu, so it cannot match the same text in a field behind it) |
 | `Then the {string} field shows {string}` | Asserts what a location field labelled {string} currently holds |
 | `Then the exported CSV pays every travel day` | Asserts the exported file pays out exactly what the allowance table says the trip earned, and names every travel day. Guards the silent case: a travel day with no legs used to be left out of the export entirely |
+| `Then the app is tracking location for the trip` | Asserts the trip's position stream — the location foreground service — is open. This is the expensive one: it is what keeps fixes arriving with the screen locked, and what a day's battery report bills you for |
+| `Then the app is tracking location only for the home screen` | Asserts the trip's stream is down and the cheap idle watch has taken over. The state an arrival must leave behind while someone is still looking at the app |
+| `Then the app is not tracking location` | Asserts no location request of any kind is open |
+| `Then the home screen watch never shared the trip location request` | Asserts the idle watch was never opened while the trip's stream was up. `geolocator` hands every caller the same platform request and drops it only when its LAST listener cancels, so an overlap does not create a cheap watch — it inherits the trip's foreground service and wake lock and keeps them after the trip ends (issue #91) |
+| `When the trip ends in the background` | Fires the arrival notification with no screen registered to host the mileage dialog, so `TripNotifier` records the estimated odometer and closes the leg itself — the shape of an "Olen perillä" tap the driver follows by pocketing the phone |
+| `When the sensor stand down delay elapses` | Shortens the stand-down delay (test seam) and pumps past it, so the timer that tears down a stationary trip's GPS fires. Shortened here rather than at construction because the clock starts when the trip does, and `startTrip` burns seconds of real time settling the UI |
 | `Given the update download is held open` | Arms the fake update service so `downloadAndInstall` reports progress then parks, leaving the "Ladataan…" indicator on screen |
 | `When the held download is released` | Completes a held download so the install flow clears the in-app progress state |
 
@@ -225,7 +231,7 @@ which the headless runner (`tool/bdd_host_test.dart`) supplies:
 
 Caveats — **the on-emulator suite (`integration-report.sh`) is the source of
 truth**; the headless run is a no-emulator approximation. As of writing it
-passes **106 / 107** scenarios; the gaps below are host-environment artifacts,
+passes **137 / 138** scenarios; the gaps below are host-environment artifacts,
 not code bugs (all pass on the emulator):
 
 - The "app boots on device" smoke test (`app_smoke_test.dart`) is **excluded**:

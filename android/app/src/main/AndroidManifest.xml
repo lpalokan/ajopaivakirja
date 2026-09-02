@@ -94,22 +94,26 @@
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
-    <!-- Held by geolocator's location foreground service for the duration
-         of a trip (ForegroundNotificationConfig.enableWakeLock in
-         LocationService.tripLocationSettings): without it the system sleeps
-         and delivers a burst of stale fixes on wake, which the reminder's
-         recency check cannot use.
+    <!-- Declared but NOT currently acquired: LocationService.
+         tripLocationSettings sets ForegroundNotificationConfig.
+         enableWakeLock = false, so geolocator's location foreground service
+         takes neither the PARTIAL_WAKE_LOCK nor the WifiLock it would
+         otherwise hold for the whole trip (#91 — they kept the phone out of
+         doze all day and were the single largest item in the battery
+         report).
 
-         Declared HERE and not left to a plugin. It used to arrive
-         transitively through flutter_background_service, and dropping that
-         unused dependency (#87) took it out of the merged manifest — after
-         which GeolocatorLocationService.obtainWakeLocks() threw
+         Kept in the manifest because the pairing is a trap this project has
+         already fallen into once. When the flag WAS set, the permission
+         arrived transitively through flutter_background_service; dropping
+         that unused dependency (#87) took it out of the merged manifest and
+         GeolocatorLocationService.obtainWakeLocks() then threw
          SecurityException inside the geolocator EventChannel's onListen.
          Flutter clears the active event sink when onListen throws, so the
          trip position stream went permanently silent while the foreground
          service and its notification carried on looking healthy, and
          "Oletko perillä?" lost the GPS evidence that keeps it from firing
-         mid-drive. -->
+         mid-drive. location_service_test.dart ties the two together so
+         re-enabling the flag cannot silently repeat that. -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <!-- Activity recognition: used to suppress the 5-min "Oletko perillä?"
          reminder while the device reports the user is still in_vehicle. -->

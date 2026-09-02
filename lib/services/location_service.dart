@@ -299,9 +299,6 @@ class LocationService {
     return AndroidSettings(
       accuracy: LocationAccuracy.high,
       distanceFilter: tripDistanceFilterMeters,
-      // Without a wake lock the system can sleep and deliver a burst of
-      // positions on wake — useless for a recency check that has to answer
-      // "is the vehicle moving right now?".
       // Deliberately NOT worded like the app's own "Ajo käynnissä" driving
       // notification: both are visible for the duration of a trip, and two
       // notifications with the same title read as a bug.
@@ -309,7 +306,19 @@ class LocationService {
         notificationTitle: 'Ajon sijaintiseuranta',
         notificationText: 'Sijaintia seurataan ajon ajan',
         notificationChannelName: 'Ajon sijaintiseuranta',
-        enableWakeLock: true,
+        // No wake lock. geolocator's foreground service takes a
+        // PARTIAL_WAKE_LOCK *and* a WifiLock for its whole lifetime when
+        // this is set, which stops the phone dozing for the whole trip — a
+        // day's battery report showed 6 h 54 m of wake locks and 4 h 11 m of
+        // CPU against 40 minutes of actual driving (issue #91).
+        //
+        // It was set so a sleeping phone could not deliver a burst of stale
+        // positions on wake and blind the reminder's "is the vehicle moving
+        // right now?" recency check. The foreground service already keeps
+        // fixes arriving with the screen locked, which is what that check
+        // actually needs; and a phone that has dozed deeply enough to batch
+        // fixes has, by definition, not been moving.
+        enableWakeLock: false,
         setOngoing: true,
       ),
     );
@@ -339,16 +348,33 @@ class LocationService {
   /// Live positions for the home screen while no trip is running. Errors are
   /// swallowed into a pause rather than surfacing: a missing fix must never
   /// take the home screen down.
-  Stream<Position> watchIdlePosition() =>
-      openIdlePositionStream(idleLocationSettings())
-          .handleError(
-            (Object e) => LogService().warn('GPS: idle stream error: $e'),
-          )
-          .map((position) {
-            _currentPosition = position;
-            _logIdleHeartbeat(position);
-            return position;
-          });
+  ///
+  /// Refuses outright while a trip is being tracked, because there is no such
+  /// thing as a second, cheaper position stream: `geolocator` caches one per
+  /// process, hands every later caller that same one — [idleLocationSettings]
+  /// and all — and drops the platform request only when its LAST listener
+  /// cancels. Opening this on top of a trip therefore inherits the trip's
+  /// foreground service, wake lock and high accuracy, and keeps them running
+  /// once the trip's own subscription goes (issue #91). Callers are expected
+  /// to check [isMonitoring] first; this is the backstop that makes getting
+  /// it wrong visible in Virheloki instead of in the battery report.
+  Stream<Position> watchIdlePosition() {
+    if (_isMonitoring) {
+      LogService().warn(
+        'GPS: idle watch refused — trip tracking owns the position stream',
+      );
+      return const Stream<Position>.empty();
+    }
+    return openIdlePositionStream(idleLocationSettings())
+        .handleError(
+          (Object e) => LogService().warn('GPS: idle stream error: $e'),
+        )
+        .map((position) {
+          _currentPosition = position;
+          _logIdleHeartbeat(position);
+          return position;
+        });
+  }
 
   /// One throttled line per minute while the idle watch is delivering fixes.
   /// This is how the battery question gets answered from a real day rather
@@ -465,13 +491,18 @@ class LocationService {
   /// service — and its battery cost — exists only while a trip is running.
   Future<void> stopMonitoring() async {
     final wasMonitoring = _isMonitoring;
-    _isMonitoring = false;
     _targetLocation = null;
     _lastHeartbeatAt = null;
     _proximityTimer?.cancel();
     _proximityTimer = null;
     await _positionStream?.cancel();
     _positionStream = null;
+    // Dropped LAST, after the platform subscription is really gone, so
+    // [isMonitoring] means "the trip owns the position stream" for the whole
+    // time that it does. Callers gate on it to avoid opening a second stream
+    // on top of this one (see [watchIdlePosition]), and a flag that went
+    // false while the cancel was still in flight would let them through.
+    _isMonitoring = false;
     if (wasMonitoring) LogService().info('GPS: trip tracking stopped');
   }
 

@@ -67,6 +67,20 @@ class BackgroundService {
   /// that a genuine arrival still prompts within a poll or two.
   static const Duration defaultMovementRecencyWindow = Duration(minutes: 5);
 
+  /// How long a trip may go without any evidence that the vehicle is moving
+  /// before the GPS stream — and the location foreground service behind it —
+  /// is torn down.
+  ///
+  /// Nothing but the driver tapping "Olen perillä" used to stop that stream,
+  /// so a leg left open by mistake ran the receiver at full tilt for the
+  /// rest of the day. Fifteen minutes is comfortably longer than the
+  /// reminder's own first ask (the driver gets "Oletko perillä?" long before
+  /// this), and short enough that a forgotten trip costs minutes of GPS
+  /// rather than hours. Standing down is not the same as ending the trip:
+  /// the leg stays open, the reminder keeps polling, and an `in_vehicle`
+  /// reading brings the stream straight back (see [_resumeGpsTracking]).
+  static const Duration defaultSensorStandDownDelay = Duration(minutes: 15);
+
   /// How often the "the vehicle is moving" timestamp is pushed to the
   /// native car-reminder store. At road speed the trip stream delivers a fix
   /// every couple of seconds, and the receiver only ever compares this
@@ -84,6 +98,7 @@ class BackgroundService {
   final Duration _platformBackstopDuration;
   Duration _inVehicleRecencyWindow;
   Duration _movementRecencyWindow;
+  Duration _sensorStandDownDelay;
 
   Timer? _reminderTimer;
 
@@ -110,6 +125,31 @@ class BackgroundService {
   /// so [_movementRecencyWindow] changes made by a test seam take effect.
   MovementSignal _movement = MovementSignal();
   StreamSubscription<Position>? _positionSub;
+
+  /// Whether the trip's position stream (and the location foreground service
+  /// that carries it) is up. False before the first fix of a trip, and again
+  /// after a stand-down.
+  bool _gpsTracking = false;
+
+  /// When something last said the vehicle was moving: a GPS sample at
+  /// driving speed, or an `in_vehicle` reading as the framework emitted it.
+  ///
+  /// Deliberately NOT [_stillDrivingReason]. That answer leans on
+  /// [_lastActivity], which the framework only updates on a *change* — park
+  /// a car that was last reported `in_vehicle` and the reading stays
+  /// `in_vehicle` for the rest of the day, so a stand-down keyed on it would
+  /// never happen. Every input here is timestamped when it arrives, so it
+  /// ages out on its own.
+  DateTime? _lastDrivingEvidenceAt;
+
+  /// Fires [_sensorStandDownDelay] after the last driving evidence. Pushes
+  /// itself forward while the vehicle keeps moving, so it costs one timer per
+  /// trip rather than one per fix.
+  Timer? _standDownTimer;
+
+  /// Where the running trip is heading, for a proximity watch that has to be
+  /// re-registered when the sensors come back.
+  String _destination = '';
 
   /// When the driving-speed timestamp was last mirrored to the native car
   /// reminder, for the [defaultCarEvidenceWriteInterval] throttle.
@@ -154,6 +194,7 @@ class BackgroundService {
     Duration platformBackstopDuration = defaultPlatformBackstopDuration,
     Duration inVehicleRecencyWindow = defaultInVehicleRecencyWindow,
     Duration movementRecencyWindow = defaultMovementRecencyWindow,
+    Duration sensorStandDownDelay = defaultSensorStandDownDelay,
   }) : _notificationService = notificationService,
        _locationService = locationService,
        _activityService = activityService,
@@ -163,7 +204,8 @@ class BackgroundService {
        _firstReminderDuration = firstReminderDuration,
        _platformBackstopDuration = platformBackstopDuration,
        _inVehicleRecencyWindow = inVehicleRecencyWindow,
-       _movementRecencyWindow = movementRecencyWindow;
+       _movementRecencyWindow = movementRecencyWindow,
+       _sensorStandDownDelay = sensorStandDownDelay;
 
   Future<void> initialize() async {
     await _notificationService.initialize();
@@ -196,6 +238,21 @@ class BackgroundService {
     _movementRecencyWindow = duration;
   }
 
+  /// Test seam: shrink the stand-down delay mid-trip, re-arming the pending
+  /// deadline against the new value.
+  ///
+  /// A scenario cannot simply construct the service with a short delay: the
+  /// clock starts when the trip starts, and `startTrip` spends seconds of
+  /// real wall time pumping the UI before the scenario reaches its first
+  /// assertion, so any delay short enough to reach inside a pump has already
+  /// expired by then. Scenarios therefore run with a delay far beyond any
+  /// pump and shorten it at the moment they want the stand-down to happen.
+  @visibleForTesting
+  void debugSetSensorStandDownDelay(Duration duration) {
+    _sensorStandDownDelay = duration;
+    if (_gpsTracking) _armStandDownTimer(duration);
+  }
+
   Future<void> onDrivingStarted(TripLeg leg) async {
     _activeLeg = leg;
     _tickCount = 0;
@@ -205,12 +262,14 @@ class BackgroundService {
     _lastInVehicleAt = null;
     _lastSeenSnooze = null;
     _lastCarEvidenceWriteAt = null;
+    _gpsTracking = false;
     // Last trip's evidence would otherwise vouch for this one: the car could
     // disconnect a minute into a fresh drive and be told the vehicle was
     // moving, using a timestamp from yesterday's commute.
     _clearDrivingEvidence();
 
     final destination = leg.endLocation ?? leg.routeDescription ?? 'määränpää';
+    _destination = destination;
 
     // Reset cross-isolate reminder state: wipe any stale snooze from a
     // previous trip and store the destination so the background isolate can
@@ -224,43 +283,7 @@ class BackgroundService {
 
     await _notificationService.showDrivingNotification(leg);
 
-    // Watch the position stream for evidence that the vehicle is still
-    // moving. Subscribed unconditionally, and BEFORE monitoring starts, so a
-    // stream that only begins producing later (permission granted mid-trip,
-    // first fix delayed) is still picked up. When no fix ever arrives the
-    // signal simply stays empty and the activity checks below decide alone.
-    _movement = MovementSignal(recency: _movementRecencyWindow);
-    _positionSub?.cancel();
-    _positionSub = _locationService.positionStream.listen((p) {
-      final now = DateTime.now();
-      _movement.onSample(
-        speedMps: p.speed,
-        at: now,
-        latitude: p.latitude,
-        longitude: p.longitude,
-      );
-      _mirrorDrivingEvidence(now);
-    });
-
-    final hasLocation = await _locationService.hasPermissionGranted();
-    if (hasLocation) {
-      // Starts the trip position stream under a location foreground service
-      // (see [LocationService.tripLocationSettings]) so fixes keep arriving
-      // once the driver locks the screen — without it the movement signal
-      // above is fed for a couple of minutes and then goes silent for the
-      // rest of the drive.
-      await _locationService.startMonitoringDestination(
-        destination,
-        _onProximityArrived,
-      );
-    } else {
-      // Worth a line: with no position stream the reminder gate is down to
-      // Activity Recognition alone, which goes quiet on a steady drive.
-      LogService().warn(
-        'Reminder: trip start without location permission — no GPS evidence '
-        'of driving will be available this trip',
-      );
-    }
+    await _startGpsTracking();
 
     // Best-effort: if activity recognition isn't available or permission is
     // denied, _lastActivity stays at .unknown, which the poll treats like
@@ -275,6 +298,11 @@ class BackgroundService {
       _activityReceived = true;
       if (a == DrivingActivity.inVehicle) {
         _lastInVehicleAt = DateTime.now();
+        // The framework only emits on a change, so this reading really is
+        // fresh: it is evidence in its own right, and the one signal left
+        // that can bring the sensors back after a stand-down.
+        _lastDrivingEvidenceAt = _lastInVehicleAt;
+        unawaited(_resumeGpsTracking());
       }
     });
     try {
@@ -287,6 +315,106 @@ class BackgroundService {
     }
 
     _scheduleTimeBasedReminder(leg);
+  }
+
+  /// Open the trip's position stream and the location foreground service
+  /// behind it, and start the clock that will close them again if the vehicle
+  /// stops moving.
+  ///
+  /// The subscription is opened BEFORE the permission check on purpose, so a
+  /// stream that only begins producing later (permission granted mid-trip,
+  /// first fix delayed) is still picked up. When no fix ever arrives the
+  /// signal simply stays empty and the activity checks decide alone.
+  Future<void> _startGpsTracking() async {
+    // Claimed up front so an `in_vehicle` reading landing during the await
+    // below cannot start a second stream on top of this one.
+    _gpsTracking = true;
+    _lastDrivingEvidenceAt = DateTime.now();
+    _movement = MovementSignal(recency: _movementRecencyWindow);
+    _positionSub?.cancel();
+    _positionSub = _locationService.positionStream.listen((p) {
+      final now = DateTime.now();
+      _movement.onSample(
+        speedMps: p.speed,
+        at: now,
+        latitude: p.latitude,
+        longitude: p.longitude,
+      );
+      if (_movement.isDrivingAt(now)) _lastDrivingEvidenceAt = now;
+      _mirrorDrivingEvidence(now);
+    });
+
+    if (!await _locationService.hasPermissionGranted()) {
+      // Worth a line: with no position stream the reminder gate is down to
+      // Activity Recognition alone, which goes quiet on a steady drive.
+      _gpsTracking = false;
+      LogService().warn(
+        'Reminder: no location permission — no GPS evidence of driving will '
+        'be available this trip',
+      );
+      return;
+    }
+
+    // Starts the trip position stream under a location foreground service
+    // (see [LocationService.tripLocationSettings]) so fixes keep arriving
+    // once the driver locks the screen — without it the movement signal is
+    // fed for a couple of minutes and then goes silent for the rest of the
+    // drive.
+    await _locationService.startMonitoringDestination(
+      _destination,
+      _onProximityArrived,
+    );
+    _armStandDownTimer(_sensorStandDownDelay);
+  }
+
+  void _armStandDownTimer(Duration delay) {
+    _standDownTimer?.cancel();
+    _standDownTimer = Timer(delay, () => unawaited(_onStandDownDue()));
+  }
+
+  /// The stand-down deadline has arrived. Either nothing has said the vehicle
+  /// is moving for a whole [_sensorStandDownDelay] — in which case the GPS
+  /// goes off — or it has, and the deadline is simply pushed out to where the
+  /// current evidence expires.
+  Future<void> _onStandDownDue() async {
+    _standDownTimer = null;
+    if (_activeLeg == null || !_gpsTracking) return;
+
+    final now = DateTime.now();
+    final since = _lastDrivingEvidenceAt ?? now.subtract(_sensorStandDownDelay);
+    final idleFor = now.difference(since);
+    if (idleFor < _sensorStandDownDelay) {
+      _armStandDownTimer(_sensorStandDownDelay - idleFor);
+      return;
+    }
+
+    LogService().info(
+      'Reminder: no sign of movement for ${idleFor.inMinutes} min — '
+      'stopping GPS tracking (the trip stays open)',
+    );
+    await _standDownGpsTracking();
+  }
+
+  /// Close the position stream and the foreground service, leaving the leg
+  /// open. Everything else about the trip carries on: the reminder keeps
+  /// polling, the driving notification stays up, and an `in_vehicle` reading
+  /// brings the stream back.
+  Future<void> _standDownGpsTracking() async {
+    _gpsTracking = false;
+    _standDownTimer?.cancel();
+    _standDownTimer = null;
+    await _positionSub?.cancel();
+    _positionSub = null;
+    _movement.reset();
+    await _locationService.stopMonitoring();
+  }
+
+  /// The vehicle is moving again after a stand-down. Re-opens what
+  /// [_standDownGpsTracking] closed.
+  Future<void> _resumeGpsTracking() async {
+    if (_gpsTracking || _activeLeg == null) return;
+    LogService().info('Reminder: back in a vehicle — restarting GPS tracking');
+    await _startGpsTracking();
   }
 
   void _scheduleTimeBasedReminder(TripLeg leg) {
@@ -528,6 +656,11 @@ class BackgroundService {
     _lastInVehicleAt = null;
     _lastSeenSnooze = null;
     _lastCarEvidenceWriteAt = null;
+    _gpsTracking = false;
+    _lastDrivingEvidenceAt = null;
+    _destination = '';
+    _standDownTimer?.cancel();
+    _standDownTimer = null;
     _clearDrivingEvidence();
     try {
       await _activityService.stop();
@@ -562,6 +695,7 @@ class BackgroundService {
 
   void dispose() {
     _reminderTimer?.cancel();
+    _standDownTimer?.cancel();
     _activitySub?.cancel();
     _positionSub?.cancel();
     _activityService.dispose();
