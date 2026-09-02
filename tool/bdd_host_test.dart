@@ -17,7 +17,7 @@
 //
 // NOTE: the on-emulator suite (scripts/integration-report.sh) remains the
 // source of truth. This headless runner is a no-emulator approximation
-// (currently 90/92 scenarios). Known host-only gaps — all green on the
+// (currently 137/138 scenarios). Known host-only gaps — all green on the
 // emulator, see docs/testing.md → "Running without an emulator":
 //   - the "app boots on device" smoke test (app_smoke_test.dart) is excluded
 //     (its fixed-frame pumping trips the live binding's pending-frame assert);
@@ -34,6 +34,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../integration_test/features/accessibility_test.dart' as accessibility;
 import '../integration_test/features/ad_hoc_driving_test.dart' as ad_hoc_driving;
+import '../integration_test/features/battery_test.dart' as battery;
 import '../integration_test/features/calculations_test.dart' as calculations;
 import '../integration_test/features/drafts_test.dart' as drafts;
 import '../integration_test/features/driving_test.dart' as driving;
@@ -103,6 +104,7 @@ void main() {
   route_management.main();
   settings.main();
   driving.main();
+  battery.main();
   ad_hoc_driving.main();
   history.main();
   home_context.main();

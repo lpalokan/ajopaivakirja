@@ -273,11 +273,62 @@ class _FakeLocationService extends LocationService {
   final StreamController<Position> _idleController =
       StreamController<Position>.broadcast();
 
+  // ── Platform location requests ──────────────────────────────────────────
+  //
+  // On a real phone there is only ever ONE of these. `geolocator` caches a
+  // single position stream per process: the second `getPositionStream` call
+  // returns the first stream and silently discards the `LocationSettings`
+  // handed to it, and the native request is torn down only when that
+  // stream's LAST listener cancels. So a home-screen watch opened while a
+  // trip is running is not a second, cheaper request — it is a second
+  // listener on the trip's foreground-service, wake-locked, high-accuracy
+  // one, and it keeps that alive after the trip ends (issue #91).
+  //
+  // The fake models the ownership, not the plumbing: two controllers so a
+  // scenario can still tell the two subscriptions apart, plus the counters
+  // below so it can assert what the phone would actually be paying for.
+  int _idleWatchers = 0;
+
+  /// Set the moment a home-screen watch is opened while the trip's stream is
+  /// still up — the overlap that let the cheap watch inherit the expensive
+  /// request.
+  bool idleWatchOverlappedTrip = false;
+
+  /// Whether the trip's (foreground-service) position stream is open.
+  bool get tripTrackingOpen => _tripStreamOpen;
+
+  /// Mirrors the real service: true for exactly as long as the trip owns the
+  /// platform position stream. Callers gate on this to keep from opening a
+  /// second one on top of it, so the fake has to answer it honestly.
+  @override
+  bool get isMonitoring => _tripStreamOpen;
+
+  /// Whether the home screen's cheap watch is open.
+  bool get idleWatchOpen => _idleWatchers > 0;
+
+  /// Whether the app is holding any location request open at all.
+  bool get locationRequestOpen => _tripStreamOpen || idleWatchOpen;
+
   @override
   Stream<Position> get positionStream => _fakeController.stream;
 
   @override
-  Stream<Position> watchIdlePosition() => _idleController.stream;
+  Stream<Position> watchIdlePosition() {
+    if (_tripStreamOpen) idleWatchOverlappedTrip = true;
+    StreamSubscription<Position>? upstream;
+    late final StreamController<Position> out;
+    out = StreamController<Position>(
+      onListen: () {
+        _idleWatchers++;
+        upstream = _idleController.stream.listen(out.add);
+      },
+      onCancel: () async {
+        _idleWatchers--;
+        await upstream?.cancel();
+      },
+    );
+    return out.stream;
+  }
 
   @override
   Future<bool> hasPermission() async => permissionGranted;
@@ -327,7 +378,9 @@ class _FakeLocationService extends LocationService {
   ) async {
     _onNearHome = onArrived;
     _currentTarget = destinationName;
-    _tripStreamOpen = true;
+    // The real service gives up here when location is denied, leaving no
+    // stream and no foreground service behind.
+    _tripStreamOpen = permissionGranted;
   }
 
   @override
@@ -427,6 +480,12 @@ const Duration _testFirstReminderDuration = Duration(milliseconds: 1800);
 /// ([BackgroundService.defaultInVehicleRecencyWindow]).
 const Duration _testInVehicleRecencyWindow = Duration(milliseconds: 300);
 
+/// Sensor stand-down delay for tests: far beyond any pump a scenario
+/// performs, so a trip never stands down by accident while the harness is
+/// settling the UI. The scenarios that want a stand-down shorten it at the
+/// moment they want it (see [waitForSensorStandDown]). Production default is
+/// 15 minutes ([BackgroundService.defaultSensorStandDownDelay]).
+
 /// GPS movement recency window for tests. Same reasoning as the in-vehicle
 /// window above: shorter than one steady-state poll, so a scenario that stops
 /// the vehicle sees the prompt on the next tick rather than having to pump out
@@ -457,6 +516,7 @@ BackgroundService _buildTestBackgroundService() {
     firstReminderDuration: _testFirstReminderDuration,
     inVehicleRecencyWindow: _testInVehicleRecencyWindow,
     movementRecencyWindow: _testMovementRecencyWindow,
+    sensorStandDownDelay: const Duration(seconds: 60),
   );
   _testBackgroundService = bg;
   return bg;
@@ -1849,6 +1909,100 @@ Future<void> simulateArrivalReported(WidgetTester tester) async {
   await tester.pump(const Duration(milliseconds: 50));
 }
 
+/// Bring the stand-down deadline within reach and pump past it.
+///
+/// The delay is shortened here rather than at construction because the clock
+/// starts when the trip does, and `startTrip` burns seconds of real time
+/// settling the UI before a scenario gets to say this — a delay short enough
+/// to reach inside a pump would already have expired. It is put back
+/// afterwards so a scenario that goes on to put the driver back in the
+/// vehicle does not immediately stand down again.
+Future<void> waitForSensorStandDown(WidgetTester tester) async {
+  final bg = _testBackgroundService;
+  bg?.debugSetSensorStandDownDelay(const Duration(milliseconds: 400));
+  await pumpFor(tester, 1600);
+  bg?.debugSetSensorStandDownDelay(const Duration(seconds: 60));
+}
+
+/// End the running trip the way it ends when nobody is looking: the arrival
+/// notification's "Olen perillä" fires with no screen registered to host the
+/// mileage dialog, so TripNotifier records the estimated odometer and closes
+/// the leg itself.
+///
+/// This is the shape of the battery bug in issue #91 — the trip-state change
+/// that starts the home screen's position watch lands while the app is in
+/// the background, where nothing will ever stop it again.
+Future<void> endTripInBackground(WidgetTester tester) async {
+  final scopeContext = tester.element(find.byType(KilometrikorvausApp));
+  final container = ProviderScope.containerOf(scopeContext, listen: false);
+  container.read(tripProvider.notifier).setArrivalPresenter(null);
+  await tapArrivalAction(tester);
+  await pumpFor(tester, 400);
+}
+
+/// Give whatever the last step kicked off — a stand-down, a re-arm, a trip
+/// teardown — time to reach the location service before asserting on it.
+/// All three are async and none of them is awaited by the caller that
+/// triggers them, exactly as in production.
+Future<void> _settleLocationWork(WidgetTester tester) async {
+  await pumpFor(tester, 400);
+}
+
+Future<void> expectTrackingLocationForTrip(WidgetTester tester) async {
+  await _settleLocationWork(tester);
+  expect(
+    _fakeLocation.tripTrackingOpen,
+    isTrue,
+    reason:
+        "Expected the trip's position stream (the location foreground "
+        'service) to be open.',
+  );
+}
+
+Future<void> expectTrackingLocationOnlyForHomeScreen(
+  WidgetTester tester,
+) async {
+  await _settleLocationWork(tester);
+  expect(
+    _fakeLocation.tripTrackingOpen,
+    isFalse,
+    reason:
+        "Expected the trip's position stream to be down — its foreground "
+        'service and wake lock cost battery for as long as it is up.',
+  );
+  expect(
+    _fakeLocation.idleWatchOpen,
+    isTrue,
+    reason:
+        'Expected the cheap home-screen watch to be following the driver '
+        'instead.',
+  );
+}
+
+Future<void> expectNotTrackingLocation(WidgetTester tester) async {
+  await _settleLocationWork(tester);
+  expect(
+    _fakeLocation.locationRequestOpen,
+    isFalse,
+    reason:
+        'Expected no location request at all: trip stream open='
+        '${_fakeLocation.tripTrackingOpen}, home-screen watch open='
+        '${_fakeLocation.idleWatchOpen}.',
+  );
+}
+
+void expectNoWatchOpenedOnTopOfTheTrip() {
+  expect(
+    _fakeLocation.idleWatchOverlappedTrip,
+    isFalse,
+    reason:
+        'The home-screen watch was opened while the trip stream was still '
+        'up. geolocator would hand it the trip\'s own platform request — '
+        'foreground service, wake lock and all — and keep that alive after '
+        'the trip ended (issue #91).',
+  );
+}
+
 /// Make the next GPS fix take [delay] to arrive, the way a cold start on a
 /// real phone does. Used to prove that startup work behind the position
 /// resolve — the update check that draws the home banner — does not wait on
@@ -2013,7 +2167,7 @@ Future<void> appIsBackgrounded(WidgetTester tester) async {
   container.read(tripProvider.notifier).onAppBackgrounded();
   // Mirrors HomeScreen.didChangeAppLifecycleState: position updates stop
   // while nobody is looking at them.
-  container.read(currentPositionProvider.notifier).stopIdleWatch();
+  container.read(currentPositionProvider.notifier).onAppBackgrounded();
   await settle(tester);
 }
 
@@ -2027,6 +2181,7 @@ Future<void> appReturnsToForeground(WidgetTester tester) async {
   // Mirrors HomeScreen.didChangeAppLifecycleState: the driver has moved
   // while the app was away, so the position is re-resolved on the way back.
   final position = container.read(currentPositionProvider.notifier);
+  position.onAppForegrounded();
   await position.refresh();
   if (container.read(tripProvider).activeLeg == null) position.startIdleWatch();
   await settle(tester);

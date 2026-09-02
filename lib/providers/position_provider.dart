@@ -68,6 +68,11 @@ class CurrentPositionNotifier extends StateNotifier<CurrentPositionState> {
   StreamSubscription<Position>? _idleFixes;
   bool _resolving = false;
 
+  /// Whether anyone is looking at the screen. Tracked explicitly rather than
+  /// inferred, because the idle watch is started from async paths that can
+  /// finish long after the app has gone away — see [startIdleWatch].
+  bool _foreground = true;
+
   /// Re-resolve from scratch: the platform's cached fix first so the screen
   /// has something immediately, then a real one.
   Future<void> refresh() async {
@@ -104,8 +109,27 @@ class CurrentPositionNotifier extends StateNotifier<CurrentPositionState> {
 
   /// Follow the driver while the home screen is open and no trip is running.
   /// Idempotent, so lifecycle callbacks can call it freely.
+  ///
+  /// Two hard preconditions, both learned from a day's battery (issue #91):
+  ///
+  /// * **The app must be in the foreground.** This is called from async
+  ///   paths that routinely finish after the app has gone away — the trip
+  ///   state settling at the end of an arrival is the one that bit us. A
+  ///   watch started then is never stopped, because [stopIdleWatch] only
+  ///   runs on the *next* pause and there isn't one, so it holds a location
+  ///   request open for the life of the process.
+  /// * **No trip stream may be open.** `geolocator` caches one position
+  ///   stream per process: a second `getPositionStream` returns the first
+  ///   one and discards the [LocationSettings] handed to it, and the
+  ///   platform request is dropped only when that stream's LAST listener
+  ///   cancels. Subscribing here mid-trip therefore does not open a cheap
+  ///   watch at all — it attaches to the trip's foreground-service,
+  ///   wake-locked, high-accuracy request and keeps it running afterwards.
+  ///   Whoever tears the trip down calls this again when it is safe.
   void startIdleWatch() {
     if (_idleFixes != null) return;
+    if (!_foreground) return;
+    if (_service.isMonitoring) return;
     _idleFixes = _service.watchIdlePosition().listen(_onPosition);
   }
 
@@ -114,6 +138,20 @@ class CurrentPositionNotifier extends StateNotifier<CurrentPositionState> {
   void stopIdleWatch() {
     _idleFixes?.cancel();
     _idleFixes = null;
+  }
+
+  /// The app went away. Drops the watch and — the part that matters —
+  /// remembers that it did, so a late async caller cannot put it back.
+  void onAppBackgrounded() {
+    _foreground = false;
+    stopIdleWatch();
+  }
+
+  /// The app is on screen again, so following the driver is worth paying
+  /// for. Does not start the watch itself: the caller decides, because a
+  /// resume with a trip already running must leave the trip's stream alone.
+  void onAppForegrounded() {
+    _foreground = true;
   }
 
   /// Re-match the current fix against the zone table. Called after a zone is

@@ -13,6 +13,7 @@
 import 'app_smoke_test.dart' as smoke;
 import 'features/accessibility_test.dart' as accessibility;
 import 'features/ad_hoc_driving_test.dart' as ad_hoc_driving;
+import 'features/battery_test.dart' as battery;
 import 'features/calculations_test.dart' as calculations;
 import 'features/current_position_test.dart' as current_position;
 import 'features/drafts_test.dart' as drafts;
@@ -38,6 +39,7 @@ void main() {
   route_management.main();
   settings.main();
   driving.main();
+  battery.main();
   history.main();
   home_context.main();
   home_ux.main();

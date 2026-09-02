@@ -167,10 +167,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final position = ref.read(currentPositionProvider.notifier);
     if (state == AppLifecycleState.paused) {
       tripNotifier.onAppBackgrounded();
-      // Nobody is looking at the chip — stop paying for fixes.
-      position.stopIdleWatch();
+      // Nobody is looking at the chip — stop paying for fixes, and record
+      // that we are away so a late async caller cannot restart the watch
+      // behind the driver's back (issue #91).
+      position.onAppBackgrounded();
     } else if (state == AppLifecycleState.resumed) {
       tripNotifier.onAppForegrounded();
+      position.onAppForegrounded();
       // The driver has almost certainly moved since the app was last on
       // screen; re-resolve before they read the position off the chip.
       position.refresh();
@@ -226,7 +229,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final settings = ref.watch(settingsProvider);
 
     // An active trip already runs a position stream; a second idle one would
-    // pay for the same fixes twice.
+    // pay for the same fixes twice — and worse, would be handed the trip's
+    // own platform request rather than a cheap one of its own (see
+    // [CurrentPositionNotifier.startIdleWatch]).
+    //
+    // The `else` branch fires the moment the leg closes, which is BEFORE the
+    // trip's stream has been torn down: `startIdleWatch` refuses while that
+    // is still up, and TripNotifier restarts it once the teardown is done.
     ref.listen<TripState>(tripProvider, (previous, next) {
       final position = ref.read(currentPositionProvider.notifier);
       if (next.activeLeg != null) {
