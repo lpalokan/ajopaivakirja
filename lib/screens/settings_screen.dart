@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/material_symbols_icons.dart';
@@ -13,6 +14,7 @@ import '../services/database_service.dart';
 import '../services/bluetooth_trigger_service.dart';
 import '../services/decimal_input.dart';
 import '../services/log_service.dart';
+import '../services/sensor_registry.dart';
 import '../services/sheets_service.dart';
 import '../models/app_settings.dart';
 import '../models/location_zone.dart';
@@ -350,6 +352,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             Card(
               child: Column(
                 children: [
+                  const _SensorDiagnosticsTile(),
+                  const Divider(height: 1),
                   SwitchListTile(
                     title: const Text('Virheloki'),
                     subtitle: const Text('Tallentaa lokitiedoston puhelimeen'),
@@ -1065,6 +1069,73 @@ class _UpdateCheckTile extends ConsumerWidget {
       onTap: (state.isLoading || downloadProgress != null)
           ? null
           : () => ref.read(updateCheckProvider.notifier).check(),
+    );
+  }
+}
+
+/// What the app is making the phone do, right now.
+///
+/// Android's per-app battery screen says the GPS was on for eight hours; it
+/// never says which of the app's two location requests asked for it, and the
+/// cheap one delivers nothing from a parked car — so it can be held all day
+/// without leaving a trace in the log. This tile is the answer to "who is
+/// holding it", one tap from the home screen and with no cable involved.
+///
+/// Reads [SensorRegistry] on a ticker rather than watching a provider: the
+/// holders are plain services, and a battery question is asked in minutes, so
+/// a rebuild every few seconds is both enough and cheap.
+class _SensorDiagnosticsTile extends StatefulWidget {
+  const _SensorDiagnosticsTile();
+
+  @override
+  State<_SensorDiagnosticsTile> createState() => _SensorDiagnosticsTileState();
+}
+
+class _SensorDiagnosticsTileState extends State<_SensorDiagnosticsTile> {
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final registry = SensorRegistry();
+    final held = registry.heldSince;
+    final now = DateTime.now();
+    final theme = Theme.of(context);
+
+    return ListTile(
+      title: const Text('Anturien käyttö'),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 4),
+          if (held.isEmpty)
+            Text('Ei mitään käynnissä', style: theme.textTheme.bodyMedium)
+          else
+            ...held.entries.map(
+              (e) => Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: Text(
+                  '${e.key.label} — '
+                  '${SensorRegistry.formatDuration(now.difference(e.value))}',
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

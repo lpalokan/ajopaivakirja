@@ -16,14 +16,16 @@
 //   - the fast unit run `flutter test test/` doesn't pick it up.
 //
 // NOTE: the on-emulator suite (scripts/integration-report.sh) remains the
-// source of truth. This headless runner is a no-emulator approximation
-// (currently 137/138 scenarios). Known host-only gaps — all green on the
-// emulator, see docs/testing.md → "Running without an emulator":
+// source of truth. This headless runner is a no-emulator approximation.
+// Known host-only gaps — all green on the emulator, see docs/testing.md →
+// "Running without an emulator":
 //   - the "app boots on device" smoke test (app_smoke_test.dart) is excluded
 //     (its fixed-frame pumping trips the live binding's pending-frame assert);
-//   - "Settings: Debug logging toggle reveals log actions" (tap misses on the
-//     800x600 host surface);
 //   - "Draft trips: Drafts excluded from CSV export" (host CSV file plumbing).
+//
+// "Settings: Debug logging toggle reveals log actions" used to be a third
+// gap. It was never host-only: the 800x600 surface just hit it first, and
+// one more row above the switch made the emulator miss the same tap.
 import 'dart:io';
 
 import 'package:flutter/services.dart';

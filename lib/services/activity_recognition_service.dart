@@ -4,6 +4,7 @@ import 'package:flutter_activity_recognition/flutter_activity_recognition.dart'
     as plugin;
 
 import 'log_service.dart';
+import 'sensor_registry.dart';
 
 /// Coarse on-device motion state we care about for trip reminders.
 ///
@@ -119,6 +120,13 @@ class ActivityRecognitionService {
         },
       );
       LogService().info('Activity: recognition stream started');
+      // Play Services asks for activity updates every second while this is
+      // open, and bills them through the same machinery as location — so it
+      // belongs in the same ledger as the position streams.
+      SensorRegistry().acquired(
+        SensorHold.activityRecognition,
+        detail: 'requestActivityUpdates 1s',
+      );
     } catch (e) {
       LogService().warn('Activity: stream unavailable: $e');
     }
@@ -127,6 +135,7 @@ class ActivityRecognitionService {
   Future<void> stop() async {
     await _sub?.cancel();
     _sub = null;
+    SensorRegistry().released(SensorHold.activityRecognition);
   }
 
   void dispose() {

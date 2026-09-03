@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 
 import '../main.dart';
 import '../services/location_service.dart';
+import '../services/sensor_registry.dart';
 
 /// Why the home screen is showing (or not showing) a place name.
 enum PositionStatus {
@@ -128,9 +129,23 @@ class CurrentPositionNotifier extends StateNotifier<CurrentPositionState> {
   ///   Whoever tears the trip down calls this again when it is safe.
   void startIdleWatch() {
     if (_idleFixes != null) return;
-    if (!_foreground) return;
-    if (_service.isMonitoring) return;
+    // Refusals are logged, not silent. This watch delivers almost nothing
+    // from a parked car, so "held but quiet" and "not held" look identical
+    // in a battery report — the only way to tell them apart afterwards is a
+    // log that says which way each decision went.
+    if (!_foreground) {
+      SensorRegistry().note('idle watch refused — app is backgrounded');
+      return;
+    }
+    if (_service.isMonitoring) {
+      SensorRegistry().note('idle watch refused — trip owns the stream');
+      return;
+    }
     _idleFixes = _service.watchIdlePosition().listen(_onPosition);
+    SensorRegistry().acquired(
+      SensorHold.idleLocation,
+      detail: 'filter ${LocationService.idleDistanceFilterMeters}m',
+    );
   }
 
   /// Stop following. Called when the app is backgrounded (nobody is looking)
@@ -138,11 +153,13 @@ class CurrentPositionNotifier extends StateNotifier<CurrentPositionState> {
   void stopIdleWatch() {
     _idleFixes?.cancel();
     _idleFixes = null;
+    SensorRegistry().released(SensorHold.idleLocation);
   }
 
   /// The app went away. Drops the watch and — the part that matters —
   /// remembers that it did, so a late async caller cannot put it back.
   void onAppBackgrounded() {
+    SensorRegistry().note('app backgrounded');
     _foreground = false;
     stopIdleWatch();
   }
@@ -151,6 +168,7 @@ class CurrentPositionNotifier extends StateNotifier<CurrentPositionState> {
   /// for. Does not start the watch itself: the caller decides, because a
   /// resume with a trip already running must leave the trip's stream alone.
   void onAppForegrounded() {
+    SensorRegistry().note('app foregrounded');
     _foreground = true;
   }
 
@@ -178,7 +196,7 @@ class CurrentPositionNotifier extends StateNotifier<CurrentPositionState> {
   @override
   void dispose() {
     _tripFixes?.cancel();
-    _idleFixes?.cancel();
+    stopIdleWatch();
     super.dispose();
   }
 }

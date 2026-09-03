@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import '../models/location_zone.dart';
 import 'database_service.dart';
 import 'log_service.dart';
+import 'sensor_registry.dart';
 
 class LocationService {
   /// How far the device must move before the trip position stream emits
@@ -74,6 +75,13 @@ class LocationService {
     Duration timeLimit = const Duration(seconds: 15),
     LocationAccuracy accuracy = LocationAccuracy.high,
   }) async {
+    // Registered even though it is meant to last seconds: a one-shot that
+    // never comes back looks, from the battery screen, exactly like a stream
+    // nobody closed.
+    SensorRegistry().acquired(
+      SensorHold.oneShotLocation,
+      detail: '${accuracy.name}, limit ${timeLimit.inSeconds}s',
+    );
     try {
       _currentPosition = await Geolocator.getCurrentPosition(
         locationSettings: LocationSettings(
@@ -84,6 +92,8 @@ class LocationService {
       return _currentPosition;
     } catch (_) {
       return null;
+    } finally {
+      SensorRegistry().released(SensorHold.oneShotLocation);
     }
   }
 
@@ -456,6 +466,13 @@ class LocationService {
       '${isForegroundBacked(settingsForStream)}, '
       'permission: ${await _permissionLabel()}',
     );
+    SensorRegistry().acquired(
+      SensorHold.tripLocation,
+      detail:
+          'foreground service '
+          '${isForegroundBacked(settingsForStream) ? 'yes' : 'no'}, '
+          'filter ${tripDistanceFilterMeters}m',
+    );
 
     _positionStream = openTripPositionStream(settingsForStream).listen(
       (position) {
@@ -503,6 +520,7 @@ class LocationService {
     // on top of this one (see [watchIdlePosition]), and a flag that went
     // false while the cancel was still in flight would let them through.
     _isMonitoring = false;
+    SensorRegistry().released(SensorHold.tripLocation);
     if (wasMonitoring) LogService().info('GPS: trip tracking stopped');
   }
 
