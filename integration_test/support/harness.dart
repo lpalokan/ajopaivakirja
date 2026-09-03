@@ -1454,18 +1454,21 @@ Future<void> expectFileOpened(WidgetTester tester) async {
 /// Flip the SwitchListTile whose title is [label]. Tapping the title works
 /// on a SwitchListTile and needs no knowledge of where the switch itself
 /// sits, so this stays honest about what a driver actually does.
+///
+/// Goes through [tapText] rather than tapping the title directly: the
+/// switches live at the tail of the Settings form, where a title can be
+/// built into the ListView's cache extent and still sit under the bottom
+/// nav bar. Tapping it there hits the nav bar instead, and the toggle
+/// silently never flips — which is exactly what one extra row above the
+/// Virheloki switch did.
 Future<void> toggleSwitch(WidgetTester tester, String label) async {
   final title = find.text(label);
-  await scrollIntoView(tester, title);
   await waitFor(tester, title);
-  await tester.tap(title);
-  await settle(tester);
+  await tapText(tester, label);
 }
 
 Future<void> toggleDebugLogging(WidgetTester tester) async {
-  await scrollIntoView(tester, find.text('Virheloki'));
-  await tester.tap(find.text('Virheloki'));
-  await settle(tester);
+  await toggleSwitch(tester, 'Virheloki');
 }
 
 // ─── Draft helpers ─────────────────────────────────────────────────────────
