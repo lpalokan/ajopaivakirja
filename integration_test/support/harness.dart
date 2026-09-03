@@ -38,6 +38,7 @@ import 'package:kilometrikorvaus/services/location_service.dart';
 import 'package:kilometrikorvaus/services/notification_service.dart';
 import 'package:kilometrikorvaus/services/odometer_vision_service.dart';
 import 'package:kilometrikorvaus/services/reminder_store.dart';
+import 'package:kilometrikorvaus/services/sensor_registry.dart';
 import 'package:kilometrikorvaus/services/sheets_service.dart';
 import 'package:kilometrikorvaus/widgets/location_autocomplete.dart';
 import 'package:kilometrikorvaus/services/update_service.dart';
@@ -381,6 +382,15 @@ class _FakeLocationService extends LocationService {
     // The real service gives up here when location is denied, leaving no
     // stream and no foreground service behind.
     _tripStreamOpen = permissionGranted;
+    // The fake stands in for the platform, so it owes the registry the same
+    // truth the real service reports — otherwise the Settings diagnostics
+    // would have nothing to name.
+    if (_tripStreamOpen) {
+      SensorRegistry().acquired(
+        SensorHold.tripLocation,
+        detail: 'fake trip stream',
+      );
+    }
   }
 
   @override
@@ -388,6 +398,7 @@ class _FakeLocationService extends LocationService {
     // Deliberately do NOT clear `_onNearHome` / `_currentTarget` — see
     // the field comment above.
     _tripStreamOpen = false;
+    SensorRegistry().released(SensorHold.tripLocation);
   }
 
   void pushFakePosition(Position p) {
@@ -777,6 +788,9 @@ Future<void> launchApp(WidgetTester tester) async {
   // Stop the previous scenario's GPS feed before dropping the fake, so its
   // periodic Timer doesn't outlive the test that started it.
   _fakeLocation.stopSpeedFeed();
+  // A scenario must not inherit the previous one's sensor holds — the
+  // registry is process-wide by design, so the harness owns clearing it.
+  SensorRegistry().resetForTesting();
   _fakeLocation = _FakeLocationService();
   _fakeNotification = _FakeNotificationService();
   _fakeActivity = _FakeActivityRecognitionService();
@@ -2000,6 +2014,42 @@ void expectNoWatchOpenedOnTopOfTheTrip() {
         'up. geolocator would hand it the trip\'s own platform request — '
         'foreground service, wake lock and all — and keep that alive after '
         'the trip ended (issue #91).',
+  );
+}
+
+/// What Settings → Vianmääritys would be showing right now: every platform
+/// subscription the app holds, named. The scenarios assert on this rather
+/// than on the rendered tile so a diagnostic can be checked from anywhere in
+/// the app, not only with Settings on screen.
+String sensorDiagnosticsSummary() => SensorRegistry().summary();
+
+void expectSensorDiagnosticsShow(String text) {
+  expect(
+    sensorDiagnosticsSummary(),
+    contains(text),
+    reason:
+        'Expected the sensor diagnostics to name "$text". They say: '
+        '"${sensorDiagnosticsSummary()}".',
+  );
+}
+
+void expectSensorDiagnosticsDoNotShow(String text) {
+  expect(
+    sensorDiagnosticsSummary(),
+    isNot(contains(text)),
+    reason:
+        'Expected the sensor diagnostics NOT to name "$text". They say: '
+        '"${sensorDiagnosticsSummary()}".',
+  );
+}
+
+void expectNothingHeld() {
+  expect(
+    SensorRegistry().anythingHeld,
+    isFalse,
+    reason:
+        'Expected the app to be holding no sensors at all. It holds: '
+        '"${sensorDiagnosticsSummary()}".',
   );
 }
 

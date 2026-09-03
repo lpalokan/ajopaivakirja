@@ -82,3 +82,41 @@ Feature: Battery cost of location tracking
     And the sensor stand down delay elapses
     And activity recognition reports {'in_vehicle'}
     Then the app is tracking location for the trip
+
+  # Samsung's battery screen says how long the GPS was on; it never says who
+  # asked for it. The app's own log is no better, because it only writes when
+  # a fix arrives — a request that is open but silent (a parked car under a
+  # 100 m distance filter) looks exactly like no request at all. That
+  # ambiguity is why the first two rounds of this investigation were guesswork.
+  #
+  # The registry below is the missing half: every platform subscription the
+  # app holds, named, with how long it has been held. Visible in Settings so
+  # the answer is one tap away, and written to Virheloki on every transition
+  # so an unattended day can be reconstructed afterwards.
+
+  Scenario: Before anything happens only the home screen holds a sensor
+    Given location permission is granted
+    When I open settings
+    Then the sensor diagnostics show {'Kotinäkymän sijaintiseuranta'}
+    And the sensor diagnostics do not show {'Ajon sijaintiseuranta'}
+
+  Scenario: A running trip is named as the location holder
+    Given location permission is granted
+    When I start the {'Töihin'} route at {1000} km
+    And I open settings
+    Then the sensor diagnostics show {'Ajon sijaintiseuranta'}
+    And the sensor diagnostics do not show {'Kotinäkymän sijaintiseuranta'}
+
+  Scenario: Nothing is held once the app is in the background
+    Given location permission is granted
+    When the app is backgrounded
+    And I open settings
+    Then the sensor diagnostics show nothing is held
+
+  Scenario: Standing the sensors down releases the trip location hold
+    Given location permission is granted
+    And activity recognition reports {'still'}
+    When I start the {'Töihin'} route at {1000} km
+    And the sensor stand down delay elapses
+    And I open settings
+    Then the sensor diagnostics show nothing is held
