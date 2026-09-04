@@ -552,9 +552,19 @@ class TripNotifier extends StateNotifier<TripState> {
   /// of a cheap one, then kept it alive for as long as the process lived
   /// (issue #91). Starting the watch here, after `onDrivingStopped` has
   /// actually closed the trip stream, is what makes it cheap again.
+  /// The teardown is fire-and-forget by design — the arrival flow must not
+  /// wait on a platform channel — which is precisely why it catches here.
+  /// An error thrown inside an `unawaited` future reaches no handler at all
+  /// (the app installs none), so the teardown that stranded the GPS for
+  /// 2 h 26 min on 2026-09-04 left nothing behind to say it had failed, and
+  /// the home screen never got its cheap watch back either.
   void _resetTripState() {
     unawaited(() async {
-      await _ref.read(backgroundServiceProvider).onDrivingStopped();
+      try {
+        await _ref.read(backgroundServiceProvider).onDrivingStopped();
+      } catch (e) {
+        LogService().warn('Trip: sensor teardown failed: $e');
+      }
       if (!mounted) return;
       _ref.read(currentPositionProvider.notifier).startIdleWatch();
     }());

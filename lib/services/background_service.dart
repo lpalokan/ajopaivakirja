@@ -81,6 +81,25 @@ class BackgroundService {
   /// reading brings the stream straight back (see [_resumeGpsTracking]).
   static const Duration defaultSensorStandDownDelay = Duration(minutes: 15);
 
+  /// How often the app checks that the trip's location hold still has a trip
+  /// to belong to.
+  ///
+  /// The last line of defence for the one failure the teardown guards cannot
+  /// handle themselves — the GPS teardown failing. Nothing else would ever
+  /// ask again: the stand-down timer is cancelled when the trip ends, and it
+  /// declines with no leg open anyway, so a stranded hold used to run until
+  /// the process died (2 h 26 min on 2026-09-04). The timer only exists
+  /// while the trip stream is open, and a stranded hold has to survive two
+  /// consecutive checks before it is forced down, so an ordinary teardown in
+  /// flight is never mistaken for a leak.
+  static const Duration defaultSensorWatchdogInterval = Duration(minutes: 1);
+
+  /// How long any single teardown step is given before the rest of the
+  /// teardown carries on without it. A platform channel that never answers
+  /// is indistinguishable, from Dart, from one that answers slowly — and a
+  /// teardown that waits forever is exactly the leak this is here to stop.
+  static const Duration teardownStepTimeout = Duration(seconds: 10);
+
   /// How often the "the vehicle is moving" timestamp is pushed to the
   /// native car-reminder store. At road speed the trip stream delivers a fix
   /// every couple of seconds, and the receiver only ever compares this
@@ -99,6 +118,7 @@ class BackgroundService {
   Duration _inVehicleRecencyWindow;
   Duration _movementRecencyWindow;
   Duration _sensorStandDownDelay;
+  Duration _sensorWatchdogInterval;
 
   Timer? _reminderTimer;
 
@@ -146,6 +166,15 @@ class BackgroundService {
   /// itself forward while the vehicle keeps moving, so it costs one timer per
   /// trip rather than one per fix.
   Timer? _standDownTimer;
+
+  /// Ticks while the trip stream is open, checking that it still belongs to
+  /// a trip. See [defaultSensorWatchdogInterval].
+  Timer? _sensorWatchdog;
+
+  /// When the trip's location hold was first seen with no trip behind it.
+  /// Null whenever the invariant holds — which is all of the time, right up
+  /// until the day it does not.
+  DateTime? _locationHoldOwnerlessSince;
 
   /// Where the running trip is heading, for a proximity watch that has to be
   /// re-registered when the sensors come back.
@@ -195,6 +224,7 @@ class BackgroundService {
     Duration inVehicleRecencyWindow = defaultInVehicleRecencyWindow,
     Duration movementRecencyWindow = defaultMovementRecencyWindow,
     Duration sensorStandDownDelay = defaultSensorStandDownDelay,
+    Duration sensorWatchdogInterval = defaultSensorWatchdogInterval,
   }) : _notificationService = notificationService,
        _locationService = locationService,
        _activityService = activityService,
@@ -205,7 +235,8 @@ class BackgroundService {
        _platformBackstopDuration = platformBackstopDuration,
        _inVehicleRecencyWindow = inVehicleRecencyWindow,
        _movementRecencyWindow = movementRecencyWindow,
-       _sensorStandDownDelay = sensorStandDownDelay;
+       _sensorStandDownDelay = sensorStandDownDelay,
+       _sensorWatchdogInterval = sensorWatchdogInterval;
 
   Future<void> initialize() async {
     await _notificationService.initialize();
@@ -251,6 +282,16 @@ class BackgroundService {
   void debugSetSensorStandDownDelay(Duration duration) {
     _sensorStandDownDelay = duration;
     if (_gpsTracking) _armStandDownTimer(duration);
+  }
+
+  /// Test seam: shrink the watchdog interval mid-trip, re-arming the timer
+  /// against the new value. Same rationale as
+  /// [debugSetSensorStandDownDelay] — a scenario cannot wait out a
+  /// production-length interval.
+  @visibleForTesting
+  void debugSetSensorWatchdogInterval(Duration interval) {
+    _sensorWatchdogInterval = interval;
+    if (_sensorWatchdog != null) _armSensorWatchdog();
   }
 
   Future<void> onDrivingStarted(TripLeg leg) async {
@@ -365,6 +406,77 @@ class BackgroundService {
       _onProximityArrived,
     );
     _armStandDownTimer(_sensorStandDownDelay);
+    _armSensorWatchdog();
+  }
+
+  void _armSensorWatchdog() {
+    _sensorWatchdog?.cancel();
+    _locationHoldOwnerlessSince = null;
+    _sensorWatchdog = Timer.periodic(
+      _sensorWatchdogInterval,
+      (_) => unawaited(_checkLocationHoldStillOwned()),
+    );
+  }
+
+  void _disarmSensorWatchdog() {
+    _sensorWatchdog?.cancel();
+    _sensorWatchdog = null;
+    _locationHoldOwnerlessSince = null;
+  }
+
+  /// Is the trip's location stream still open, and is there still a trip?
+  ///
+  /// Only the second consecutive "no" acts, so the seconds an ordinary
+  /// teardown spends with the leg already closed and the stream not yet shut
+  /// are not read as a leak. When it does act it goes straight at the
+  /// stream — the same call the teardown makes, because the teardown having
+  /// failed is the only way to get here.
+  Future<void> _checkLocationHoldStillOwned() async {
+    if (!_locationService.isMonitoring) {
+      _disarmSensorWatchdog();
+      return;
+    }
+    if (_activeLeg != null) {
+      _locationHoldOwnerlessSince = null;
+      return;
+    }
+
+    final since = _locationHoldOwnerlessSince ??= DateTime.now();
+    final ownerless = DateTime.now().difference(since);
+    if (ownerless < _sensorWatchdogInterval) return;
+
+    LogService().warn(
+      'POWER: trip location still held ${ownerless.inSeconds}s after the '
+      'trip ended — the teardown did not take. Forcing it down.',
+    );
+    _gpsTracking = false;
+    await _positionSub?.cancel();
+    _positionSub = null;
+    await _guardedTeardownStep(
+      'GPS (watchdog)',
+      _locationService.stopMonitoring,
+    );
+    if (!_locationService.isMonitoring) _disarmSensorWatchdog();
+  }
+
+  /// Run one teardown step so that neither a throw nor a hang can take the
+  /// rest of the teardown down with it — and so that either leaves a line in
+  /// Virheloki naming the step. Both were silent before: the whole teardown
+  /// was one unguarded chain, fired off unawaited by its caller.
+  Future<void> _guardedTeardownStep(
+    String what,
+    Future<void> Function() step,
+  ) async {
+    try {
+      await step().timeout(teardownStepTimeout);
+    } on TimeoutException {
+      LogService().warn(
+        'Teardown: $what did not finish in '
+        '${teardownStepTimeout.inSeconds}s — carrying on without it',
+      );
+    } catch (e) {
+      LogService().warn('Teardown: $what failed: $e');
+    }
   }
 
   void _armStandDownTimer(Duration delay) {
@@ -403,6 +515,7 @@ class BackgroundService {
     _gpsTracking = false;
     _standDownTimer?.cancel();
     _standDownTimer = null;
+    _disarmSensorWatchdog();
     await _positionSub?.cancel();
     _positionSub = null;
     _movement.reset();
@@ -662,16 +775,32 @@ class BackgroundService {
     _standDownTimer?.cancel();
     _standDownTimer = null;
     _clearDrivingEvidence();
-    try {
-      await _activityService.stop();
-    } catch (_) {}
-    try {
-      await _reminderStore.clear();
-    } catch (_) {}
 
-    await _notificationService.cancelDrivingNotification();
-    await _notificationService.cancelReminders();
-    await _locationService.stopMonitoring();
+    // Order matters, and so does the guard on every step.
+    //
+    // This used to run as one unguarded chain with the location stream LAST,
+    // behind a preferences write and two notification cancels — and the
+    // caller fired the whole thing off unawaited, so a step that threw both
+    // skipped the GPS teardown and vanished without a line. On 2026-09-04
+    // that is exactly what happened: Liiketunnistus was released at
+    // 07:39:58, and "Ajon sijaintiseuranta" was still held 2 h 26 min later.
+    //
+    // So the expensive sensor goes first — nothing here is allowed to stand
+    // between the trip ending and the receiver switching off — and each step
+    // is on its own, with a timeout, because a channel that never answers
+    // strands the teardown just as thoroughly as one that throws.
+    await _guardedTeardownStep('GPS', _locationService.stopMonitoring);
+    if (!_locationService.isMonitoring) _disarmSensorWatchdog();
+    await _guardedTeardownStep('activity recognition', _activityService.stop);
+    await _guardedTeardownStep('reminder store', _reminderStore.clear);
+    await _guardedTeardownStep(
+      'driving notification',
+      _notificationService.cancelDrivingNotification,
+    );
+    await _guardedTeardownStep(
+      'reminder notifications',
+      _notificationService.cancelReminders,
+    );
   }
 
   /// Driver tapped "Ajan yhä" and the response reached the FOREGROUND
@@ -696,6 +825,7 @@ class BackgroundService {
   void dispose() {
     _reminderTimer?.cancel();
     _standDownTimer?.cancel();
+    _sensorWatchdog?.cancel();
     _activitySub?.cancel();
     _positionSub?.cancel();
     _activityService.dispose();
