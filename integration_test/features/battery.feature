@@ -120,3 +120,50 @@ Feature: Battery cost of location tracking
     And the sensor stand down delay elapses
     And I open settings
     Then the sensor diagnostics show nothing is held
+
+  # 2026-09-04, from a real drive: the trip ended at 07:39:58 and
+  # "Liiketunnistus" was released in the same millisecond — but "Ajon
+  # sijaintiseuranta" was still held 2 h 26 min later, when the driver next
+  # opened the app. Samsung's battery screen agreed: GPS 2 h 25 m against 36
+  # minutes of driving.
+  #
+  # The teardown ran as one unguarded sequence with the location stream LAST,
+  # behind a preferences write and two notification cancels, and the caller
+  # fired the whole chain off unawaited. One step throwing therefore did two
+  # things at once: it skipped the GPS teardown, and it left no trace of
+  # itself anywhere. The expensive sensor now goes down first, every step
+  # stands on its own, and a failure is written to Virheloki.
+
+  Scenario: A failing teardown step still takes the GPS down
+    Given location permission is granted
+    And cancelling the driving notification fails
+    When I start the {'Töihin'} route at {1000} km
+    And I arrive at {1054} km
+    Then the app is not tracking location
+
+  Scenario: The home screen watch comes back after a failing teardown
+    Given location permission is granted
+    And cancelling the driving notification fails
+    When I start the {'Töihin'} route at {1000} km
+    And I arrive at {1054} km
+    Then the app is tracking location only for the home screen
+
+  # The backstop for the case the guards above cannot cover: the teardown
+  # itself failing. Nothing else would ever ask again — the stand-down timer
+  # is cancelled when the trip ends and would decline anyway with no leg
+  # open — so a hold that outlives its trip is checked for, and retried.
+
+  Scenario: A location hold that outlives its trip is stood down
+    Given location permission is granted
+    And stopping the trip location stream fails once
+    When I start the {'Töihin'} route at {1000} km
+    And I arrive at {1054} km
+    And the sensor watchdog runs
+    Then the app is not tracking location
+
+  Scenario: The watchdog leaves a running trip alone
+    Given location permission is granted
+    And GPS reports driving speed
+    When I start the {'Töihin'} route at {1000} km
+    And the sensor watchdog runs
+    Then the app is tracking location for the trip

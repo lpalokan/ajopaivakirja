@@ -48,6 +48,12 @@ import 'package:kilometrikorvaus/services/update_service.dart';
 class _FakeNotificationService extends NotificationService {
   int arrivalReminderShownCount = 0;
 
+  /// Makes the driving-notification cancel throw, standing in for a platform
+  /// channel that fails mid-teardown. The step that sets it does not care
+  /// which notification call it is — what matters is that it sits between
+  /// the trip ending and the GPS being released.
+  bool failCancelDrivingNotification = false;
+
   /// Notification ids cancelled through the BACKGROUND-isolate tap path
   /// ([handleStillDrivingBackgroundAction]) — the only path "Ajan yhä" is
   /// delivered to on Android. Recorded by the canceller seam the harness
@@ -68,7 +74,11 @@ class _FakeNotificationService extends NotificationService {
   @override
   Future<void> scheduleTimeBasedReminder(String d, DateTime t) async {}
   @override
-  Future<void> cancelDrivingNotification() async {}
+  Future<void> cancelDrivingNotification() async {
+    if (failCancelDrivingNotification) {
+      throw Exception('notification channel unavailable');
+    }
+  }
   @override
   Future<void> cancelReminders() async {}
   @override
@@ -393,10 +403,20 @@ class _FakeLocationService extends LocationService {
     }
   }
 
+  /// Makes the NEXT `stopMonitoring` throw with the stream still open — the
+  /// one failure the teardown's own guards cannot recover from, since it is
+  /// the teardown. Cleared as it fires, so the retry the watchdog makes
+  /// succeeds and the scenario is really asking whether a retry happens.
+  bool failNextStop = false;
+
   @override
   Future<void> stopMonitoring() async {
     // Deliberately do NOT clear `_onNearHome` / `_currentTarget` — see
     // the field comment above.
+    if (failNextStop) {
+      failNextStop = false;
+      throw Exception('location channel unavailable');
+    }
     _tripStreamOpen = false;
     SensorRegistry().released(SensorHold.tripLocation);
   }
@@ -528,6 +548,10 @@ BackgroundService _buildTestBackgroundService() {
     inVehicleRecencyWindow: _testInVehicleRecencyWindow,
     movementRecencyWindow: _testMovementRecencyWindow,
     sensorStandDownDelay: const Duration(seconds: 60),
+    // Same reasoning as the stand-down delay above: far beyond any pump, so
+    // no scenario trips the watchdog by accident. The scenarios that want it
+    // shorten it at the moment they want it (see [waitForSensorWatchdog]).
+    sensorWatchdogInterval: const Duration(seconds: 60),
   );
   _testBackgroundService = bg;
   return bg;
@@ -1939,6 +1963,32 @@ Future<void> waitForSensorStandDown(WidgetTester tester) async {
   bg?.debugSetSensorStandDownDelay(const Duration(milliseconds: 400));
   await pumpFor(tester, 1600);
   bg?.debugSetSensorStandDownDelay(const Duration(seconds: 60));
+}
+
+/// Let the sensor watchdog tick. It has to see the trip's location hold
+/// ownerless TWICE in a row before it acts (an ordinary teardown in flight
+/// must not look like a leak), so the pump covers several intervals.
+///
+/// Same reasoning as [waitForSensorStandDown] for shrinking the interval
+/// here rather than building the service with a short one: the timer is
+/// armed when the trip starts, and `startTrip` spends seconds of real wall
+/// time pumping the UI before the scenario reaches this step.
+Future<void> waitForSensorWatchdog(WidgetTester tester) async {
+  final bg = _testBackgroundService;
+  bg?.debugSetSensorWatchdogInterval(const Duration(milliseconds: 300));
+  await pumpFor(tester, 1500);
+  bg?.debugSetSensorWatchdogInterval(const Duration(seconds: 60));
+}
+
+/// Make the driving-notification cancel throw on the next trip teardown.
+void failDrivingNotificationCancel() {
+  _fakeNotification.failCancelDrivingNotification = true;
+}
+
+/// Make the next attempt to close the trip's position stream throw, leaving
+/// the stream open — the leak the watchdog exists for.
+void failNextStopMonitoring() {
+  _fakeLocation.failNextStop = true;
 }
 
 /// End the running trip the way it ends when nobody is looking: the arrival
