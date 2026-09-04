@@ -134,13 +134,20 @@ Feature: Battery cost of location tracking
   # itself anywhere. The expensive sensor now goes down first, every step
   # stands on its own, and a failure is written to Virheloki.
 
+  # Ends the way 2026-09-04 ended: the driver stops the trip and pockets the
+  # phone. With the app backgrounded there is no idle watch to take over, so
+  # the assertion is the strict one — nothing held at all.
   Scenario: A failing teardown step still takes the GPS down
     Given location permission is granted
     And cancelling the driving notification fails
     When I start the {'Töihin'} route at {1000} km
-    And I arrive at {1054} km
+    And the app is backgrounded
+    And the trip ends in the background
     Then the app is not tracking location
 
+  # The foreground variant of the same failure: the trip's stream has to go,
+  # and the cheap watch has to come back in its place — the teardown throwing
+  # used to cost both.
   Scenario: The home screen watch comes back after a failing teardown
     Given location permission is granted
     And cancelling the driving notification fails
