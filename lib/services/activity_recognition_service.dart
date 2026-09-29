@@ -11,14 +11,7 @@ import 'sensor_registry.dart';
 /// Mirrors the values that `flutter_activity_recognition` v4 actually emits.
 /// (v2 also exposed `ON_FOOT` and `TILTING`; v4 dropped them, so we don't
 /// model them.)
-enum DrivingActivity {
-  inVehicle,
-  onBicycle,
-  walking,
-  running,
-  still,
-  unknown,
-}
+enum DrivingActivity { inVehicle, onBicycle, walking, running, still, unknown }
 
 DrivingActivity _fromPlugin(plugin.ActivityType t) {
   switch (t) {
@@ -75,8 +68,8 @@ class ActivityRecognitionService {
 
   Future<bool> _ensurePermission() async {
     try {
-      final current =
-          await plugin.FlutterActivityRecognition.instance.checkPermission();
+      final current = await plugin.FlutterActivityRecognition.instance
+          .checkPermission();
       if (current == plugin.ActivityPermission.GRANTED) return true;
       if (current == plugin.ActivityPermission.PERMANENTLY_DENIED) {
         LogService().warn(
@@ -85,8 +78,8 @@ class ActivityRecognitionService {
         );
         return false;
       }
-      final asked =
-          await plugin.FlutterActivityRecognition.instance.requestPermission();
+      final asked = await plugin.FlutterActivityRecognition.instance
+          .requestPermission();
       if (asked != plugin.ActivityPermission.GRANTED) {
         LogService().warn('Activity: permission request answered $asked');
         return false;
@@ -107,7 +100,8 @@ class ActivityRecognitionService {
         (a) {
           if (_controller.isClosed) return;
           final mapped = mapActivity(a.type, a.confidence);
-          if (mapped == null) return; // LOW-confidence noise — keep last reading
+          if (mapped == null)
+            return; // LOW-confidence noise — keep last reading
           _controller.add(mapped);
         },
         onError: (Object e) {

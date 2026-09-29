@@ -79,6 +79,7 @@ class _FakeNotificationService extends NotificationService {
       throw Exception('notification channel unavailable');
     }
   }
+
   @override
   Future<void> cancelReminders() async {}
   @override
@@ -176,6 +177,16 @@ class _FakeBluetoothTriggerService extends BluetoothTriggerService {
   @override
   Future<void> setDrivingEvidenceAt(DateTime? at) async {
     drivingEvidenceAt = at;
+  }
+
+  /// When the app last told the receiver the driver arrived home. Null is
+  /// what a receiver reads when the app has never said, which the policy
+  /// treats as "not home" and prompts on.
+  DateTime? homeArrivalAt;
+
+  @override
+  Future<void> setHomeArrivalAt(DateTime? at) async {
+    homeArrivalAt = at;
   }
 
   /// A mileage button waiting to be collected, exactly as MainActivity holds
@@ -1693,6 +1704,30 @@ Future<void> chooseReminderDevice(WidgetTester tester, String label) async {
 /// app being killed mid-trip and the stored flag going stale.
 void forgetMirroredTripState() {
   _fakeBluetooth.tripActive = null;
+  _fakeBluetooth.homeArrivalAt = null;
+}
+
+/// Assert whether the native car-Bluetooth receiver would read the driver as
+/// home for the day — the thing that silences "Aloititko ajon?" for the
+/// free-time drives after the last work leg.
+void expectMirroredHomeToday(bool expected) {
+  final at = _fakeBluetooth.homeArrivalAt;
+  final now = DateTime.now();
+  final today =
+      at != null &&
+      at.year == now.year &&
+      at.month == now.month &&
+      at.day == now.day;
+  expect(
+    today,
+    expected,
+    reason: expected
+        ? 'the car reminder was not told the driver is home (last told: '
+              '$at), so every free-time drive tonight would prompt '
+              '"Aloititko ajon?"'
+        : 'the car reminder thinks the driver is home ($at), so the next '
+              'work drive today would go unprompted',
+  );
 }
 
 /// Assert what the native car-Bluetooth receiver would read when the car

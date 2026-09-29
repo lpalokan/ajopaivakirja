@@ -37,8 +37,8 @@ import java.util.Calendar
  * "Olen perillä" already live.
  *
  * Whether a prompt is worth showing is [CarReminderPolicy]'s call — it holds
- * the whole of the judgement (already started, already finished, weekend) in
- * one Android-free place, because none of this file can be exercised from the
+ * the whole of the judgement (already started, already finished, weekend,
+ * home for the day) in one Android-free place, because none of this file can be exercised from the
  * test suite: an emulator has no Bluetooth to connect.
  */
 class CarBluetoothReceiver : BroadcastReceiver() {
@@ -68,12 +68,17 @@ class CarBluetoothReceiver : BroadcastReceiver() {
         }
 
         val evidenceAt = BluetoothTriggerStore.drivingEvidenceAt(context)
+        val now = Calendar.getInstance()
         val reminder = CarReminderPolicy.reminderFor(
             connected = connected,
             tripActive = BluetoothTriggerStore.isTripActive(context),
-            dayOfWeek = Calendar.getInstance().get(Calendar.DAY_OF_WEEK),
+            dayOfWeek = now.get(Calendar.DAY_OF_WEEK),
             millisSinceDrivingEvidence =
-                if (evidenceAt <= 0L) null else System.currentTimeMillis() - evidenceAt,
+                if (evidenceAt <= 0L) null else now.timeInMillis - evidenceAt,
+            arrivedHomeToday = CarReminderPolicy.isSameDay(
+                BluetoothTriggerStore.homeArrivalAt(context),
+                now,
+            ),
         ) ?: return
 
         when (reminder) {

@@ -109,10 +109,20 @@ class BluetoothTriggerService {
   /// a parked car is mirrored across: the moment of the last fix at driving
   /// speed. Pass null to clear it (no trip, or no evidence yet), which the
   /// policy reads as "nothing known" and prompts as before.
-  Future<void> setDrivingEvidenceAt(DateTime? at) =>
-      _call<void>('setDrivingEvidenceAt', {
-        'millis': at?.millisecondsSinceEpoch,
-      });
+  Future<void> setDrivingEvidenceAt(DateTime? at) => _call<void>(
+    'setDrivingEvidenceAt',
+    {'millis': at?.millisecondsSinceEpoch},
+  );
+
+  /// Tell the native side when the driver last arrived home.
+  ///
+  /// The last leg home closes the work day; whatever the car does after that
+  /// is free time, and "Aloititko ajon?" on every errand is the nagging the
+  /// driver learns to swipe away. The receiver compares the date with its own
+  /// clock, so the silence lifts by itself at midnight with nothing for the
+  /// app to reset. Pass null when the driver has not been home today.
+  Future<void> setHomeArrivalAt(DateTime? at) =>
+      _call<void>('setHomeArrivalAt', {'millis': at?.millisecondsSinceEpoch});
 
   /// The mileage button the driver tapped on a car reminder, if any —
   /// [logStartAction], [logEndAction], or null when the app was opened any

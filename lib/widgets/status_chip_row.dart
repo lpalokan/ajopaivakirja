@@ -54,7 +54,11 @@ class StatusChipRow extends StatelessWidget {
     if (completeMonthName != null) {
       chips.add(
         Chip(
-          avatar: const Icon(Symbols.check_circle, size: 18, color: Colors.green),
+          avatar: const Icon(
+            Symbols.check_circle,
+            size: 18,
+            color: Colors.green,
+          ),
           label: Text('$completeMonthName valmis'),
           backgroundColor: Colors.green.shade50,
           side: const BorderSide(color: Colors.green),

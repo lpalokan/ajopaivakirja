@@ -17,6 +17,7 @@ object BluetoothTriggerStore {
     private const val KEY_ADDRESS = "trigger_address"
     private const val KEY_TRIP_ACTIVE = "trip_active"
     private const val KEY_DRIVING_EVIDENCE_AT = "driving_evidence_at"
+    private const val KEY_HOME_ARRIVAL_AT = "home_arrival_at"
 
     /** The MAC address whose connect/disconnect prompts, or null when off. */
     fun triggerAddress(context: Context): String? =
@@ -63,6 +64,22 @@ object BluetoothTriggerStore {
         val edit = prefs(context).edit()
         if (millis == null) edit.remove(KEY_DRIVING_EVIDENCE_AT)
         else edit.putLong(KEY_DRIVING_EVIDENCE_AT, millis)
+        edit.apply()
+    }
+
+    /**
+     * Epoch millis of the driver's latest arrival home today, or 0 when there
+     * is none. Mirrored by Dart from today's legs; the receiver compares its
+     * date with the clock, so yesterday's value simply stops counting.
+     */
+    fun homeArrivalAt(context: Context): Long =
+        prefs(context).getLong(KEY_HOME_ARRIVAL_AT, 0L)
+
+    /** Pass null when the driver has not been home today. */
+    fun setHomeArrivalAt(context: Context, millis: Long?) {
+        val edit = prefs(context).edit()
+        if (millis == null) edit.remove(KEY_HOME_ARRIVAL_AT)
+        else edit.putLong(KEY_HOME_ARRIVAL_AT, millis)
         edit.apply()
     }
 
