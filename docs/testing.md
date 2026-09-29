@@ -24,7 +24,8 @@ platform call delivers it.
 
 The native layer exists for one reason: an emulator has no Bluetooth, so
 `CarBluetoothReceiver` never runs in the Gherkin suite and the whole of the
-car reminder's judgement — already open? weekend? still moving? — would
+car reminder's judgement — already open? weekend? home for the day? still
+moving? — would
 otherwise be untested. `CarReminderPolicy` is deliberately free of Android
 types so it can be exercised on the plain JVM. Run it after a build, which is
 what writes `android/local.properties` for the Flutter Gradle plugin.
@@ -139,7 +140,8 @@ feature). The suite is run via this aggregator. **When you add a new
 | `When I choose {string} as the reminder device` | Picks a device (or "Ei käytössä") in Settings → Muistutus Bluetoothista |
 | `Then the reminder device is {string}` / `Then no reminder device is set` | Asserts what was stored as the trigger, resolved from address back to name — a scenario should not have to know a MAC |
 | `Then the car reminder knows a trip is in progress` / `... knows no trip is in progress` | Asserts what the native receiver would read when the car connects. It runs with no Flutter engine and no database, so this mirrored flag is the only thing that can tell it "already started" from "still needs reminding" |
-| `Given the car reminder has lost track of the trip` | Forgets the mirrored flag, standing in for the app being killed mid-trip — so a scenario can check the next load re-asserts it rather than trusting change detection |
+| `Given the car reminder has lost track of the trip` | Forgets the mirrored flag and home arrival, standing in for the app being killed mid-trip — so a scenario can check the next load re-asserts it rather than trusting change detection |
+| `Then the car reminder knows I am home for the day` / `Then the car reminder does not think I am home for the day` | Asserts the mirrored home-arrival time falls on today. The native receiver uses it to skip "Aloititko ajon?" for the free-time drives after the last leg home |
 | `Then the car reminder knows the vehicle was recently moving` / `Then the car reminder has no movement evidence` | Asserts the mirrored driving-speed timestamp. It is the only thing that lets the native receiver tell a Bluetooth dropout mid-drive from an ignition switched off at the destination |
 | `Then the car stop prompt has been dismissed` | Asserts the app's own "Oletko perillä?" took the car's "Päättyikö ajo?" down, so one question never produces two notifications |
 | `When the car start-mileage button is tapped` / `When the car end-mileage button is tapped` | Drives the mileage buttons on the car prompts. The real tap arrives as an Activity intent extra, so this feeds the pending action and runs the collection `TripNotifier` does on launch and resume |

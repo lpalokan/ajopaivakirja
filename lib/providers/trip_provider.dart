@@ -88,6 +88,7 @@ class TripNotifier extends StateNotifier<TripState> {
   set state(TripState value) {
     super.state = value;
     _mirrorTripState(value.activeLeg != null);
+    _mirrorHomeArrival(value.todayLegs);
   }
 
   /// Push "a trip is / is not open" to [BluetoothTriggerService], which is
@@ -105,6 +106,35 @@ class TripNotifier extends StateNotifier<TripState> {
     unawaited(_ref.read(bluetoothTriggerServiceProvider).setTripActive(active));
   }
 
+  /// When the native receiver was last told the driver arrived home, and
+  /// whether it has been told at all — null is a value worth sending.
+  DateTime? _mirroredHomeArrivalAt;
+  bool _homeArrivalMirrored = false;
+
+  /// Push the latest arrival home among today's legs to
+  /// [BluetoothTriggerService]. The last leg home closes the work day, and
+  /// the receiver uses it to stop prompting "Aloititko ajon?" for every
+  /// free-time drive that follows.
+  ///
+  /// Derived from [todayLegs] rather than set on arrival, so an arrival that
+  /// is edited or deleted in history takes the silence with it on the next
+  /// load. Best-effort and never awaited, like [_mirrorTripState].
+  void _mirrorHomeArrival(List<TripLeg> todayLegs) {
+    if (!mounted) return;
+    DateTime? latest;
+    for (final leg in todayLegs) {
+      final end = leg.endTime;
+      if (!leg.isReturnHome || end == null) continue;
+      if (latest == null || end.isAfter(latest)) latest = end;
+    }
+    if (_homeArrivalMirrored && _mirroredHomeArrivalAt == latest) return;
+    _homeArrivalMirrored = true;
+    _mirroredHomeArrivalAt = latest;
+    unawaited(
+      _ref.read(bluetoothTriggerServiceProvider).setHomeArrivalAt(latest),
+    );
+  }
+
   Future<void> load() async {
     final legs = await DatabaseService.getLegsForDate(_today);
     final activeLeg = await DatabaseService.getActiveLeg();
@@ -114,6 +144,7 @@ class TripNotifier extends StateNotifier<TripState> {
     // re-asserts it: the app can be killed mid-trip, and the stored flag is
     // then whatever it was when the process died.
     _mirroredTripActive = null;
+    _homeArrivalMirrored = false;
     state = TripState(activeLeg: activeLeg, todayLegs: legs);
   }
 

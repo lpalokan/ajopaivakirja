@@ -161,4 +161,66 @@ class CarReminderPolicyTest {
             ),
         )
     }
+
+    // ── Home for the day ───────────────────────────────────────────────────
+    //
+    // The last leg home closes the work day. Every drive after it is free
+    // time, and "Aloititko ajon?" on each one is the nagging that gets the
+    // reminder swiped away on the morning it matters.
+
+    @Test
+    fun `connecting after arriving home today says nothing`() {
+        assertNull(
+            CarReminderPolicy.reminderFor(
+                connected = true,
+                tripActive = false,
+                dayOfWeek = monday,
+                arrivedHomeToday = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `a trip started after arriving home still gets its stop prompt`() {
+        // The driver was called back out and logged it. Home earlier today
+        // says nothing about whether this trip has ended.
+        assertEquals(
+            CarReminder.STOP,
+            CarReminderPolicy.reminderFor(
+                connected = false,
+                tripActive = true,
+                dayOfWeek = monday,
+                arrivedHomeToday = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `a home arrival on an earlier day does not silence today`() {
+        val now = calendar(2026, Calendar.SEPTEMBER, 29, 7, 30)
+        val yesterday = calendar(2026, Calendar.SEPTEMBER, 28, 17, 0)
+        assertEquals(
+            false,
+            CarReminderPolicy.isSameDay(yesterday.timeInMillis, now),
+        )
+    }
+
+    @Test
+    fun `a home arrival earlier the same day counts`() {
+        val now = calendar(2026, Calendar.SEPTEMBER, 29, 19, 0)
+        val home = calendar(2026, Calendar.SEPTEMBER, 29, 16, 45)
+        assertEquals(true, CarReminderPolicy.isSameDay(home.timeInMillis, now))
+    }
+
+    @Test
+    fun `no home arrival at all is not today`() {
+        val now = calendar(2026, Calendar.SEPTEMBER, 29, 19, 0)
+        assertEquals(false, CarReminderPolicy.isSameDay(0L, now))
+    }
+
+    private fun calendar(year: Int, month: Int, day: Int, hour: Int, minute: Int) =
+        Calendar.getInstance().apply {
+            clear()
+            set(year, month, day, hour, minute)
+        }
 }

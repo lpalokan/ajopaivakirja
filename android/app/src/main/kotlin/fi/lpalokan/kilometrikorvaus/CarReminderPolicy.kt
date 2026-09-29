@@ -4,7 +4,10 @@ import java.util.Calendar
 
 /** What the car's Bluetooth should prompt for, if anything. */
 enum class CarReminder {
-    /** "Aloititko ajon?" — the car connected and no trip is open. */
+    /**
+     * "Aloititko ajon?" — the car connected, no trip is open, and the driver
+     * has not yet come home for the day.
+     */
     START,
 
     /** "Päättyikö ajo?" — the car disconnected and a trip is still open. */
@@ -28,6 +31,9 @@ enum class CarReminder {
  *  - it is the weekend. This is a work-mileage log, and a Saturday errand is
  *    not a työmatka. Prompting for one trains the driver to swipe the reminder
  *    away, which is how it comes to be ignored on the Monday that matters.
+ *  - the driver is home for the day. The last leg home closes the work day,
+ *    and every drive after it is free time — the same Saturday errand, on a
+ *    Tuesday evening.
  *  - the car is still moving. A head unit drops the link for reasons that
  *    have nothing to do with the ignition, and "Päättyikö ajo?" at 100 km/h
  *    is the same false prompt the app's own movement gate exists to prevent
@@ -58,6 +64,9 @@ object CarReminderPolicy {
      * nothing to offer — no location permission, no fix yet, or a build with
      * GPS unavailable. Null keeps the old behaviour rather than silencing the
      * reminder: a missing signal must not cost the driver a prompt.
+     * [arrivedHomeToday] is whether a leg ending at home was logged earlier
+     * on this same local day; it silences only the start prompt, because a
+     * trip the driver does open after coming home still needs ending.
      *
      * Null means "say nothing".
      */
@@ -66,10 +75,12 @@ object CarReminderPolicy {
         tripActive: Boolean,
         dayOfWeek: Int,
         millisSinceDrivingEvidence: Long? = null,
+        arrivedHomeToday: Boolean = false,
     ): CarReminder? {
         if (!isWorkday(dayOfWeek)) return null
         return when {
-            connected && !tripActive -> CarReminder.START
+            connected && !tripActive ->
+                if (arrivedHomeToday) null else CarReminder.START
             !connected && tripActive ->
                 if (isStillMoving(millisSinceDrivingEvidence)) null else CarReminder.STOP
             else -> null
@@ -89,6 +100,19 @@ object CarReminderPolicy {
         millisSinceDrivingEvidence != null &&
             millisSinceDrivingEvidence >= 0L &&
             millisSinceDrivingEvidence < MOVING_RECENCY_MS
+
+    /**
+     * Whether [millis] falls on the same local calendar day as [now]. Zero or
+     * less is "never", which is what the store holds before the driver has
+     * ever been home — and a stale day lifts the silence at midnight without
+     * anyone having to clear it.
+     */
+    fun isSameDay(millis: Long, now: Calendar): Boolean {
+        if (millis <= 0L) return false
+        val then = (now.clone() as Calendar).apply { timeInMillis = millis }
+        return then.get(Calendar.YEAR) == now.get(Calendar.YEAR) &&
+            then.get(Calendar.DAY_OF_YEAR) == now.get(Calendar.DAY_OF_YEAR)
+    }
 
     /** Mon–Fri in the device's local time, which is the driver's own week. */
     fun isWorkday(dayOfWeek: Int): Boolean =

@@ -108,6 +108,14 @@ class MainActivity : FlutterActivity() {
                 result.success(null)
             }
 
+            "setHomeArrivalAt" -> {
+                BluetoothTriggerStore.setHomeArrivalAt(
+                    this,
+                    call.argument<Number>("millis")?.toLong(),
+                )
+                result.success(null)
+            }
+
             "setTripActive" -> {
                 val active = call.argument<Boolean>("active") ?: false
                 BluetoothTriggerStore.setTripActive(this, active)

@@ -303,6 +303,29 @@ Feature: Driving flow
     And the app returns to the foreground
     Then the car reminder knows a trip is in progress
 
+  # Once the driver is home for the day, every later drive is free time, and
+  # "Aloititko ajon?" on each of them is the nagging that teaches the driver
+  # to swipe the reminder away. The receiver has no database to ask, so the
+  # app mirrors when the driver last arrived home.
+  Scenario: Arriving home tells the car reminder the work day is over
+    When I start the {'Töihin'} route at {1000} km
+    And I arrive at {1054} km
+    And I start the {'Kotiin'} route at {1054} km
+    And I arrive at {1108} km
+    Then the car reminder knows I am home for the day
+
+  Scenario: Arriving at work does not tell the car reminder the work day is over
+    When I start the {'Töihin'} route at {1000} km
+    And I arrive at {1054} km
+    Then the car reminder does not think I am home for the day
+
+  Scenario: Reloading re-asserts the home arrival to the car reminder
+    When I start the {'Kotiin'} route at {1000} km
+    And I arrive at {1054} km
+    And the car reminder has lost track of the trip
+    And the app returns to the foreground
+    Then the car reminder knows I am home for the day
+
   # A car's Bluetooth link drops for reasons that are not the ignition going
   # off, and a dropout mid-drive used to prompt "Päättyikö ajo?" at 100 km/h:
   # the receiver's only gates were "is a trip open" and "is it a weekday". It
