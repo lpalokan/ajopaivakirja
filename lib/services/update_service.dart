@@ -37,14 +37,17 @@ class UpdateService {
   }) async {
     final response = await http.get(Uri.parse(manifestUrl));
     if (response.statusCode != 200) {
-      throw HttpException('Manifest fetch failed: HTTP ${response.statusCode}');
+      throw HttpException(
+        'Manifest fetch failed: HTTP ${response.statusCode}',
+      );
     }
     final manifest = jsonDecode(response.body) as Map<String, dynamic>;
-    final channel =
-        manifest[useReleaseChannel ? 'release' : 'debug']
-            as Map<String, dynamic>?;
+    final channel = manifest[useReleaseChannel ? 'release' : 'debug']
+        as Map<String, dynamic>?;
     if (channel == null) {
-      throw const FormatException('Manifest is missing the requested channel');
+      throw const FormatException(
+        'Manifest is missing the requested channel',
+      );
     }
     final info = UpdateInfo.fromJson(channel);
     if (info.buildNumber <= currentBuildNumber) return null;
@@ -94,7 +97,9 @@ class UpdateService {
       }
       final result = await OpenFilex.open(file.path);
       if (result.type != ResultType.done) {
-        throw Exception('Could not launch installer: ${result.message}');
+        throw Exception(
+          'Could not launch installer: ${result.message}',
+        );
       }
     } finally {
       client.close();

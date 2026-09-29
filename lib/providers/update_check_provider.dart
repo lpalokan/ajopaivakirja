@@ -87,5 +87,5 @@ abstract final class UpdateDownloadProgress {
 
 final updateCheckProvider =
     StateNotifierProvider<UpdateCheckNotifier, UpdateCheckState>((ref) {
-      return UpdateCheckNotifier(ref);
-    });
+  return UpdateCheckNotifier(ref);
+});

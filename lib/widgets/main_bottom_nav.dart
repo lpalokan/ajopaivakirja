@@ -43,9 +43,18 @@ class MainBottomNav extends StatelessWidget {
       onDestinationSelected: (i) => _navigate(context, i),
       destinations: const [
         NavigationDestination(icon: Icon(Symbols.home), label: 'Etusivu'),
-        NavigationDestination(icon: Icon(Symbols.alt_route), label: 'Reitit'),
-        NavigationDestination(icon: Icon(Icons.history), label: 'Historia'),
-        NavigationDestination(icon: Icon(Symbols.settings), label: 'Asetukset'),
+        NavigationDestination(
+          icon: Icon(Symbols.alt_route),
+          label: 'Reitit',
+        ),
+        NavigationDestination(
+          icon: Icon(Icons.history),
+          label: 'Historia',
+        ),
+        NavigationDestination(
+          icon: Icon(Symbols.settings),
+          label: 'Asetukset',
+        ),
       ],
     );
   }

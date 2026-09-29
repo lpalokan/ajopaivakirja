@@ -59,8 +59,7 @@ class Expense {
     return Expense(
       id: map['id'] as int?,
       tripLegId: map['trip_leg_id'] as int?,
-      type:
-          ExpenseType.values[typeIndex.clamp(0, ExpenseType.values.length - 1)],
+      type: ExpenseType.values[typeIndex.clamp(0, ExpenseType.values.length - 1)],
       amount: (map['amount'] as num?)?.toDouble() ?? 0,
       description: map['description'] as String?,
       createdAt: map['created_at'] as String,

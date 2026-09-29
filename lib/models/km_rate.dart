@@ -5,11 +5,17 @@ class KmRate {
   const KmRate({required this.year, required this.rate});
 
   KmRate copyWith({int? year, double? rate}) {
-    return KmRate(year: year ?? this.year, rate: rate ?? this.rate);
+    return KmRate(
+      year: year ?? this.year,
+      rate: rate ?? this.rate,
+    );
   }
 
   Map<String, dynamic> toMap() {
-    return {'year': year, 'rate': rate};
+    return {
+      'year': year,
+      'rate': rate,
+    };
   }
 
   factory KmRate.fromMap(Map<String, dynamic> map) {
